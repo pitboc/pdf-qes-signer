@@ -1,0 +1,101 @@
+# PDF QES Signer
+
+A GUI tool for visually placing signature fields in PDF documents and applying
+**qualified electronic signatures (QES)** via PKCS#11 / smartcard.
+
+## Features
+
+- Open PDF files and navigate multi-page documents
+- Draw signature fields by left-click and drag on the PDF canvas
+- Right-click a field to delete it
+- Configure visual appearance: optional PNG image (with transparency),
+  signer name, location, reason, and date
+- Apply a QES signature via any PKCS#11-compatible smartcard or USB token
+  (e.g. CyberJack, Gemalto, OpenSC-supported cards)
+- PIN-pad support: leave the PIN field empty to use the hardware PIN pad;
+  the PKCS#11 session is kept open so the PIN is requested only once
+- Bilingual UI: German and English (switchable at runtime)
+- Persistent configuration in `~/.config/pdf-signer/pdf_signer.ini`
+
+## Requirements
+
+- Python ≥ 3.9
+- [pymupdf](https://pymupdf.readthedocs.io/) (`fitz`)
+- [Pillow](https://pillow.readthedocs.io/)
+- [PyQt6](https://pypi.org/project/PyQt6/)
+- [pyhanko](https://pyhanko.readthedocs.io/) + pyhanko-certvalidator
+- [python-pkcs11](https://python-pkcs11.readthedocs.io/)
+- [cryptography](https://cryptography.io/)
+
+## Installation
+
+```bash
+git clone https://codeberg.org/<your-username>/pdf-qes-signer.git
+cd pdf-qes-signer
+./setup_pdf_signer.sh
+```
+
+The setup script creates a `.venv/` virtual environment, installs all
+dependencies, and generates a `start_signer.sh` launcher.
+
+## Usage
+
+```bash
+./start_signer.sh [PDF_FILE]
+```
+
+Or manually:
+
+```bash
+source .venv/bin/activate
+python -m pdf_signer [PDF_FILE]
+```
+
+### Workflow
+
+1. **Open** a PDF via *File → Open PDF* or the toolbar button.
+2. **Draw** one or more signature fields by left-click + drag on the page.
+3. **Configure** the visual appearance in the right panel (Text / Image tabs).
+4. **Configure** the PKCS#11 token via *Settings → Configure PKCS#11 / Token*:
+   - Enter the path to your PKCS#11 library (e.g. `/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so`).
+   - Click *Test Token* to read key and certificate labels.
+   - Select the correct key label.
+5. **Enter your PIN** in the Token / PIN panel (or leave empty for PIN-pad).
+6. **Sign** via *Sign → Sign document (QES)* or the toolbar button.
+   - Choose the target signature field (or "invisible" for a non-visual signature).
+   - Choose the output file location.
+
+### Save fields without signing
+
+Use *File → Save with fields (copy)* to embed the signature field annotations
+into a PDF copy without applying a signature. This is useful for preparing
+documents that others will sign later.
+
+## Configuration
+
+The application stores its settings in `~/.config/pdf-signer/pdf_signer.ini`.
+See [`pdf_signer.ini.example`](pdf_signer.ini.example) for all available options
+with default values.
+
+## Project structure
+
+```
+pdf_signer/
+├── __init__.py        # package marker, version
+├── __main__.py        # enables python -m pdf_signer
+├── main.py            # entry point: argument parsing, QApplication
+├── config.py          # AppConfig (INI persistence), PDF_STANDARD_FONTS
+├── appearance.py      # SigAppearance, Qt and Pillow renderers
+├── signer.py          # SaveFieldsWorker, SignWorker, PKCS#11 logic
+├── pdf_view.py        # PDFViewWidget, SignatureFieldDef
+├── dialogs.py         # Pkcs11ConfigDialog, AppearanceConfigDialog, TokenInfoDialog
+├── main_window.py     # PDFSignerApp main window
+└── i18n/
+    ├── __init__.py    # I18n class, t() function
+    ├── de.py          # German translations
+    └── en.py          # English translations
+```
+
+## License
+
+GNU General Public License v3.0 or later – see [LICENSE](LICENSE).

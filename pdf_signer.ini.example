@@ -1,0 +1,46 @@
+# PDF QES Signer – example configuration
+# Copy to ~/.config/pdf-signer/pdf_signer.ini and adjust as needed.
+# The application creates this file automatically on first run.
+
+[pkcs11]
+# Full path to your PKCS#11 library
+lib_path = /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so
+# Key label as shown by the token test dialog (leave empty to auto-detect)
+key_label =
+
+[paths]
+# Directories remembered between sessions (filled automatically)
+last_open_dir = ~
+last_save_dir = ~
+last_lib_dir  = /usr/lib
+last_img_dir  = ~
+
+[app]
+# UI language: de | en
+language = de
+
+[appearance]
+# Absolute path to a PNG image shown in the signature field (optional)
+image_path =
+# Image position: img_left | img_right
+layout = img_left
+# Show / hide text elements (1 = show, 0 = hide)
+show_location = 1
+location =
+show_reason = 1
+reason =
+show_name = 1
+# Name source: cert (from certificate CN) | custom
+name_mode = cert
+name_custom =
+show_date = 1
+# strftime format string
+date_format = %%d.%%m.%%Y %%H:%%M
+# Font size in PDF points
+font_size = 8
+# PDF-14 font name: Helvetica | Helvetica-Bold | Times-Roman | Courier | …
+font_family = Helvetica
+# Draw a border around the signature field (1 | 0)
+show_border = 1
+# Percentage of field width occupied by the image (10–70)
+img_ratio = 40

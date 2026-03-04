@@ -1,0 +1,174 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""German UI translations for PDF QES Signer."""
+
+TRANSLATIONS: dict[str, str] = {
+    # Menu
+    "menu_file": "Datei",
+    "menu_file_open": "PDF öffnen…",
+    "menu_file_save_fields": "Felder speichern (Kopie)…",
+    "menu_file_quit": "Beenden",
+    "menu_sign": "Signieren",
+    "menu_sign_document": "Dokument signieren (QES)…",
+    "menu_settings": "Einstellungen",
+    "menu_settings_pkcs11": "PKCS#11 / Token konfigurieren…",
+    "menu_settings_appearance": "Signaturfeld-Darstellung…",
+    "menu_settings_language": "Sprache / Language",
+    "menu_help": "Hilfe",
+    "menu_help_about": "Über…",
+    # Toolbar
+    "tb_open": "PDF öffnen",
+    "tb_prev": "◀",
+    "tb_next": "▶",
+    "tb_sign": "✍ Signieren (QES)",
+    "tb_save_fields": "💾 Felder speichern",
+    # Right panel – Fields
+    "panel_fields": "Signaturfelder",
+    "btn_delete_field": "🗑 Löschen",
+    "btn_save_fields": "💾 Als PDF speichern",
+    # Right panel – Token / PIN
+    "panel_token": "Token / PIN",
+    "pin_label": "PIN:",
+    "pin_hint": "leer lassen für PIN-Pad",
+    # Right panel – Signature appearance
+    "panel_appearance": "Signatur-Erscheinung",
+    "app_layout_label": "Anordnung:",
+    "app_layout_img_left": "Bild Links | Text Rechts",
+    "app_layout_img_right": "Text Links | Bild Rechts",
+    "app_location_label": "Ort:",
+    "app_reason_label": "Grund:",
+    "app_name_label": "Name:",
+    "app_name_cert": "(aus Zertifikat)",
+    "app_date_label": "Datumsformat:",
+    "app_show_date": "Datum anzeigen",
+    # Appearance config dialog
+    "appdlg_title": "Signaturfeld-Darstellung konfigurieren",
+    "appdlg_tab_image": "Bild",
+    "appdlg_tab_text": "Text",
+    "appdlg_tab_layout": "Layout",
+    "appdlg_img_path": "PNG-Bild:",
+    "appdlg_img_browse": "…",
+    "appdlg_img_clear": "Entfernen",
+    "appdlg_img_preview": "Vorschau",
+    "appdlg_img_hint": "Transparenz wird unterstützt. Seitenverhältnis bleibt erhalten.",
+    "appdlg_img_filter": "PNG-Bilder (*.png);;Alle Bilder (*.png *.jpg *.jpeg *.bmp);;Alle Dateien (*)",
+    "appdlg_browse_img": "Signaturbild wählen",
+    "appdlg_font_size": "Schriftgröße (pt):",
+    "appdlg_text_color": "Textfarbe:",
+    "appdlg_border": "Rahmen anzeigen",
+    "appdlg_bg_color": "Hintergrundfarbe:",
+    "appdlg_save": "Speichern",
+    "appdlg_cancel": "Abbrechen",
+    # Status bar
+    "status_ready": "Bereit. Öffnen Sie eine PDF-Datei.",
+    "status_opened": "Geöffnet: {path}  ({pages} Seiten)",
+    "status_field_added": "Signaturfeld '{name}' auf Seite {page} hinzugefügt.",
+    "status_field_deleted": "Feld '{name}' gelöscht.",
+    "status_saving_fields": "Signaturfelder werden eingebettet…",
+    "status_saved": "Gespeichert: {path}",
+    "status_signing": "Signierung läuft…",
+    "status_signed": "Dokument signiert: {path}",
+    "status_sign_failed": "Signierung fehlgeschlagen.",
+    "status_save_failed": "Fehler beim Speichern.",
+    "status_token_ok": "Token OK: {label} | {keys} Key(s), {certs} Zertifikat(e)",
+    "status_token_failed": "Token-Test fehlgeschlagen.",
+    "status_token_reading": "Token wird gelesen…",
+    # Dialogs
+    "dlg_field_name_title": "Feldname",
+    "dlg_field_name_prompt": "Name des Signaturfeldes:",
+    "dlg_field_name_default": "Sig_{page}_{count}",
+    "dlg_delete_title": "Löschen",
+    "dlg_delete_msg": "Signaturfeld '{name}' löschen?",
+    "dlg_delete_sel_msg": "Feld '{name}' wirklich löschen?",
+    "dlg_no_doc": "Kein Dokument",
+    "dlg_no_doc_msg": "Bitte zuerst ein PDF öffnen.",
+    "dlg_no_fields": "Keine Felder",
+    "dlg_no_fields_msg": "Bitte zuerst Signaturfelder zeichnen.",
+    "dlg_no_field_sel": "Kein Feld ausgewählt",
+    "dlg_no_field_sel_msg": "Bitte ein Feld in der Liste auswählen.",
+    "dlg_missing_deps": "Fehlende Abhängigkeiten",
+    "dlg_missing_deps_msg": (
+        "Folgende Pakete fehlen für QES-Signierung:\n\n{packages}\n\n"
+        "Das Platzieren von Signaturfeldern ist trotzdem möglich."
+    ),
+    "dlg_open_pdf_title": "PDF öffnen",
+    "dlg_save_fields_title": "Speichern als…",
+    "dlg_save_fields_suffix": "_mit_feldern",
+    "dlg_save_signed_title": "Signiertes PDF speichern als…",
+    "dlg_save_signed_suffix": "_signiert",
+    "dlg_pdf_filter": "PDF-Dateien (*.pdf);;Alle Dateien (*)",
+    "dlg_lib_filter": "Shared Libraries (*.so *.so.*);;DLL (*.dll);;Alle Dateien (*)",
+    "dlg_open_error_title": "Fehler",
+    "dlg_open_error_msg": "PDF konnte nicht geöffnet werden:\n{error}",
+    "dlg_save_error_title": "Fehler",
+    "dlg_save_error_msg": "Fehler:\n{error}",
+    "dlg_save_success_title": "Erfolg",
+    "dlg_save_success_msg": "PDF mit Signaturfeldern gespeichert:\n{path}",
+    "dlg_sign_success_title": "Signierung erfolgreich ✓",
+    "dlg_sign_success_msg": "QES-Signatur erfolgreich eingefügt.\n\nDatei: {path}",
+    "dlg_sign_error_title": "Signierungsfehler",
+    "dlg_sign_error_msg": (
+        "Fehler bei der QES-Signierung:\n\n{error}\n\n"
+        "Häufige Ursachen:\n"
+        "• PIN-Feld leer lassen für CyberJack PIN-Pad\n"
+        "• Token nicht eingesteckt\n"
+        "• Falscher Library-Pfad\n"
+        "• Key-Label stimmt nicht überein\n"
+        "• Kein Zertifikat auf dem Token\n\n"
+        "Vollständiger Traceback in der Konsole (stderr)."
+    ),
+    "dlg_pyhanko_missing": "pyhanko ist nicht installiert.\npip install pyhanko python-pkcs11",
+    "dlg_choose_field_title": "Signaturfeld wählen",
+    "dlg_choose_field_label": "Mit welchem Feld signieren?",
+    "dlg_invisible_field": "✦ Signatur ohne Feld (unsichtbar)",
+    # PKCS#11 dialog
+    "cfg_title": "PKCS#11 / Token konfigurieren",
+    "cfg_lib_label": "Library-Pfad (.so / .dll):",
+    "cfg_lib_browse": "…",
+    "cfg_key_label": "Key-Label:",
+    "cfg_key_hint": "↑ wird beim Token-Test automatisch gefüllt",
+    "cfg_test_btn": "🔑 Token testen",
+    "cfg_save_btn": "Speichern",
+    "cfg_cancel_btn": "Abbrechen",
+    "dlg_browse_lib": "PKCS#11 Library wählen",
+    "dlg_token_error_title": "Token-Fehler",
+    "dlg_token_info_title": "Token-Inhalt",
+    "dlg_token_info_label": "Name: {label}    Hersteller: {manufacturer}",
+    "dlg_token_keys_title": "Private Keys  (Doppelklick → übernehmen)",
+    "dlg_token_certs_title": "Zertifikat-Labels",
+    "dlg_token_use_key": "✓ Key-Label übernehmen",
+    "dlg_token_copy_key": "📋 Key kopieren",
+    "dlg_token_copy_cert": "📋 Zert. kopieren",
+    "dlg_token_close": "Schließen",
+    "dlg_token_auto_label": "Key-Label automatisch gesetzt: {label}",
+    # Appearance panel (main window)
+    "ap_tab_text": "Text",
+    "ap_tab_image_layout": "Bild / Layout",
+    "ap_name_from_cert": "Aus Zertifikat",
+    "ap_name_custom": "Benutzerdefiniert",
+    "ap_font_pt": "Schrift (pt):",
+    "ap_font_family": "Schriftart:",
+    "ap_img_none": "(kein Bild)",
+    "ap_img_hint": "Transparenz wird unterstützt.",
+    "ap_layout_left": "Bild links",
+    "ap_layout_right": "Bild rechts",
+    "ap_border": "Rahmen anzeigen",
+    "ap_img_label": "◀ Bild {v}%",
+    "ap_txt_label": "Text {r}% ▶",
+    "ap_txt_label_left": "Text {r}% ▶",
+    "ap_img_label_right": "◀ Bild {v}%",
+    "ap_preview_hint": "Für Vorschau bitte Signaturfeld einfügen.",
+    "ap_browse_img": "Signaturbild wählen",
+    "ap_img_filter": "Bilder (*.png *.jpg *.jpeg *.bmp);;Alle Dateien (*)",
+    # About
+    "about_title": "Über PDF QES Signer",
+    "about_msg": (
+        "PDF QES Signer v0.1\n\n"
+        "Visuelles Platzieren von Signaturfeldern\n"
+        "und qualifizierte elektronische Signatur (QES)\n"
+        "via PKCS#11 / Smartcard.\n\n"
+        "Benötigte Pakete:\n"
+        "  pip install pymupdf pyhanko python-pkcs11 Pillow PyQt6 cryptography\n\n"
+        "Linksklick + Ziehen → Signaturfeld zeichnen\n"
+        "Rechtsklick auf Feld → Feld löschen"
+    ),
+}
