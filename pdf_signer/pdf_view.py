@@ -91,24 +91,27 @@ class PDFViewWidget(QWidget):
         self._img_w  = self._img_h  = 1
         self._drag_start: Optional[QPointF] = None
         self._drag_end:   Optional[QPointF] = None
-        self._sig_fields: list[SignatureFieldDef] = []
+        self._sig_fields:    list[SignatureFieldDef] = []
+        self._signed_fields: list[SignatureFieldDef] = []
         self._current_page = 0
         self._selected_field: Optional[SignatureFieldDef] = None
 
     def set_page(self, page: fitz.Page,
                  sig_fields: list[SignatureFieldDef],
-                 current_page: int) -> None:
-        """Render *page* at ZOOM and store the field list for painting."""
+                 current_page: int,
+                 signed_fields: list[SignatureFieldDef] | None = None) -> None:
+        """Render *page* at ZOOM and store the field lists for painting."""
         mat = fitz.Matrix(self.ZOOM, self.ZOOM)
         pix = page.get_pixmap(matrix=mat, alpha=False)
         img = QImage(pix.samples, pix.width, pix.height,
                      pix.stride, QImage.Format.Format_RGB888)
-        self._pixmap      = QPixmap.fromImage(img)
-        self._img_w       = pix.width
-        self._img_h       = pix.height
-        self._page_w      = page.rect.width
-        self._page_h      = page.rect.height
-        self._sig_fields  = sig_fields
+        self._pixmap       = QPixmap.fromImage(img)
+        self._img_w        = pix.width
+        self._img_h        = pix.height
+        self._page_w       = page.rect.width
+        self._page_h       = page.rect.height
+        self._sig_fields   = sig_fields
+        self._signed_fields = signed_fields or []
         self._current_page = current_page
         self.setFixedSize(pix.width, pix.height)
         self.update()
@@ -168,6 +171,22 @@ class PDFViewWidget(QWidget):
             painter.setFont(QFont("Arial", 7))
             painter.drawText(QPointF(rect.left() + 2, rect.top() + 10),
                              fdef.name)
+
+        # Already-signed fields: grey outline + lock indicator
+        for fdef in self._signed_fields:
+            if fdef.page != self._current_page:
+                continue
+            tl   = self._pdf_to_w(fdef.x1, fdef.y2)
+            br   = self._pdf_to_w(fdef.x2, fdef.y1)
+            rect = QRectF(tl, br).normalized()
+            painter.fillRect(rect, QColor(200, 200, 200, 40))
+            pen = QPen(QColor("#888888"), 1, Qt.PenStyle.DotLine)
+            painter.setPen(pen)
+            painter.drawRect(rect.adjusted(1, 1, -1, -1))
+            painter.setPen(QPen(QColor("#666666")))
+            painter.setFont(QFont("Arial", 7))
+            painter.drawText(QPointF(rect.left() + 2, rect.top() + 10),
+                             f"✓ {fdef.name}")
 
         # Drag-to-draw preview rectangle
         if self._drag_start and self._drag_end:

@@ -116,6 +116,7 @@ TRANSLATIONS: dict[str, str] = {
         "• No certificate on token\n\n"
         "Full traceback in console (stderr)."
     ),
+    "dlg_field_already_signed": "This field is already signed and cannot be used again.",
     "dlg_pyhanko_missing": "pyhanko is not installed.\npip install pyhanko python-pkcs11",
     "dlg_choose_field_title": "Choose Signature Field",
     "dlg_choose_field_label": "Sign with which field?",

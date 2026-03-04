@@ -116,6 +116,7 @@ TRANSLATIONS: dict[str, str] = {
         "• Kein Zertifikat auf dem Token\n\n"
         "Vollständiger Traceback in der Konsole (stderr)."
     ),
+    "dlg_field_already_signed": "Dieses Feld ist bereits signiert und kann nicht erneut verwendet werden.",
     "dlg_pyhanko_missing": "pyhanko ist nicht installiert.\npip install pyhanko python-pkcs11",
     "dlg_choose_field_title": "Signaturfeld wählen",
     "dlg_choose_field_label": "Mit welchem Feld signieren?",

@@ -62,7 +62,8 @@ class PDFSignerApp(QMainWindow):
         self.pdf_doc:     Optional[fitz.Document] = None
         self.pdf_path     = ""
         self.current_page = 0
-        self.sig_fields:  list[SignatureFieldDef] = []
+        self.sig_fields:    list[SignatureFieldDef] = []  # unsigned (new + existing)
+        self.signed_fields: list[SignatureFieldDef] = []  # already signed (display only)
         self._worker      = None
         self._sign_worker = None
 
@@ -593,9 +594,18 @@ class PDFSignerApp(QMainWindow):
         self._field_list.clear()
         # Row 0: invisible signature option
         self._field_list.addItem(t("dlg_invisible_field"))
+        # Rows 1 … len(sig_fields): unsigned fields (signable)
         for fdef in self.sig_fields:
             self._field_list.addItem(
                 f"p.{fdef.page + 1}  {fdef.name}  [{fdef.x1:.0f},{fdef.y1:.0f}]")
+        # Rows after: already-signed fields (display only)
+        for fdef in self.signed_fields:
+            item_text = f"✓ p.{fdef.page + 1}  {fdef.name}"
+            from PyQt6.QtWidgets import QListWidgetItem
+            from PyQt6.QtGui import QColor
+            item = QListWidgetItem(item_text)
+            item.setForeground(QColor("#888888"))
+            self._field_list.addItem(item)
         n = self._field_list.count()
         if n > 0:
             row = prev_row if 0 <= prev_row < n else (n - 1 if n > 1 else 0)
@@ -617,14 +627,15 @@ class PDFSignerApp(QMainWindow):
         if not self.pdf_doc:
             return
         page = self.pdf_doc[self.current_page]
-        self._pdf_view.set_page(page, self.sig_fields, self.current_page)
+        self._pdf_view.set_page(
+            page, self.sig_fields, self.current_page, self.signed_fields)
         self._page_label.setText(
             f"  {self.current_page + 1} / {len(self.pdf_doc)}  ")
 
     # ── Field list selection ──────────────────────────────────────────────
 
     def _on_field_selection_changed(self, row: int) -> None:
-        """Show appearance preview only in the currently selected field."""
+        """Show appearance preview only in the currently selected unsigned field."""
         if 1 <= row <= len(self.sig_fields):
             self._pdf_view.set_selected_field(self.sig_fields[row - 1])
         else:
@@ -658,7 +669,7 @@ class PDFSignerApp(QMainWindow):
             self.pdf_doc      = doc
             self.pdf_path     = path
             self.current_page = 0
-            self.sig_fields.clear()
+            self._load_existing_fields(doc)
             self._update_field_list()
             self._render_current_page()
             self.setWindowTitle(f"PDF QES Signer – {os.path.basename(path)}")
@@ -669,6 +680,43 @@ class PDFSignerApp(QMainWindow):
             QMessageBox.critical(
                 self, t("dlg_open_error_title"),
                 t("dlg_open_error_msg", error=str(exc)))
+
+    def _load_existing_fields(self, doc: fitz.Document) -> None:
+        """Scan all pages for existing signature widgets and classify them.
+
+        Unsigned fields are added to self.sig_fields (fully usable).
+        Already-signed fields are added to self.signed_fields (display only).
+        """
+        import re
+        self.sig_fields.clear()
+        self.signed_fields.clear()
+
+        for page_num in range(len(doc)):
+            page   = doc[page_num]
+            page_h = page.rect.height
+            for widget in page.widgets():
+                if widget.field_type != fitz.PDF_WIDGET_TYPE_SIGNATURE:
+                    continue
+                # Convert fitz rect (y=0 top) → PDF coords (y=0 bottom)
+                r  = widget.rect
+                x1 = r.x0
+                y1 = page_h - r.y1   # bottom-left in PDF coords
+                x2 = r.x1
+                y2 = page_h - r.y0   # top-right in PDF coords
+                name = widget.field_name or f"Sig_p{page_num + 1}"
+                fdef = SignatureFieldDef(page_num, x1, y1, x2, y2, name)
+
+                # Detect signed state: /V entry references a signature dict
+                try:
+                    obj = doc.xref_object(widget.xref, compressed=False)
+                    already_signed = bool(re.search(r'/V\s+\d+\s+\d+\s+R', obj))
+                except Exception:
+                    already_signed = False
+
+                if already_signed:
+                    self.signed_fields.append(fdef)
+                else:
+                    self.sig_fields.append(fdef)
 
     def prev_page(self) -> None:
         if self.pdf_doc and self.current_page > 0:
@@ -759,9 +807,15 @@ class PDFSignerApp(QMainWindow):
                 self, t("dlg_sign_error_title"), t("dlg_pyhanko_missing"))
             return
 
-        # Row 0 = invisible signature, row 1+ = sig_fields[row - 1]
+        # Row 0 = invisible signature, row 1…N = sig_fields, row N+1… = signed (read-only)
         row  = self._field_list.currentRow()
         fdef: Optional[SignatureFieldDef] = None
+        signed_offset = 1 + len(self.sig_fields)
+        if row >= signed_offset and self.signed_fields:
+            QMessageBox.information(
+                self, t("dlg_sign_error_title"),
+                t("dlg_field_already_signed"))
+            return
         if 1 <= row <= len(self.sig_fields):
             fdef = self.sig_fields[row - 1]
 
