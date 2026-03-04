@@ -258,6 +258,26 @@ class PDFSignerApp(QMainWindow):
         self._pin_lbl_widget.setText(t("pin_label"))
         self._pin_hint_lbl.setText(t("pin_hint"))
         self._app_group.setTitle(t("panel_appearance"))
+        # Appearance panel – retranslate all inline widgets
+        self._ap_chk_name.setText(t("app_name_label"))
+        self._ap_chk_loc.setText(t("app_location_label"))
+        self._ap_chk_reason.setText(t("app_reason_label"))
+        self._ap_chk_date.setText(t("app_date_label"))
+        self._ap_lbl_font_size.setText(t("ap_font_pt"))
+        self._ap_lbl_font_family.setText(t("ap_font_family"))
+        self._ap_name_mode.setItemText(0, t("ap_name_from_cert"))
+        self._ap_name_mode.setItemText(1, t("ap_name_custom"))
+        self._ap_border.setText(t("ap_border"))
+        self._ap_lbl_layout.setText(t("app_layout_label"))
+        self._ap_layout.setItemText(0, t("ap_layout_left"))
+        self._ap_layout.setItemText(1, t("ap_layout_right"))
+        custom_idx = self._ap_date_combo.findData(self.CUSTOM_FMT)
+        if custom_idx >= 0:
+            self._ap_date_combo.setItemText(custom_idx, t("ap_date_custom"))
+        self._ap_clr_btn.setText(t("appdlg_img_clear"))
+        self._ap_img_hint.setText(t("ap_img_hint"))
+        self._app_tabs.setTabText(0, t("ap_tab_text"))
+        self._app_tabs.setTabText(1, t("ap_tab_image_layout"))
 
     # ── Inline appearance panel ───────────────────────────────────────────
 
@@ -308,7 +328,7 @@ class PDFSignerApp(QMainWindow):
         self._ap_date_combo = QComboBox()
         for fmt, ex in self.DATE_FORMATS:
             self._ap_date_combo.addItem(f"{fmt}  →  {ex}", fmt)
-        self._ap_date_combo.addItem("Custom…", self.CUSTOM_FMT)
+        self._ap_date_combo.addItem(t("ap_date_custom"), self.CUSTOM_FMT)
         self._ap_date_custom = QLineEdit()
         self._ap_date_custom.setPlaceholderText("%d.%m.%Y %H:%M")
         self._ap_date_custom.setVisible(False)
@@ -321,8 +341,9 @@ class PDFSignerApp(QMainWindow):
         # Font size
         self._ap_font_spin = QSpinBox()
         self._ap_font_spin.setRange(5, 24)
-        gl.addWidget(QLabel(t("ap_font_pt")),    row, 0)
-        gl.addWidget(self._ap_font_spin,          row, 1,
+        self._ap_lbl_font_size = QLabel(t("ap_font_pt"))
+        gl.addWidget(self._ap_lbl_font_size, row, 0)
+        gl.addWidget(self._ap_font_spin,     row, 1,
                      alignment=Qt.AlignmentFlag.AlignLeft)
         row += 1
 
@@ -330,8 +351,9 @@ class PDFSignerApp(QMainWindow):
         self._ap_font_combo = QComboBox()
         for disp, pdf_name, _, _ in PDF_STANDARD_FONTS:
             self._ap_font_combo.addItem(disp, pdf_name)
-        gl.addWidget(QLabel(t("ap_font_family")), row, 0)
-        gl.addWidget(self._ap_font_combo,          row, 1)
+        self._ap_lbl_font_family = QLabel(t("ap_font_family"))
+        gl.addWidget(self._ap_lbl_font_family, row, 0)
+        gl.addWidget(self._ap_font_combo,      row, 1)
         row += 1
 
         gl.setRowStretch(row, 1)
@@ -352,20 +374,21 @@ class PDFSignerApp(QMainWindow):
         bb_btn = QPushButton("…")
         bb_btn.setFixedWidth(28)
         bb_btn.clicked.connect(self._ap_browse_image)
-        clr_btn = QPushButton(t("appdlg_img_clear"))
-        clr_btn.clicked.connect(self._ap_clear_image)
+        self._ap_clr_btn = QPushButton(t("appdlg_img_clear"))
+        self._ap_clr_btn.clicked.connect(self._ap_clear_image)
         img_row.addWidget(self._ap_img_path)
         img_row.addWidget(bb_btn)
-        img_row.addWidget(clr_btn)
+        img_row.addWidget(self._ap_clr_btn)
         vl.addLayout(img_row)
 
-        hint = QLabel(t("ap_img_hint"))
-        hint.setStyleSheet("color:gray; font-size:10px;")
-        vl.addWidget(hint)
+        self._ap_img_hint = QLabel(t("ap_img_hint"))
+        self._ap_img_hint.setStyleSheet("color:gray; font-size:10px;")
+        vl.addWidget(self._ap_img_hint)
 
         # Layout combo
         lay_row = QHBoxLayout()
-        lay_row.addWidget(QLabel(t("app_layout_label")))
+        self._ap_lbl_layout = QLabel(t("app_layout_label"))
+        lay_row.addWidget(self._ap_lbl_layout)
         self._ap_layout = QComboBox()
         self._ap_layout.addItem(t("ap_layout_left"),  "img_left")
         self._ap_layout.addItem(t("ap_layout_right"), "img_right")
