@@ -847,6 +847,21 @@ class PDFSignerApp(QMainWindow):
             self, t("dlg_sign_success_title"),
             t("dlg_sign_success_msg", path=path))
 
+        # Switch to the signed PDF as the new working document so that:
+        # 1. The just-signed field is shown as already signed (grey/✓)
+        # 2. Any further signing uses the signed PDF as base, preserving
+        #    all previous signatures in the output chain.
+        try:
+            doc = fitz.open(path)
+            self.pdf_doc  = doc
+            self.pdf_path = path
+            self.setWindowTitle(f"PDF QES Signer – {os.path.basename(path)}")
+            self._load_existing_fields(doc)
+            self._update_field_list()
+            self._render_current_page()
+        except Exception:
+            pass  # Non-critical – UI stays in previous state
+
     def _on_sign_error(self, msg: str) -> None:
         self._set_status(t("status_sign_failed"))
         QMessageBox.critical(
