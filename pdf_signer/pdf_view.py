@@ -93,6 +93,7 @@ class PDFViewWidget(QWidget):
         self._drag_end:   Optional[QPointF] = None
         self._sig_fields: list[SignatureFieldDef] = []
         self._current_page = 0
+        self._selected_field: Optional[SignatureFieldDef] = None
 
     def set_page(self, page: fitz.Page,
                  sig_fields: list[SignatureFieldDef],
@@ -114,6 +115,11 @@ class PDFViewWidget(QWidget):
 
     def refresh(self) -> None:
         """Repaint the overlay (e.g. after an appearance change)."""
+        self.update()
+
+    def set_selected_field(self, fdef: Optional[SignatureFieldDef]) -> None:
+        """Set which field shows the full appearance preview (None = none)."""
+        self._selected_field = fdef
         self.update()
 
     # ── Coordinate conversion ─────────────────────────────────────────────
@@ -145,10 +151,18 @@ class PDFViewWidget(QWidget):
             br   = self._pdf_to_w(fdef.x2, fdef.y1)
             rect = QRectF(tl, br).normalized()
             w, h = int(rect.width()), int(rect.height())
-            if w > 4 and h > 4:
+            is_selected = (fdef is self._selected_field)
+            if is_selected and w > 4 and h > 4:
+                # Full appearance preview only for the selected field
                 px = self.appearance.render_preview(
                     w, h, pixels_per_point=self.ZOOM)
                 painter.drawPixmap(rect.toRect(), px)
+            else:
+                # Other fields: light fill + dashed border only
+                painter.fillRect(rect, QColor(208, 228, 255, 30))
+                pen = QPen(QColor("#1a73e8"), 1, Qt.PenStyle.DashLine)
+                painter.setPen(pen)
+                painter.drawRect(rect.adjusted(1, 1, -1, -1))
             # Field name label in top-left corner
             painter.setPen(QPen(QColor("#1a73e8")))
             painter.setFont(QFont("Arial", 7))

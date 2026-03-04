@@ -177,7 +177,7 @@ class PDFSignerApp(QMainWindow):
         fl = QVBoxLayout(self._fields_group)
         self._field_list = QListWidget()
         self._field_list.setFont(QFont("Courier", 9))
-        self._field_list.currentRowChanged.connect(lambda _: None)
+        self._field_list.currentRowChanged.connect(self._on_field_selection_changed)
         fl.addWidget(self._field_list)
         btn_row = QHBoxLayout()
         self._btn_delete = QPushButton()
@@ -621,11 +621,21 @@ class PDFSignerApp(QMainWindow):
         self._page_label.setText(
             f"  {self.current_page + 1} / {len(self.pdf_doc)}  ")
 
+    # ── Field list selection ──────────────────────────────────────────────
+
+    def _on_field_selection_changed(self, row: int) -> None:
+        """Show appearance preview only in the currently selected field."""
+        if 1 <= row <= len(self.sig_fields):
+            self._pdf_view.set_selected_field(self.sig_fields[row - 1])
+        else:
+            self._pdf_view.set_selected_field(None)
+
     # ── Signals from PDFViewWidget ────────────────────────────────────────
 
     def _on_field_added(self, fdef: SignatureFieldDef) -> None:
         self._update_field_list()
         self._field_list.setCurrentRow(self._field_list.count() - 1)
+        # currentRowChanged fires above and calls _on_field_selection_changed
         self._set_status(
             t("status_field_added", name=fdef.name, page=fdef.page + 1))
 
