@@ -148,6 +148,15 @@ class Pkcs11ConfigDialog(QDialog):
         hint.setStyleSheet("color: gray; font-size: 10px;")
         form.addRow(t("cfg_key_label"), self.key_edit)
         form.addRow("", hint)
+
+        # PIN row (for token test only – not saved)
+        self.pin_edit = QLineEdit()
+        self.pin_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.pin_edit.setPlaceholderText(t("cfg_pin_placeholder"))
+        pin_hint = QLabel(t("cfg_pin_hint"))
+        pin_hint.setStyleSheet("color: gray; font-size: 10px;")
+        form.addRow(t("cfg_pin_label"), self.pin_edit)
+        form.addRow("", pin_hint)
         lay.addLayout(form)
 
         test_row = QHBoxLayout()
@@ -203,11 +212,8 @@ class Pkcs11ConfigDialog(QDialog):
             token = slots[0].get_token()
 
             if with_pin:
-                # Read PIN from the main window's PIN field
-                pin = ""
-                mw = self.parent()
-                if hasattr(mw, "_pin_edit"):
-                    pin = mw._pin_edit.text().strip()
+                # Use PIN from the dialog's own PIN field; empty = PIN pad
+                pin = self.pin_edit.text().strip()
                 # Open with PIN – private keys are directly readable
                 with token.open(user_pin=pin if pin else None, rw=True) as session:
                     priv_keys = list(session.get_objects(
