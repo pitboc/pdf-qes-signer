@@ -67,7 +67,7 @@ pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
 ## Installation
 
 ```bash
-git clone https://codeberg.org/<your-username>/pdf-qes-signer.git
+git clone https://codeberg.org/pitbo/pdf-qes-signer.git
 cd pdf-qes-signer
 ./setup_pdf_signer.sh
 ```
