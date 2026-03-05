@@ -203,11 +203,12 @@ class SignWorker(QThread):
     def __init__(self, pdf_bytes: bytes, out_path: str, fdef,
                  lib_path: str, pin: str, key_label: str,
                  appearance=None, all_fields: list | None = None,
-                 tsa_url: str = "") -> None:
+                 tsa_url: str = "", field_name: str = "Signature") -> None:
         super().__init__()
         self.pdf_bytes  = pdf_bytes
         self.out_path   = out_path
         self.fdef       = fdef
+        self.field_name = field_name  # used only when fdef is None (invisible)
         self.lib_path   = lib_path
         self.pin        = pin
         self.key_label  = key_label
@@ -306,7 +307,7 @@ class SignWorker(QThread):
             )
 
             # ── Build signature metadata ───────────────────────────────────────
-            field_name = self.fdef.name if self.fdef else "Signature"
+            field_name = self.fdef.name if self.fdef else self.field_name
             app = self.appearance
             sig_name = (cert_cn
                         if (app and app.show_name and app.name_mode == "cert")

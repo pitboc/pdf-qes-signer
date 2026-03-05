@@ -933,9 +933,23 @@ class PDFSignerApp(QMainWindow):
         self._set_status(t("status_signing"))
         tsa_url = (self.config.get("tsa", "url")
                    if self.config.getbool("tsa", "enabled") else "")
+
+        # Generate a unique name for invisible signatures
+        if fdef is None:
+            existing = ({f.name for f in self.sig_fields}
+                        | {f.name for f in self.locked_fields}
+                        | {f.name for f in self.signed_fields})
+            n = 1
+            while f"Signature_{n}" in existing:
+                n += 1
+            invis_name = f"Signature_{n}"
+        else:
+            invis_name = "Signature"
+
         self._sign_worker = SignWorker(
             self._working_bytes, out, fdef, lib, pin, key, self.appearance,
-            all_fields=list(self.sig_fields), tsa_url=tsa_url)
+            all_fields=list(self.sig_fields), tsa_url=tsa_url,
+            field_name=invis_name)
         self._sign_worker.finished.connect(self._on_sign_done)
         self._sign_worker.error.connect(self._on_sign_error)
         self._sign_worker.start()
