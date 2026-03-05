@@ -139,7 +139,11 @@ class Pkcs11ConfigDialog(QDialog):
 
         lib_row = QHBoxLayout()
         self.lib_edit = QLineEdit()
-        self.lib_edit.setPlaceholderText("/usr/lib/.../opensc-pkcs11.so")
+        self.lib_edit.setPlaceholderText(
+            "C:\\Windows\\System32\\P11TCOSSigGx64.dll"
+            if sys.platform == "win32"
+            else "/usr/lib/.../opensc-pkcs11.so"
+        )
         bb = QPushButton(t("cfg_lib_browse"))
         bb.setFixedWidth(36)
         bb.clicked.connect(self._browse_lib)
@@ -208,8 +212,12 @@ class Pkcs11ConfigDialog(QDialog):
 
     def _browse_lib(self) -> None:
         start = self.config.get("paths", "last_lib_dir")
+        if sys.platform == "win32":
+            lib_filter = "DLL (*.dll);;Shared Libraries (*.so *.so.*);;All Files (*)"
+        else:
+            lib_filter = t("dlg_lib_filter")
         path, _ = QFileDialog.getOpenFileName(
-            self, t("dlg_browse_lib"), start, t("dlg_lib_filter"))
+            self, t("dlg_browse_lib"), start, lib_filter)
         if path:
             self.lib_edit.setText(path)
             self.config.set("paths", "last_lib_dir", str(Path(path).parent))

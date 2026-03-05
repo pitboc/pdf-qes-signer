@@ -39,13 +39,15 @@ class AppConfig:
 
     DEFAULTS: dict[str, dict[str, str]] = {
         "pkcs11": {
-            "lib_path":  "/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so",
+            "lib_path": ("P11TCOSSigGx64.dll"
+                         if sys.platform == "win32"
+                         else "/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so"),
             "key_label": "",
         },
         "paths": {
             "last_open_dir": str(Path.home()),
             "last_save_dir": str(Path.home()),
-            "last_lib_dir":  "/usr/lib",
+            "last_lib_dir":  ("." if sys.platform == "win32" else "/usr/lib"),
             "last_img_dir":  str(Path.home()),
         },
         "app": {
