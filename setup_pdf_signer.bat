@@ -1,12 +1,12 @@
 @echo off
-REM PDF QES Signer – Windows Setup Script
+REM PDF QES Signer - Windows Setup Script
 REM Run this script once to create the virtual environment and install dependencies.
 
 setlocal
 
 echo.
 echo ============================================================
-echo  PDF QES Signer – Setup
+echo  PDF QES Signer - Setup
 echo ============================================================
 echo.
 
