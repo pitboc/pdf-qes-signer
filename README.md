@@ -3,17 +3,54 @@
 A GUI tool for visually placing signature fields in PDF documents and applying
 **qualified electronic signatures (QES)** via PKCS#11 / smartcard.
 
+## Background and motivation
+
+Qualified electronic signatures (QES) in Germany require a signature card issued
+by an accredited trust service provider. Deutsche Telekom Security GmbH issues
+TCOS-based QES cards (model **TCOS 3.0 SigG**) under the Telesec brand.
+
+On Linux, these cards are **not properly supported by OpenSC** – the standard
+open-source PKCS#11 middleware. The proprietary PKCS#11 library provided by
+Deutsche Telekom (`libpkcs11tcos_SigG_PCSC.so`) is required instead.
+
+At the time this project was started, **no free signing software for Linux**
+was available that worked reliably with these cards and allowed visually placing
+signature fields in a PDF. PDF QES Signer was created to fill this gap.
+
+### Tested hardware
+
+| Property          | Value                          |
+|-------------------|--------------------------------|
+| Token manufacturer | DEUTSCHE TELEKOM SECURITY GMBH |
+| Token model       | TCOS 3.0 SigG                  |
+| Hardware version  | 4.32                           |
+| Firmware version  | 3.0                            |
+| PKCS#11 library   | `libpkcs11tcos_SigG_PCSC.so`   |
+
+The library is distributed by Deutsche Telekom together with the card and is
+**not** included in this repository.  You can verify your card is recognized
+with:
+
+```bash
+pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
+```
+
 ## Features
 
 - Open PDF files and navigate multi-page documents
 - Draw signature fields by left-click and drag on the PDF canvas
-- Right-click a field to delete it
+- Click an existing field to select it; right-click to delete it
+- Selected field is highlighted with a bold border and shows the visual appearance preview
 - Configure visual appearance: optional PNG image (with transparency),
   signer name, location, reason, and date
-- Apply a QES signature via any PKCS#11-compatible smartcard or USB token
-  (e.g. CyberJack, Gemalto, OpenSC-supported cards)
+- Apply a QES signature via any PKCS#11-compatible smartcard or USB token —
+  specifically tested and developed for **Telesec TCOS 3.0 SigG** cards
 - PIN-pad support: leave the PIN field empty to use the hardware PIN pad;
   the PKCS#11 session is kept open so the PIN is requested only once
+- Chain multiple signatures: after signing, the signed PDF is reloaded
+  automatically so further fields can be signed in sequence
+- Existing unsigned fields in already-signed PDFs are shown as locked (orange)
+  and protected from modification to preserve the existing signature hash
 - Bilingual UI: German and English (switchable at runtime)
 - Persistent configuration in `~/.config/pdf-signer/pdf_signer.ini`
 
@@ -57,7 +94,9 @@ python -m pdf_signer [PDF_FILE]
 2. **Draw** one or more signature fields by left-click + drag on the page.
 3. **Configure** the visual appearance in the right panel (Text / Image tabs).
 4. **Configure** the PKCS#11 token via *Settings → Configure PKCS#11 / Token*:
-   - Enter the path to your PKCS#11 library (e.g. `/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so`).
+   - Enter the path to your PKCS#11 library.
+     - Telesec TCOS card: `/path/to/libpkcs11tcos_SigG_PCSC.so`
+     - Other cards: e.g. `/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so`
    - Click *Test Token* to read key and certificate labels.
    - Select the correct key label.
 5. **Enter your PIN** in the Token / PIN panel (or leave empty for PIN-pad).
