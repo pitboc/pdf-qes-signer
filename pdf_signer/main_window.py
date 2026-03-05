@@ -108,9 +108,6 @@ class PDFSignerApp(QMainWindow):
         self._act_pkcs11     = QAction(self)
         self._act_pkcs11.triggered.connect(self.open_pkcs11_config)
         self._menu_settings.addAction(self._act_pkcs11)
-        self._act_appearance = QAction(self)
-        self._act_appearance.triggered.connect(self.open_appearance_config)
-        self._menu_settings.addAction(self._act_appearance)
 
         # Language sub-menu
         self._menu_lang = self.menuBar().addMenu("")
@@ -210,6 +207,11 @@ class PDFSignerApp(QMainWindow):
         tl2.addRow("", self._pin_hint_lbl)
         rl.addWidget(self._token_group)
 
+        # TSA toggle
+        self._tsa_chk = QCheckBox()
+        self._tsa_chk.toggled.connect(self._on_tsa_toggled)
+        rl.addWidget(self._tsa_chk)
+
         # Inline appearance panel
         self._app_group = QGroupBox()
         ag = QVBoxLayout(self._app_group)
@@ -228,6 +230,7 @@ class PDFSignerApp(QMainWindow):
         splitter.setStretchFactor(1, 1)
 
         self._load_appearance_panel()
+        self._tsa_chk.setChecked(self.config.getbool("tsa", "enabled"))
 
     # ── Language support ──────────────────────────────────────────────────
 
@@ -250,7 +253,6 @@ class PDFSignerApp(QMainWindow):
         self._act_sign.setText(t("menu_sign_document"))
         self._menu_settings.setTitle(t("menu_settings"))
         self._act_pkcs11.setText(t("menu_settings_pkcs11"))
-        self._act_appearance.setText(t("menu_settings_appearance"))
         self._menu_lang.setTitle(t("menu_settings_language"))
         self._menu_help.setTitle(t("menu_help"))
         self._act_about.setText(t("menu_help_about"))
@@ -267,6 +269,7 @@ class PDFSignerApp(QMainWindow):
         self._pin_lbl_widget.setText(t("pin_label"))
         self._pin_hint_lbl.setText(t("pin_hint"))
         self._app_group.setTitle(t("panel_appearance"))
+        self._tsa_chk.setText(t("tsa_enabled_label"))
         # Appearance panel – retranslate all inline widgets
         self._ap_chk_name.setText(t("app_name_label"))
         self._ap_chk_loc.setText(t("app_location_label"))
@@ -878,10 +881,12 @@ class PDFSignerApp(QMainWindow):
 
     def open_pkcs11_config(self) -> None:
         Pkcs11ConfigDialog(self, self.config).exec()
+        # Sync TSA checkbox in case the user changed the URL in the dialog
+        self._tsa_chk.setChecked(self.config.getbool("tsa", "enabled"))
 
-    def open_appearance_config(self) -> None:
-        # Appearance is configured inline in the right panel; no separate dialog.
-        pass
+    def _on_tsa_toggled(self, enabled: bool) -> None:
+        self.config.setbool("tsa", "enabled", enabled)
+        self.config.save()
 
     # ── Signing ───────────────────────────────────────────────────────────
 

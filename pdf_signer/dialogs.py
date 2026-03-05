@@ -128,10 +128,15 @@ class Pkcs11ConfigDialog(QDialog):
 
     def _build_ui(self) -> None:
         lay  = QVBoxLayout(self)
+
+        tabs = QTabWidget()
+
+        # ── Tab 1: PKCS#11 ────────────────────────────────────────────────
+        pkcs11_tab = QWidget()
+        ptab_lay   = QVBoxLayout(pkcs11_tab)
         form = QFormLayout()
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
-        # Library path row
         lib_row = QHBoxLayout()
         self.lib_edit = QLineEdit()
         self.lib_edit.setPlaceholderText("/usr/lib/.../opensc-pkcs11.so")
@@ -142,14 +147,12 @@ class Pkcs11ConfigDialog(QDialog):
         lib_row.addWidget(bb)
         form.addRow(t("cfg_lib_label"), lib_row)
 
-        # Key label row
         self.key_edit = QLineEdit()
         hint = QLabel(t("cfg_key_hint"))
         hint.setStyleSheet("color: gray; font-size: 10px;")
         form.addRow(t("cfg_key_label"), self.key_edit)
         form.addRow("", hint)
 
-        # PIN row (for token test only – not saved)
         self.pin_edit = QLineEdit()
         self.pin_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self.pin_edit.setPlaceholderText(t("cfg_pin_placeholder"))
@@ -157,19 +160,7 @@ class Pkcs11ConfigDialog(QDialog):
         pin_hint.setStyleSheet("color: gray; font-size: 10px;")
         form.addRow(t("cfg_pin_label"), self.pin_edit)
         form.addRow("", pin_hint)
-        lay.addLayout(form)
-
-        # TSA section
-        tsa_grp = QGroupBox(t("cfg_tsa_group"))
-        tsa_lay = QFormLayout(tsa_grp)
-        tsa_lay.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        self.tsa_enabled = QCheckBox()
-        self.tsa_url_edit = QLineEdit()
-        self.tsa_url_edit.setPlaceholderText("http://tsa.baltstamp.lt")
-        self.tsa_enabled.toggled.connect(self.tsa_url_edit.setEnabled)
-        tsa_lay.addRow(t("cfg_tsa_enabled"), self.tsa_enabled)
-        tsa_lay.addRow(t("cfg_tsa_url"), self.tsa_url_edit)
-        lay.addWidget(tsa_grp)
+        ptab_lay.addLayout(form)
 
         test_row = QHBoxLayout()
         test_no_pin = QPushButton(t("cfg_test_btn_no_pin"))
@@ -178,11 +169,28 @@ class Pkcs11ConfigDialog(QDialog):
         test_with_pin.clicked.connect(lambda: self._test_token(with_pin=True))
         test_row.addWidget(test_no_pin)
         test_row.addWidget(test_with_pin)
-        lay.addLayout(test_row)
+        ptab_lay.addLayout(test_row)
 
         self.status_lbl = QLabel("")
         self.status_lbl.setWordWrap(True)
-        lay.addWidget(self.status_lbl)
+        ptab_lay.addWidget(self.status_lbl)
+        ptab_lay.addStretch()
+        tabs.addTab(pkcs11_tab, t("cfg_tab_pkcs11"))
+
+        # ── Tab 2: TSA ────────────────────────────────────────────────────
+        tsa_tab = QWidget()
+        tsa_form = QFormLayout(tsa_tab)
+        tsa_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        self.tsa_url_edit = QLineEdit()
+        self.tsa_url_edit.setPlaceholderText("http://tsa.baltstamp.lt")
+        tsa_hint = QLabel(t("cfg_tsa_hint"))
+        tsa_hint.setStyleSheet("color: gray; font-size: 10px;")
+        tsa_hint.setWordWrap(True)
+        tsa_form.addRow(t("cfg_tsa_url"), self.tsa_url_edit)
+        tsa_form.addRow("", tsa_hint)
+        tabs.addTab(tsa_tab, t("cfg_tab_tsa"))
+
+        lay.addWidget(tabs)
 
         bb2 = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save |
@@ -196,10 +204,7 @@ class Pkcs11ConfigDialog(QDialog):
     def _load_values(self) -> None:
         self.lib_edit.setText(self.config.get("pkcs11", "lib_path"))
         self.key_edit.setText(self.config.get("pkcs11", "key_label"))
-        tsa_on = self.config.getbool("tsa", "enabled")
-        self.tsa_enabled.setChecked(tsa_on)
         self.tsa_url_edit.setText(self.config.get("tsa", "url"))
-        self.tsa_url_edit.setEnabled(tsa_on)
 
     def _browse_lib(self) -> None:
         start = self.config.get("paths", "last_lib_dir")
@@ -212,7 +217,6 @@ class Pkcs11ConfigDialog(QDialog):
     def _save_and_close(self) -> None:
         self.config.set("pkcs11", "lib_path",  self.lib_edit.text().strip())
         self.config.set("pkcs11", "key_label", self.key_edit.text().strip())
-        self.config.setbool("tsa", "enabled", self.tsa_enabled.isChecked())
         self.config.set("tsa", "url", self.tsa_url_edit.text().strip())
         self.config.save()
         self.accept()
