@@ -212,10 +212,14 @@ class Pkcs11ConfigDialog(QDialog):
             token = slots[0].get_token()
 
             if with_pin:
-                # Use PIN from the dialog's own PIN field; empty = PIN pad
+                # Use PIN from the dialog's own PIN field; empty = PIN pad.
+                # token.open(user_pin=None) does NOT call C_Login at all, so
+                # we open the session first and login explicitly.  Passing None
+                # to session.login() sends a NULL pin to C_Login, which triggers
+                # the hardware PIN pad on tokens with CKF_PROTECTED_AUTHENTICATION_PATH.
                 pin = self.pin_edit.text().strip()
-                # Open with PIN – private keys are directly readable
-                with token.open(user_pin=pin if pin else None, rw=True) as session:
+                with token.open(rw=True) as session:
+                    session.login(user_pin=pin if pin else None)
                     priv_keys = list(session.get_objects(
                         {p11.Attribute.CLASS: p11.ObjectClass.PRIVATE_KEY}))
                     key_labels = []
