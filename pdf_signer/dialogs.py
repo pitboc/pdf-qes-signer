@@ -218,13 +218,18 @@ class Pkcs11ConfigDialog(QDialog):
                 # to session.login() sends a NULL pin to C_Login, which triggers
                 # the hardware PIN pad on tokens with CKF_PROTECTED_AUTHENTICATION_PATH.
                 pin = self.pin_edit.text().strip()
-                with token.open(rw=True) as session:
-                    # python-pkcs11 has no public login() method.
-                    # _login(UserType.USER, None) calls C_Login with a NULL pin,
-                    # which triggers the hardware PIN pad on tokens with
-                    # CKF_PROTECTED_AUTHENTICATION_PATH (e.g. Telesec TCOS).
-                    session._login(p11.UserType.USER,
-                                   pin if pin else None)
+                if not pin:
+                    # python-pkcs11 wraps C_Login inside token.open() and
+                    # exposes no separate login method, so there is no way
+                    # to trigger the hardware PIN pad from the test dialog.
+                    # Signing via pyhanko works because pyhanko handles this
+                    # internally.  Inform the user and abort the test.
+                    QMessageBox.information(
+                        self, t("cfg_pinpad_test_title"),
+                        t("cfg_pinpad_test_msg"))
+                    self.status_lbl.setText("")
+                    return
+                with token.open(rw=True, user_pin=pin) as session:
                     priv_keys = list(session.get_objects(
                         {p11.Attribute.CLASS: p11.ObjectClass.PRIVATE_KEY}))
                     key_labels = []

@@ -139,7 +139,16 @@ TRANSLATIONS: dict[str, str] = {
     "cfg_pin_placeholder": "leave empty for PIN pad",
     "cfg_pin_hint": "↑ for token test only, not saved",
     "cfg_test_btn_no_pin": "🔑 Test Token (no PIN)",
-    "cfg_test_btn_with_pin": "🔑 Test Token (with PIN / PIN pad)",
+    "cfg_test_btn_with_pin": "🔑 Test Token (with PIN)",
+    "cfg_pinpad_test_title": "PIN pad not testable",
+    "cfg_pinpad_test_msg": (
+        "The PIN pad cannot be triggered in the token test,\n"
+        "because python-pkcs11 does not expose a separate login call.\n\n"
+        "Alternatives:\n"
+        "• Enter your PIN here to list private keys directly\n"
+        "• 'Test Token (no PIN)' – determines key label without PIN\n"
+        "• PIN pad works normally during signing"
+    ),
     "cfg_save_btn": "Save",
     "cfg_cancel_btn": "Cancel",
     "dlg_browse_lib": "Choose PKCS#11 Library",
