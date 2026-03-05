@@ -165,7 +165,7 @@ class Pkcs11ConfigDialog(QDialog):
         tsa_lay.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         self.tsa_enabled = QCheckBox()
         self.tsa_url_edit = QLineEdit()
-        self.tsa_url_edit.setPlaceholderText("http://tsa.baltestamp.lt")
+        self.tsa_url_edit.setPlaceholderText("http://tsa.baltstamp.lt")
         self.tsa_enabled.toggled.connect(self.tsa_url_edit.setEnabled)
         tsa_lay.addRow(t("cfg_tsa_enabled"), self.tsa_enabled)
         tsa_lay.addRow(t("cfg_tsa_url"), self.tsa_url_edit)

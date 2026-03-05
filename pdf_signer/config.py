@@ -48,7 +48,7 @@ class AppConfig:
         },
         "tsa": {
             "enabled": "0",
-            "url":     "http://tsa.baltestamp.lt",
+            "url":     "http://tsa.baltstamp.lt",
         },
         "appearance": {
             "image_path":    "",
