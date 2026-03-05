@@ -100,9 +100,11 @@ python -m pdf_signer [PDF_FILE]
    - Click *Test Token* to read key and certificate labels.
    - Select the correct key label.
 5. **Enter your PIN** in the Token / PIN panel (or leave empty for PIN-pad).
-6. **Sign** via *Sign → Sign document (QES)* or the toolbar button.
-   - Choose the target signature field (or "invisible" for a non-visual signature).
-   - Choose the output file location.
+6. **Select** the target signature field in the list (or "invisible" for a
+   non-visual signature) – either by clicking the field in the PDF view or
+   by selecting it in the field list on the right.
+7. **Sign** via *Sign → Sign document (QES)* or the toolbar button and
+   choose the output file location.
 
 ### Save fields without signing
 
