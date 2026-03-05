@@ -187,29 +187,28 @@ class Pkcs11ConfigDialog(QDialog):
 
     def _test_token(self) -> None:
         lib_path = self.lib_edit.text().strip()
-        # Read PIN from the main window's PIN field if accessible
-        pin = ""
-        mw = self.parent()
-        if hasattr(mw, "_pin_edit"):
-            pin = mw._pin_edit.text().strip()
         self.status_lbl.setText(t("status_token_reading"))
         QApplication.processEvents()
         try:
             import pkcs11 as p11
-            lib  = p11.lib(lib_path)
+            lib   = p11.lib(lib_path)
             slots = lib.get_slots(token_present=True)
             if not slots:
                 raise RuntimeError("No token found.")
             token = slots[0].get_token()
-            with token.open(user_pin=pin if pin else None, rw=True) as session:
-                keys = list(session.get_objects(
-                    {p11.Attribute.CLASS: p11.ObjectClass.PRIVATE_KEY}))
-                key_labels = []
-                for k in keys:
+
+            # Open without PIN – public keys and certificates are accessible
+            # without authentication on TCOS cards and most PKCS#11 tokens.
+            with token.open() as session:
+                pub_keys = list(session.get_objects(
+                    {p11.Attribute.CLASS: p11.ObjectClass.PUBLIC_KEY}))
+                pub_labels = []
+                for k in pub_keys:
                     try:
-                        key_labels.append(k[p11.Attribute.LABEL])
+                        pub_labels.append(k[p11.Attribute.LABEL])
                     except Exception:
-                        key_labels.append("(unknown)")
+                        pub_labels.append("(unknown)")
+
                 certs = list(session.get_objects(
                     {p11.Attribute.CLASS: p11.ObjectClass.CERTIFICATE}))
                 cert_labels = []
@@ -219,9 +218,18 @@ class Pkcs11ConfigDialog(QDialog):
                     except Exception:
                         cert_labels.append("(no label)")
 
+            # Derive private key labels from public key labels.
+            # Telesec TCOS cards use the convention "Public X" / "Private X".
+            key_labels = []
+            for lbl in pub_labels:
+                if lbl.startswith("Public "):
+                    key_labels.append("Private " + lbl[len("Public "):])
+                else:
+                    key_labels.append(lbl)
+
             status = t("status_token_ok",
                        label=token.label.strip(),
-                       keys=len(keys), certs=len(certs))
+                       keys=len(key_labels), certs=len(certs))
             self.status_lbl.setText(status)
 
             # Auto-fill key label if there is exactly one key
