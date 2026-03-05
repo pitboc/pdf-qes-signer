@@ -150,9 +150,14 @@ class Pkcs11ConfigDialog(QDialog):
         form.addRow("", hint)
         lay.addLayout(form)
 
-        test_btn = QPushButton(t("cfg_test_btn"))
-        test_btn.clicked.connect(self._test_token)
-        lay.addWidget(test_btn)
+        test_row = QHBoxLayout()
+        test_no_pin = QPushButton(t("cfg_test_btn_no_pin"))
+        test_no_pin.clicked.connect(lambda: self._test_token(with_pin=False))
+        test_with_pin = QPushButton(t("cfg_test_btn_with_pin"))
+        test_with_pin.clicked.connect(lambda: self._test_token(with_pin=True))
+        test_row.addWidget(test_no_pin)
+        test_row.addWidget(test_with_pin)
+        lay.addLayout(test_row)
 
         self.status_lbl = QLabel("")
         self.status_lbl.setWordWrap(True)
@@ -185,7 +190,7 @@ class Pkcs11ConfigDialog(QDialog):
         self.config.save()
         self.accept()
 
-    def _test_token(self) -> None:
+    def _test_token(self, with_pin: bool = False) -> None:
         lib_path = self.lib_edit.text().strip()
         self.status_lbl.setText(t("status_token_reading"))
         QApplication.processEvents()
@@ -197,35 +202,61 @@ class Pkcs11ConfigDialog(QDialog):
                 raise RuntimeError("No token found.")
             token = slots[0].get_token()
 
-            # Open without PIN – public keys and certificates are accessible
-            # without authentication on TCOS cards and most PKCS#11 tokens.
-            with token.open() as session:
-                pub_keys = list(session.get_objects(
-                    {p11.Attribute.CLASS: p11.ObjectClass.PUBLIC_KEY}))
-                pub_labels = []
-                for k in pub_keys:
-                    try:
-                        pub_labels.append(k[p11.Attribute.LABEL])
-                    except Exception:
-                        pub_labels.append("(unknown)")
+            if with_pin:
+                # Read PIN from the main window's PIN field
+                pin = ""
+                mw = self.parent()
+                if hasattr(mw, "_pin_edit"):
+                    pin = mw._pin_edit.text().strip()
+                # Open with PIN – private keys are directly readable
+                with token.open(user_pin=pin if pin else None, rw=True) as session:
+                    priv_keys = list(session.get_objects(
+                        {p11.Attribute.CLASS: p11.ObjectClass.PRIVATE_KEY}))
+                    key_labels = []
+                    for k in priv_keys:
+                        try:
+                            key_labels.append(k[p11.Attribute.LABEL])
+                        except Exception:
+                            key_labels.append("(unknown)")
 
-                certs = list(session.get_objects(
-                    {p11.Attribute.CLASS: p11.ObjectClass.CERTIFICATE}))
-                cert_labels = []
-                for c in certs:
-                    try:
-                        cert_labels.append(c[p11.Attribute.LABEL])
-                    except Exception:
-                        cert_labels.append("(no label)")
+                    certs = list(session.get_objects(
+                        {p11.Attribute.CLASS: p11.ObjectClass.CERTIFICATE}))
+                    cert_labels = []
+                    for c in certs:
+                        try:
+                            cert_labels.append(c[p11.Attribute.LABEL])
+                        except Exception:
+                            cert_labels.append("(no label)")
+            else:
+                # Open without PIN – public keys and certificates are accessible
+                # without authentication on TCOS cards and most PKCS#11 tokens.
+                with token.open() as session:
+                    pub_keys = list(session.get_objects(
+                        {p11.Attribute.CLASS: p11.ObjectClass.PUBLIC_KEY}))
+                    pub_labels = []
+                    for k in pub_keys:
+                        try:
+                            pub_labels.append(k[p11.Attribute.LABEL])
+                        except Exception:
+                            pub_labels.append("(unknown)")
 
-            # Derive private key labels from public key labels.
-            # Telesec TCOS cards use the convention "Public X" / "Private X".
-            key_labels = []
-            for lbl in pub_labels:
-                if lbl.startswith("Public "):
-                    key_labels.append("Private " + lbl[len("Public "):])
-                else:
-                    key_labels.append(lbl)
+                    certs = list(session.get_objects(
+                        {p11.Attribute.CLASS: p11.ObjectClass.CERTIFICATE}))
+                    cert_labels = []
+                    for c in certs:
+                        try:
+                            cert_labels.append(c[p11.Attribute.LABEL])
+                        except Exception:
+                            cert_labels.append("(no label)")
+
+                # Derive private key labels from public key labels.
+                # Telesec TCOS cards use the convention "Public X" / "Private X".
+                key_labels = []
+                for lbl in pub_labels:
+                    if lbl.startswith("Public "):
+                        key_labels.append("Private " + lbl[len("Public "):])
+                    else:
+                        key_labels.append(lbl)
 
             status = t("status_token_ok",
                        label=token.label.strip(),
