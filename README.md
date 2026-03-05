@@ -69,22 +69,38 @@ pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
 ```bash
 git clone https://codeberg.org/pitbo/pdf-qes-signer.git
 cd pdf-qes-signer
+```
+
+**Linux / macOS:**
+```bash
 ./setup_pdf_signer.sh
 ```
 
+**Windows:**
+```cmd
+setup_pdf_signer.bat
+```
+
 The setup script creates a `.venv/` virtual environment, installs all
-dependencies, and generates a `start_signer.sh` launcher.
+dependencies, and generates a launcher script.
 
 ## Usage
 
+**Linux / macOS:**
 ```bash
 ./start_signer.sh [PDF_FILE]
+```
+
+**Windows:**
+```cmd
+start_signer.bat [PDF_FILE]
 ```
 
 Or manually:
 
 ```bash
-source .venv/bin/activate
+source .venv/bin/activate        # Linux/macOS
+.venv\Scripts\activate.bat       # Windows
 python -m pdf_signer [PDF_FILE]
 ```
 

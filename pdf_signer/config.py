@@ -9,6 +9,8 @@ Provides:
 
 from __future__ import annotations
 
+import os
+import sys
 import configparser
 from pathlib import Path
 
@@ -25,7 +27,10 @@ PDF_STANDARD_FONTS: list[tuple[str, str, float, str]] = [
     ("Courier Oblique",   "Courier-Oblique",    0.6,  "Courier New"),
 ]
 
-CONFIG_DIR  = Path.home() / ".config" / "pdf-signer"
+if sys.platform == "win32":
+    CONFIG_DIR = Path(os.environ.get("APPDATA", Path.home())) / "pdf-signer"
+else:
+    CONFIG_DIR = Path.home() / ".config" / "pdf-signer"
 CONFIG_FILE = CONFIG_DIR / "pdf_signer.ini"
 
 
