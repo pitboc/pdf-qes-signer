@@ -219,7 +219,12 @@ class Pkcs11ConfigDialog(QDialog):
                 # the hardware PIN pad on tokens with CKF_PROTECTED_AUTHENTICATION_PATH.
                 pin = self.pin_edit.text().strip()
                 with token.open(rw=True) as session:
-                    session.login(user_pin=pin if pin else None)
+                    # python-pkcs11 has no public login() method.
+                    # _login(UserType.USER, None) calls C_Login with a NULL pin,
+                    # which triggers the hardware PIN pad on tokens with
+                    # CKF_PROTECTED_AUTHENTICATION_PATH (e.g. Telesec TCOS).
+                    session._login(p11.UserType.USER,
+                                   pin if pin else None)
                     priv_keys = list(session.get_objects(
                         {p11.Attribute.CLASS: p11.ObjectClass.PRIVATE_KEY}))
                     key_labels = []
