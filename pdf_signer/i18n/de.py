@@ -15,6 +15,7 @@ TRANSLATIONS: dict[str, str] = {
     "menu_settings_language": "Sprache / Language",
     "menu_help": "Hilfe",
     "menu_help_about": "Über…",
+    "menu_help_license": "Lizenz…",
     # Toolbar
     "tb_open": "PDF öffnen",
     "tb_prev": "◀",
@@ -76,6 +77,7 @@ TRANSLATIONS: dict[str, str] = {
     "dlg_field_name_title": "Feldname",
     "dlg_field_name_prompt": "Name des Signaturfeldes:",
     "dlg_field_name_default": "Sig_{page}_{count}",
+    "dlg_field_name_duplicate": "Ein Feld mit dem Namen '{name}' existiert bereits. Bitte einen anderen Namen wählen.",
     "dlg_delete_title": "Löschen",
     "dlg_delete_msg": "Signaturfeld '{name}' löschen?",
     "dlg_delete_sel_msg": "Feld '{name}' wirklich löschen?",
@@ -117,6 +119,12 @@ TRANSLATIONS: dict[str, str] = {
         "Vollständiger Traceback in der Konsole (stderr)."
     ),
     "dlg_field_already_signed": "Dieses Feld ist bereits signiert und kann nicht erneut verwendet werden.",
+    "dlg_locked_field_title": "Feld gesperrt",
+    "dlg_locked_field_msg": (
+        "Das Feld '{name}' ist durch eine bestehende Signatur im Dokument geschützt\n"
+        "und kann nicht gelöscht oder verschoben werden.\n\n"
+        "Es kann nur signiert werden."
+    ),
     "dlg_pyhanko_missing": "pyhanko ist nicht installiert.\npip install pyhanko python-pkcs11",
     "dlg_choose_field_title": "Signaturfeld wählen",
     "dlg_choose_field_label": "Mit welchem Feld signieren?",
@@ -161,16 +169,47 @@ TRANSLATIONS: dict[str, str] = {
     "ap_preview_hint": "Für Vorschau bitte Signaturfeld einfügen.",
     "ap_browse_img": "Signaturbild wählen",
     "ap_img_filter": "Bilder (*.png *.jpg *.jpeg *.bmp);;Alle Dateien (*)",
-    # About
+    # About / License
     "about_title": "Über PDF QES Signer",
     "about_msg": (
-        "PDF QES Signer v0.1\n\n"
+        "PDF QES Signer  v{version}  (commit: {commit})\n\n"
         "Visuelles Platzieren von Signaturfeldern\n"
         "und qualifizierte elektronische Signatur (QES)\n"
         "via PKCS#11 / Smartcard.\n\n"
+        "Lizenz: GNU General Public License v3 oder später (GPL-3.0-or-later)\n\n"
         "Benötigte Pakete:\n"
         "  pip install pymupdf pyhanko python-pkcs11 Pillow PyQt6 cryptography\n\n"
-        "Linksklick + Ziehen → Signaturfeld zeichnen\n"
-        "Rechtsklick auf Feld → Feld löschen"
+        "Linksklick + Ziehen  →  Signaturfeld zeichnen\n"
+        "Rechtsklick auf Feld →  Optionen / Löschen"
     ),
+    "license_title": "Lizenzinformationen",
+    "license_msg": (
+        "PDF QES Signer\n"
+        "Copyright (C) PDF QES Signer contributors\n\n"
+        "Dieses Programm ist freie Software: Sie können es unter den Bedingungen\n"
+        "der GNU General Public License, wie von der Free Software Foundation\n"
+        "veröffentlicht, weitergeben und/oder modifizieren, entweder gemäß\n"
+        "Version 3 der Lizenz oder (nach Ihrer Wahl) jeder späteren Version.\n\n"
+        "Dieses Programm wird in der Hoffnung bereitgestellt, dass es nützlich ist,\n"
+        "aber OHNE JEDE GEWÄHR; sogar ohne die implizite Gewähr der MARKTFÄHIGKEIT\n"
+        "oder EIGNUNG FÜR EINEN BESTIMMTEN ZWECK.\n"
+        "Siehe die GNU General Public License für weitere Details.\n\n"
+        "Den vollständigen Lizenztext finden Sie unter:\n"
+        "  https://www.gnu.org/licenses/gpl-3.0.html\n\n"
+        "──────────────────────────────────────────────\n"
+        "Verwendete Bibliotheken:\n\n"
+        "  PyMuPDF (fitz)   GNU AGPL v3\n"
+        "    https://pymupdf.readthedocs.io\n\n"
+        "  pyhanko          MIT License\n"
+        "    https://pyhanko.readthedocs.io\n\n"
+        "  PyQt6            GPL v3 / Kommerziell\n"
+        "    https://www.riverbankcomputing.com\n\n"
+        "  python-pkcs11    MIT License\n"
+        "    https://python-pkcs11.readthedocs.io\n\n"
+        "  Pillow           HPND License\n"
+        "    https://python-pillow.org\n\n"
+        "  cryptography     Apache 2.0 / BSD\n"
+        "    https://cryptography.io\n"
+    ),
+    "license_close": "Schließen",
 }

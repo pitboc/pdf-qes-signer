@@ -78,6 +78,7 @@ class PDFViewWidget(QWidget):
     from PyQt6.QtCore import pyqtSignal
     field_added   = pyqtSignal(object)
     field_deleted = pyqtSignal(object)
+    field_clicked = pyqtSignal(object)  # emitted when user clicks an existing field
 
     def __init__(self, appearance: SigAppearance, parent=None) -> None:
         super().__init__(parent)
@@ -92,6 +93,7 @@ class PDFViewWidget(QWidget):
         self._drag_start: Optional[QPointF] = None
         self._drag_end:   Optional[QPointF] = None
         self._sig_fields:    list[SignatureFieldDef] = []
+        self._locked_fields: list[SignatureFieldDef] = []
         self._signed_fields: list[SignatureFieldDef] = []
         self._current_page = 0
         self._selected_field: Optional[SignatureFieldDef] = None
@@ -99,20 +101,22 @@ class PDFViewWidget(QWidget):
     def set_page(self, page: fitz.Page,
                  sig_fields: list[SignatureFieldDef],
                  current_page: int,
+                 locked_fields: list[SignatureFieldDef] | None = None,
                  signed_fields: list[SignatureFieldDef] | None = None) -> None:
         """Render *page* at ZOOM and store the field lists for painting."""
         mat = fitz.Matrix(self.ZOOM, self.ZOOM)
         pix = page.get_pixmap(matrix=mat, alpha=False)
         img = QImage(pix.samples, pix.width, pix.height,
                      pix.stride, QImage.Format.Format_RGB888)
-        self._pixmap       = QPixmap.fromImage(img)
-        self._img_w        = pix.width
-        self._img_h        = pix.height
-        self._page_w       = page.rect.width
-        self._page_h       = page.rect.height
-        self._sig_fields   = sig_fields
+        self._pixmap        = QPixmap.fromImage(img)
+        self._img_w         = pix.width
+        self._img_h         = pix.height
+        self._page_w        = page.rect.width
+        self._page_h        = page.rect.height
+        self._sig_fields    = sig_fields
+        self._locked_fields = locked_fields or []
         self._signed_fields = signed_fields or []
-        self._current_page = current_page
+        self._current_page  = current_page
         self.setFixedSize(pix.width, pix.height)
         self.update()
 
@@ -124,6 +128,21 @@ class PDFViewWidget(QWidget):
         """Set which field shows the full appearance preview (None = none)."""
         self._selected_field = fdef
         self.update()
+
+    # ── Field hit-testing ─────────────────────────────────────────────────
+
+    def _field_at(self, pos: QPointF) -> Optional["SignatureFieldDef"]:
+        """Return the topmost field at widget position *pos*, or None."""
+        cx, cy = pos.x(), pos.y()
+        for collection in (self._locked_fields, self._sig_fields, self._signed_fields):
+            for fdef in reversed(collection):
+                if fdef.page != self._current_page:
+                    continue
+                tl = self._pdf_to_w(fdef.x1, fdef.y2)
+                br = self._pdf_to_w(fdef.x2, fdef.y1)
+                if QRectF(tl, br).normalized().contains(cx, cy):
+                    return fdef
+        return None
 
     # ── Coordinate conversion ─────────────────────────────────────────────
 
@@ -160,6 +179,11 @@ class PDFViewWidget(QWidget):
                 px = self.appearance.render_preview(
                     w, h, pixels_per_point=self.ZOOM)
                 painter.drawPixmap(rect.toRect(), px)
+                # Bold highlight border around the selected field
+                pen = QPen(QColor("#1a73e8"), 3, Qt.PenStyle.SolidLine)
+                painter.setPen(pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(rect.adjusted(1, 1, -2, -2))
             else:
                 # Other fields: light fill + dashed border only
                 painter.fillRect(rect, QColor(208, 228, 255, 30))
@@ -171,6 +195,26 @@ class PDFViewWidget(QWidget):
             painter.setFont(QFont("Arial", 7))
             painter.drawText(QPointF(rect.left() + 2, rect.top() + 10),
                              fdef.name)
+
+        # Locked unsigned fields: orange border, not deletable
+        for fdef in self._locked_fields:
+            if fdef.page != self._current_page:
+                continue
+            tl   = self._pdf_to_w(fdef.x1, fdef.y2)
+            br   = self._pdf_to_w(fdef.x2, fdef.y1)
+            rect = QRectF(tl, br).normalized()
+            is_selected = (fdef is self._selected_field)
+            painter.fillRect(rect, QColor(255, 180, 0, 50 if is_selected else 30))
+            pen_width = 3 if is_selected else 1
+            pen_style = Qt.PenStyle.SolidLine if is_selected else Qt.PenStyle.DashLine
+            pen = QPen(QColor("#e67e00"), pen_width, pen_style)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(rect.adjusted(1, 1, -1, -1))
+            painter.setPen(QPen(QColor("#e67e00")))
+            painter.setFont(QFont("Arial", 7))
+            painter.drawText(QPointF(rect.left() + 2, rect.top() + 10),
+                             f"🔒 {fdef.name}")
 
         # Already-signed fields: grey outline + lock indicator
         for fdef in self._signed_fields:
@@ -202,8 +246,13 @@ class PDFViewWidget(QWidget):
 
     def mousePressEvent(self, ev) -> None:
         if ev.button() == Qt.MouseButton.LeftButton:
-            self._drag_start = QPointF(ev.position())
-            self._drag_end   = None
+            fdef = self._field_at(ev.position())
+            if fdef is not None:
+                # Click on an existing field → select it, don't start a drag
+                self.field_clicked.emit(fdef)
+            else:
+                self._drag_start = QPointF(ev.position())
+                self._drag_end   = None
         elif ev.button() == Qt.MouseButton.RightButton:
             self._right_click(ev.position())
 
@@ -211,6 +260,13 @@ class PDFViewWidget(QWidget):
         if self._drag_start:
             self._drag_end = QPointF(ev.position())
             self.update()
+        else:
+            # Change cursor when hovering over a clickable field
+            fdef = self._field_at(ev.position())
+            self.setCursor(
+                Qt.CursorShape.PointingHandCursor if fdef is not None
+                else Qt.CursorShape.CrossCursor
+            )
 
     def mouseReleaseEvent(self, ev) -> None:
         if ev.button() != Qt.MouseButton.LeftButton or not self._drag_start:
@@ -227,13 +283,32 @@ class PDFViewWidget(QWidget):
 
         px0, py0 = self._w_to_pdf(min(x0, x1), min(y0, y1))
         px1, py1 = self._w_to_pdf(max(x0, x1), max(y0, y1))
-        count = sum(1 for f in self._sig_fields if f.page == self._current_page)
-        default = t("dlg_field_name_default",
-                    page=self._current_page + 1, count=count + 1)
+        # Find the first unused default name for this page
+        all_names = ({f.name for f in self._sig_fields}
+                     | {f.name for f in self._locked_fields}
+                     | {f.name for f in self._signed_fields})
+        n = sum(1 for f in self._sig_fields if f.page == self._current_page) + 1
+        while True:
+            candidate = t("dlg_field_name_default",
+                          page=self._current_page + 1, count=n)
+            if candidate not in all_names:
+                break
+            n += 1
+        default = candidate
         name, ok = QInputDialog.getText(
             self, t("dlg_field_name_title"), t("dlg_field_name_prompt"),
             text=default)
         if not ok or not name:
+            return
+
+        # Reject duplicate names (check against all field categories)
+        existing_names = ({f.name for f in self._sig_fields}
+                          | {f.name for f in self._locked_fields}
+                          | {f.name for f in self._signed_fields})
+        if name in existing_names:
+            QMessageBox.warning(
+                self, t("dlg_field_name_title"),
+                t("dlg_field_name_duplicate", name=name))
             return
 
         fdef = SignatureFieldDef(self._current_page, px0, py0, px1, py1, name)
@@ -242,8 +317,19 @@ class PDFViewWidget(QWidget):
         self.field_added.emit(fdef)
 
     def _right_click(self, pos: QPointF) -> None:
-        """Delete a signature field under the cursor after user confirmation."""
+        """Delete a free signature field, or inform the user about locked ones."""
         cx, cy = pos.x(), pos.y()
+        # Check locked fields first (they are visually on top of free fields)
+        for fdef in reversed(self._locked_fields):
+            if fdef.page != self._current_page:
+                continue
+            tl = self._pdf_to_w(fdef.x1, fdef.y2)
+            br = self._pdf_to_w(fdef.x2, fdef.y1)
+            if QRectF(tl, br).normalized().contains(cx, cy):
+                QMessageBox.information(
+                    self, t("dlg_locked_field_title"),
+                    t("dlg_locked_field_msg", name=fdef.name))
+                return
         for fdef in reversed(self._sig_fields):
             if fdef.page != self._current_page:
                 continue

@@ -9,6 +9,7 @@ Provides:
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -61,8 +62,10 @@ class PDFSignerApp(QMainWindow):
         self.appearance   = SigAppearance(config)
         self.pdf_doc:     Optional[fitz.Document] = None
         self.pdf_path     = ""
+        self._working_bytes: bytes = b""  # PDF bytes without free unsigned fields
         self.current_page = 0
-        self.sig_fields:    list[SignatureFieldDef] = []  # unsigned (new + existing)
+        self.sig_fields:    list[SignatureFieldDef] = []  # free unsigned (editable)
+        self.locked_fields: list[SignatureFieldDef] = []  # unsigned but frozen by existing sig
         self.signed_fields: list[SignatureFieldDef] = []  # already signed (display only)
         self._worker      = None
         self._sign_worker = None
@@ -125,6 +128,9 @@ class PDFSignerApp(QMainWindow):
         self._act_about = QAction(self)
         self._act_about.triggered.connect(self._show_about)
         self._menu_help.addAction(self._act_about)
+        self._act_license = QAction(self)
+        self._act_license.triggered.connect(self._show_license)
+        self._menu_help.addAction(self._act_license)
 
         # Toolbar
         tb = self.addToolBar("main")
@@ -161,6 +167,7 @@ class PDFSignerApp(QMainWindow):
         self._pdf_view = PDFViewWidget(self.appearance)
         self._pdf_view.field_added.connect(self._on_field_added)
         self._pdf_view.field_deleted.connect(self._on_field_deleted)
+        self._pdf_view.field_clicked.connect(self._on_field_clicked_in_view)
         scroll.setWidget(self._pdf_view)
         scroll.setWidgetResizable(False)
         splitter.addWidget(scroll)
@@ -247,6 +254,7 @@ class PDFSignerApp(QMainWindow):
         self._menu_lang.setTitle(t("menu_settings_language"))
         self._menu_help.setTitle(t("menu_help"))
         self._act_about.setText(t("menu_help_about"))
+        self._act_license.setText(t("menu_help_license"))
         self._tb_open.setText(t("tb_open"))
         self._tb_prev.setText(t("tb_prev"))
         self._tb_next.setText(t("tb_next"))
@@ -590,20 +598,25 @@ class PDFSignerApp(QMainWindow):
         self.statusBar().showMessage(msg)
 
     def _update_field_list(self) -> None:
+        from PyQt6.QtWidgets import QListWidgetItem
+        from PyQt6.QtGui import QColor
         prev_row = self._field_list.currentRow()
         self._field_list.clear()
         # Row 0: invisible signature option
         self._field_list.addItem(t("dlg_invisible_field"))
-        # Rows 1 … len(sig_fields): unsigned fields (signable)
+        # Rows 1 … len(sig_fields): free unsigned fields (blue, deletable)
         for fdef in self.sig_fields:
             self._field_list.addItem(
                 f"p.{fdef.page + 1}  {fdef.name}  [{fdef.x1:.0f},{fdef.y1:.0f}]")
-        # Rows after: already-signed fields (display only)
+        # Rows after sig_fields: locked unsigned fields (orange, only signable)
+        for fdef in self.locked_fields:
+            item = QListWidgetItem(
+                f"🔒 p.{fdef.page + 1}  {fdef.name}  [{fdef.x1:.0f},{fdef.y1:.0f}]")
+            item.setForeground(QColor("#e67e00"))
+            self._field_list.addItem(item)
+        # Rows after: already-signed fields (grey, display only)
         for fdef in self.signed_fields:
-            item_text = f"✓ p.{fdef.page + 1}  {fdef.name}"
-            from PyQt6.QtWidgets import QListWidgetItem
-            from PyQt6.QtGui import QColor
-            item = QListWidgetItem(item_text)
+            item = QListWidgetItem(f"✓ p.{fdef.page + 1}  {fdef.name}")
             item.setForeground(QColor("#888888"))
             self._field_list.addItem(item)
         n = self._field_list.count()
@@ -628,20 +641,42 @@ class PDFSignerApp(QMainWindow):
             return
         page = self.pdf_doc[self.current_page]
         self._pdf_view.set_page(
-            page, self.sig_fields, self.current_page, self.signed_fields)
+            page, self.sig_fields, self.current_page,
+            self.locked_fields, self.signed_fields)
         self._page_label.setText(
             f"  {self.current_page + 1} / {len(self.pdf_doc)}  ")
 
     # ── Field list selection ──────────────────────────────────────────────
 
     def _on_field_selection_changed(self, row: int) -> None:
-        """Show appearance preview only in the currently selected unsigned field."""
-        if 1 <= row <= len(self.sig_fields):
+        """Show appearance preview in the selected unsigned field (free or locked)."""
+        n_sig    = len(self.sig_fields)
+        n_locked = len(self.locked_fields)
+        if 1 <= row <= n_sig:
             self._pdf_view.set_selected_field(self.sig_fields[row - 1])
+        elif n_sig + 1 <= row <= n_sig + n_locked:
+            self._pdf_view.set_selected_field(self.locked_fields[row - n_sig - 1])
         else:
             self._pdf_view.set_selected_field(None)
 
     # ── Signals from PDFViewWidget ────────────────────────────────────────
+
+    def _on_field_clicked_in_view(self, fdef: SignatureFieldDef) -> None:
+        """Synchronize list selection when a field is clicked in the PDF view."""
+        n_sig    = len(self.sig_fields)
+        n_locked = len(self.locked_fields)
+        for i, f in enumerate(self.sig_fields):
+            if f is fdef:
+                self._field_list.setCurrentRow(i + 1)
+                return
+        for i, f in enumerate(self.locked_fields):
+            if f is fdef:
+                self._field_list.setCurrentRow(n_sig + 1 + i)
+                return
+        for i, f in enumerate(self.signed_fields):
+            if f is fdef:
+                self._field_list.setCurrentRow(n_sig + n_locked + 1 + i)
+                return
 
     def _on_field_added(self, fdef: SignatureFieldDef) -> None:
         self._update_field_list()
@@ -684,25 +719,43 @@ class PDFSignerApp(QMainWindow):
     def _load_existing_fields(self, doc: fitz.Document) -> None:
         """Scan all pages for existing signature widgets and classify them.
 
-        Unsigned fields are added to self.sig_fields (fully usable).
-        Already-signed fields are added to self.signed_fields (display only).
+        Three categories are produced:
+          sig_fields    – unsigned, no existing signatures in the document
+                          → free to edit, delete, or sign
+          locked_fields – unsigned, but the document already contains at least
+                          one signature; these fields are part of the signed
+                          byte range and must not be modified
+                          → can only be signed, not deleted or moved
+          signed_fields – already signed (display only, rendered by fitz)
+
+        For documents without any signatures, unsigned widget annotations are
+        removed from the in-memory fitz doc (so fitz does not render the raw
+        "SIGN" placeholder) and stored only in sig_fields.  The resulting
+        PDF bytes (without those widgets) become _working_bytes so workers
+        always start from a state that matches the current field lists.
+
+        For documents with existing signatures, unsigned fields stay in the
+        fitz doc unchanged (removing them would break the signature hash) and
+        go into locked_fields instead.
         """
-        import re
         self.sig_fields.clear()
+        self.locked_fields.clear()
         self.signed_fields.clear()
 
+        # First pass: collect all signature widgets
+        all_unsigned: list[tuple[SignatureFieldDef, int]] = []  # (fdef, xref)
         for page_num in range(len(doc)):
             page   = doc[page_num]
             page_h = page.rect.height
-            for widget in page.widgets():
+            for widget in list(page.widgets()):
                 if widget.field_type != fitz.PDF_WIDGET_TYPE_SIGNATURE:
                     continue
                 # Convert fitz rect (y=0 top) → PDF coords (y=0 bottom)
                 r  = widget.rect
                 x1 = r.x0
-                y1 = page_h - r.y1   # bottom-left in PDF coords
+                y1 = page_h - r.y1
                 x2 = r.x1
-                y2 = page_h - r.y0   # top-right in PDF coords
+                y2 = page_h - r.y0
                 name = widget.field_name or f"Sig_p{page_num + 1}"
                 fdef = SignatureFieldDef(page_num, x1, y1, x2, y2, name)
 
@@ -716,7 +769,29 @@ class PDFSignerApp(QMainWindow):
                 if already_signed:
                     self.signed_fields.append(fdef)
                 else:
-                    self.sig_fields.append(fdef)
+                    all_unsigned.append((fdef, widget.xref))
+
+        # Classify unsigned fields based on whether signatures already exist
+        has_signatures = bool(self.signed_fields)
+        unsigned_xrefs_to_strip: list[int] = []
+        for fdef, xref in all_unsigned:
+            if has_signatures:
+                # Cannot strip these – they are covered by the signature hash
+                self.locked_fields.append(fdef)
+            else:
+                self.sig_fields.append(fdef)
+                unsigned_xrefs_to_strip.append(xref)
+
+        # Strip free unsigned widgets from the in-memory fitz doc only when safe
+        if not has_signatures:
+            for page_num in range(len(doc)):
+                page = doc[page_num]
+                for widget in list(page.widgets()):
+                    if widget.xref in unsigned_xrefs_to_strip:
+                        page.delete_widget(widget)
+
+        # Store the resulting PDF as working bytes (no temp file on disk)
+        self._working_bytes = doc.tobytes(garbage=0, deflate=False)
 
     def prev_page(self) -> None:
         if self.pdf_doc and self.current_page > 0:
@@ -731,9 +806,21 @@ class PDFSignerApp(QMainWindow):
     # ── Field management ──────────────────────────────────────────────────
 
     def delete_selected_field(self) -> None:
-        row = self._field_list.currentRow()
-        # Row 0 is the "invisible signature" placeholder, not a real field
-        if row <= 0 or row > len(self.sig_fields):
+        row      = self._field_list.currentRow()
+        n_sig    = len(self.sig_fields)
+        n_locked = len(self.locked_fields)
+        if row <= 0:
+            QMessageBox.information(
+                self, t("dlg_no_field_sel"), t("dlg_no_field_sel_msg"))
+            return
+        if n_sig + 1 <= row <= n_sig + n_locked:
+            # Locked field – explain why it cannot be deleted
+            fdef = self.locked_fields[row - n_sig - 1]
+            QMessageBox.information(
+                self, t("dlg_locked_field_title"),
+                t("dlg_locked_field_msg", name=fdef.name))
+            return
+        if row > n_sig:
             QMessageBox.information(
                 self, t("dlg_no_field_sel"), t("dlg_no_field_sel_msg"))
             return
@@ -770,7 +857,7 @@ class PDFSignerApp(QMainWindow):
         self.config.save()
         self._set_status(t("status_saving_fields"))
         self._worker = SaveFieldsWorker(
-            self.pdf_path, out, list(self.sig_fields))
+            self._working_bytes, out, list(self.sig_fields))
         self._worker.finished.connect(self._on_save_done)
         self._worker.error.connect(self._on_save_error)
         self._worker.start()
@@ -807,17 +894,21 @@ class PDFSignerApp(QMainWindow):
                 self, t("dlg_sign_error_title"), t("dlg_pyhanko_missing"))
             return
 
-        # Row 0 = invisible signature, row 1…N = sig_fields, row N+1… = signed (read-only)
-        row  = self._field_list.currentRow()
+        # Row 0 = invisible, 1…N = sig_fields, N+1…N+K = locked_fields, rest = signed
+        row      = self._field_list.currentRow()
+        n_sig    = len(self.sig_fields)
+        n_locked = len(self.locked_fields)
         fdef: Optional[SignatureFieldDef] = None
-        signed_offset = 1 + len(self.sig_fields)
+        signed_offset = 1 + n_sig + n_locked
         if row >= signed_offset and self.signed_fields:
             QMessageBox.information(
                 self, t("dlg_sign_error_title"),
                 t("dlg_field_already_signed"))
             return
-        if 1 <= row <= len(self.sig_fields):
+        if 1 <= row <= n_sig:
             fdef = self.sig_fields[row - 1]
+        elif n_sig + 1 <= row <= n_sig + n_locked:
+            fdef = self.locked_fields[row - n_sig - 1]
 
         stem    = Path(self.pdf_path).stem
         start   = self.config.get("paths", "last_save_dir")
@@ -836,7 +927,8 @@ class PDFSignerApp(QMainWindow):
 
         self._set_status(t("status_signing"))
         self._sign_worker = SignWorker(
-            self.pdf_path, out, fdef, lib, pin, key, self.appearance)
+            self._working_bytes, out, fdef, lib, pin, key, self.appearance,
+            all_fields=list(self.sig_fields))
         self._sign_worker.finished.connect(self._on_sign_done)
         self._sign_worker.error.connect(self._on_sign_error)
         self._sign_worker.start()
@@ -869,4 +961,23 @@ class PDFSignerApp(QMainWindow):
             t("dlg_sign_error_msg", error=msg))
 
     def _show_about(self) -> None:
-        QMessageBox.about(self, t("about_title"), t("about_msg"))
+        from . import __version__, __commit__
+        QMessageBox.about(
+            self, t("about_title"),
+            t("about_msg", version=__version__, commit=__commit__))
+
+    def _show_license(self) -> None:
+        from PyQt6.QtWidgets import QDialog, QTextEdit, QPushButton, QVBoxLayout
+        dlg = QDialog(self)
+        dlg.setWindowTitle(t("license_title"))
+        dlg.resize(600, 500)
+        vl = QVBoxLayout(dlg)
+        te = QTextEdit()
+        te.setReadOnly(True)
+        te.setFontFamily("monospace")
+        te.setPlainText(t("license_msg"))
+        vl.addWidget(te)
+        btn = QPushButton(t("license_close"))
+        btn.clicked.connect(dlg.accept)
+        vl.addWidget(btn)
+        dlg.exec()

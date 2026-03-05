@@ -18,6 +18,7 @@ PKCS#11 session design:
 
 from __future__ import annotations
 
+import io
 import re
 import sys
 import traceback
@@ -165,25 +166,25 @@ class SaveFieldsWorker(QThread):
     finished = pyqtSignal(str)
     error    = pyqtSignal(str)
 
-    def __init__(self, pdf_path: str, out_path: str, sig_fields: list) -> None:
+    def __init__(self, pdf_bytes: bytes, out_path: str, sig_fields: list) -> None:
         super().__init__()
-        self.pdf_path   = pdf_path
+        self.pdf_bytes  = pdf_bytes
         self.out_path   = out_path
         self.sig_fields = sig_fields
 
     def run(self) -> None:
         try:
-            with open(self.pdf_path, "rb") as inf:
-                writer = IncrementalPdfFileWriter(inf)
-                for fdef in self.sig_fields:
-                    spec = SigFieldSpec(
-                        sig_field_name=fdef.name,
-                        on_page=fdef.page,
-                        box=(fdef.x1, fdef.y1, fdef.x2, fdef.y2),
-                    )
-                    fields.append_signature_field(writer, spec)
-                with open(self.out_path, "wb") as outf:
-                    writer.write(outf)
+            buf = io.BytesIO(self.pdf_bytes)
+            writer = IncrementalPdfFileWriter(buf)
+            for fdef in self.sig_fields:
+                spec = SigFieldSpec(
+                    sig_field_name=fdef.name,
+                    on_page=fdef.page,
+                    box=(fdef.x1, fdef.y1, fdef.x2, fdef.y2),
+                )
+                fields.append_signature_field(writer, spec)
+            with open(self.out_path, "wb") as outf:
+                writer.write(outf)
             self.finished.emit(self.out_path)
         except Exception as exc:
             self.error.emit(str(exc))
@@ -199,17 +200,18 @@ class SignWorker(QThread):
     finished = pyqtSignal(str)
     error    = pyqtSignal(str)
 
-    def __init__(self, pdf_path: str, out_path: str, fdef,
+    def __init__(self, pdf_bytes: bytes, out_path: str, fdef,
                  lib_path: str, pin: str, key_label: str,
-                 appearance=None) -> None:
+                 appearance=None, all_fields: list | None = None) -> None:
         super().__init__()
-        self.pdf_path   = pdf_path
+        self.pdf_bytes  = pdf_bytes
         self.out_path   = out_path
         self.fdef       = fdef
         self.lib_path   = lib_path
         self.pin        = pin
         self.key_label  = key_label
-        self.appearance = appearance  # SigAppearance instance or None
+        self.appearance = appearance   # SigAppearance instance or None
+        self.all_fields = all_fields or []  # all unsigned fields to embed
 
     def run(self) -> None:
         try:
@@ -390,28 +392,31 @@ class SignWorker(QThread):
                 traceback.print_exc(file=sys.stderr)
 
             # ── Sign the PDF ───────────────────────────────────────────────────
-            with open(self.pdf_path, "rb") as inf:
-                writer = IncrementalPdfFileWriter(inf)
+            buf    = io.BytesIO(self.pdf_bytes)
+            writer = IncrementalPdfFileWriter(buf)
 
-                if self.fdef:
-                    try:
-                        spec = SigFieldSpec(
-                            sig_field_name=self.fdef.name,
-                            on_page=self.fdef.page,
-                            box=(self.fdef.x1, self.fdef.y1,
-                                 self.fdef.x2, self.fdef.y2),
-                        )
-                        sig_fields_mod.append_signature_field(writer, spec)
-                    except Exception:
-                        pass  # Field already exists – that is fine
+            # Embed free unsigned fields (locked fields are already in the PDF bytes)
+            fields_to_embed = list(self.all_fields)
+            if self.fdef and not any(f is self.fdef for f in fields_to_embed):
+                fields_to_embed.append(self.fdef)
+            for f in fields_to_embed:
+                try:
+                    spec = SigFieldSpec(
+                        sig_field_name=f.name,
+                        on_page=f.page,
+                        box=(f.x1, f.y1, f.x2, f.y2),
+                    )
+                    sig_fields_mod.append_signature_field(writer, spec)
+                except Exception:
+                    pass  # Field already exists – that is fine
 
-                pdf_signer = PdfSigner(
-                    signature_meta=sig_meta,
-                    signer=signer,
-                    stamp_style=stamp_style,  # None → no visual appearance
-                )
-                with open(self.out_path, "wb") as outf:
-                    pdf_signer.sign_pdf(writer, output=outf)
+            pdf_signer = PdfSigner(
+                signature_meta=sig_meta,
+                signer=signer,
+                stamp_style=stamp_style,  # None → no visual appearance
+            )
+            with open(self.out_path, "wb") as outf:
+                pdf_signer.sign_pdf(writer, output=outf)
 
             session.close()
             self.finished.emit(self.out_path)

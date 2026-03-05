@@ -15,6 +15,7 @@ TRANSLATIONS: dict[str, str] = {
     "menu_settings_language": "Language / Sprache",
     "menu_help": "Help",
     "menu_help_about": "About…",
+    "menu_help_license": "License…",
     # Toolbar
     "tb_open": "Open PDF",
     "tb_prev": "◀",
@@ -76,6 +77,7 @@ TRANSLATIONS: dict[str, str] = {
     "dlg_field_name_title": "Field Name",
     "dlg_field_name_prompt": "Signature field name:",
     "dlg_field_name_default": "Sig_{page}_{count}",
+    "dlg_field_name_duplicate": "A field named '{name}' already exists. Please choose a different name.",
     "dlg_delete_title": "Delete",
     "dlg_delete_msg": "Delete signature field '{name}'?",
     "dlg_delete_sel_msg": "Really delete field '{name}'?",
@@ -117,6 +119,12 @@ TRANSLATIONS: dict[str, str] = {
         "Full traceback in console (stderr)."
     ),
     "dlg_field_already_signed": "This field is already signed and cannot be used again.",
+    "dlg_locked_field_title": "Field locked",
+    "dlg_locked_field_msg": (
+        "The field '{name}' is protected by an existing signature in the document\n"
+        "and cannot be deleted or moved.\n\n"
+        "It can only be signed."
+    ),
     "dlg_pyhanko_missing": "pyhanko is not installed.\npip install pyhanko python-pkcs11",
     "dlg_choose_field_title": "Choose Signature Field",
     "dlg_choose_field_label": "Sign with which field?",
@@ -161,16 +169,48 @@ TRANSLATIONS: dict[str, str] = {
     "ap_preview_hint": "Please add a signature field for preview.",
     "ap_browse_img": "Choose signature image",
     "ap_img_filter": "Images (*.png *.jpg *.jpeg *.bmp);;All Files (*)",
-    # About
+    # About / License
     "about_title": "About PDF QES Signer",
     "about_msg": (
-        "PDF QES Signer v0.1\n\n"
+        "PDF QES Signer  v{version}  (commit: {commit})\n\n"
         "Visual placement of signature fields\n"
         "and qualified electronic signature (QES)\n"
         "via PKCS#11 / Smartcard.\n\n"
+        "License: GNU General Public License v3 or later (GPL-3.0-or-later)\n\n"
         "Required packages:\n"
         "  pip install pymupdf pyhanko python-pkcs11 Pillow PyQt6 cryptography\n\n"
-        "Left-click + drag → draw signature field\n"
-        "Right-click on field → delete field"
+        "Left-click + drag   →  draw signature field\n"
+        "Right-click on field →  options / delete"
     ),
+    "license_title": "License Information",
+    "license_msg": (
+        "PDF QES Signer\n"
+        "Copyright (C) PDF QES Signer contributors\n\n"
+        "This program is free software: you can redistribute it and/or modify\n"
+        "it under the terms of the GNU General Public License as published by\n"
+        "the Free Software Foundation, either version 3 of the License, or\n"
+        "(at your option) any later version.\n\n"
+        "This program is distributed in the hope that it will be useful,\n"
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of\n"
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n"
+        "See the GNU General Public License for more details.\n\n"
+        "You should have received a copy of the GNU General Public License\n"
+        "along with this program. If not, see:\n"
+        "  https://www.gnu.org/licenses/gpl-3.0.html\n\n"
+        "──────────────────────────────────────────────\n"
+        "Third-party libraries:\n\n"
+        "  PyMuPDF (fitz)   GNU AGPL v3\n"
+        "    https://pymupdf.readthedocs.io\n\n"
+        "  pyhanko          MIT License\n"
+        "    https://pyhanko.readthedocs.io\n\n"
+        "  PyQt6            GPL v3 / Commercial\n"
+        "    https://www.riverbankcomputing.com\n\n"
+        "  python-pkcs11    MIT License\n"
+        "    https://python-pkcs11.readthedocs.io\n\n"
+        "  Pillow           HPND License\n"
+        "    https://python-pillow.org\n\n"
+        "  cryptography     Apache 2.0 / BSD\n"
+        "    https://cryptography.io\n"
+    ),
+    "license_close": "Close",
 }
