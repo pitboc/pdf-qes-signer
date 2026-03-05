@@ -202,7 +202,8 @@ class SignWorker(QThread):
 
     def __init__(self, pdf_bytes: bytes, out_path: str, fdef,
                  lib_path: str, pin: str, key_label: str,
-                 appearance=None, all_fields: list | None = None) -> None:
+                 appearance=None, all_fields: list | None = None,
+                 tsa_url: str = "") -> None:
         super().__init__()
         self.pdf_bytes  = pdf_bytes
         self.out_path   = out_path
@@ -212,6 +213,7 @@ class SignWorker(QThread):
         self.key_label  = key_label
         self.appearance = appearance   # SigAppearance instance or None
         self.all_fields = all_fields or []  # all unsigned fields to embed
+        self.tsa_url    = tsa_url      # RFC 3161 TSA URL, or "" to disable
 
     def run(self) -> None:
         try:
@@ -410,10 +412,16 @@ class SignWorker(QThread):
                 except Exception:
                     pass  # Field already exists – that is fine
 
+            timestamper = None
+            if self.tsa_url:
+                from pyhanko.sign.timestamps import HTTPTimeStamper
+                timestamper = HTTPTimeStamper(self.tsa_url)
+
             pdf_signer = PdfSigner(
                 signature_meta=sig_meta,
                 signer=signer,
                 stamp_style=stamp_style,  # None → no visual appearance
+                timestamper=timestamper,
             )
             with open(self.out_path, "wb") as outf:
                 pdf_signer.sign_pdf(writer, output=outf)

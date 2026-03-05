@@ -130,7 +130,10 @@ TRANSLATIONS: dict[str, str] = {
     "dlg_choose_field_label": "Mit welchem Feld signieren?",
     "dlg_invisible_field": "✦ Signatur ohne Feld (unsichtbar)",
     # PKCS#11 dialog
-    "cfg_title": "PKCS#11 / Token konfigurieren",
+    "cfg_title": "PKCS#11 / Token & TSA konfigurieren",
+    "cfg_tsa_group": "Zeitstempel (TSA)",
+    "cfg_tsa_enabled": "TSA aktivieren:",
+    "cfg_tsa_url": "TSA-URL:",
     "cfg_lib_label": "Library-Pfad (.so / .dll):",
     "cfg_lib_browse": "…",
     "cfg_key_label": "Key-Label:",

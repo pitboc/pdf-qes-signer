@@ -926,9 +926,11 @@ class PDFSignerApp(QMainWindow):
         key = self.config.get("pkcs11", "key_label")
 
         self._set_status(t("status_signing"))
+        tsa_url = (self.config.get("tsa", "url")
+                   if self.config.getbool("tsa", "enabled") else "")
         self._sign_worker = SignWorker(
             self._working_bytes, out, fdef, lib, pin, key, self.appearance,
-            all_fields=list(self.sig_fields))
+            all_fields=list(self.sig_fields), tsa_url=tsa_url)
         self._sign_worker.finished.connect(self._on_sign_done)
         self._sign_worker.error.connect(self._on_sign_error)
         self._sign_worker.start()

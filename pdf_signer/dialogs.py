@@ -159,6 +159,18 @@ class Pkcs11ConfigDialog(QDialog):
         form.addRow("", pin_hint)
         lay.addLayout(form)
 
+        # TSA section
+        tsa_grp = QGroupBox(t("cfg_tsa_group"))
+        tsa_lay = QFormLayout(tsa_grp)
+        tsa_lay.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        self.tsa_enabled = QCheckBox()
+        self.tsa_url_edit = QLineEdit()
+        self.tsa_url_edit.setPlaceholderText("http://tsa.baltestamp.lt")
+        self.tsa_enabled.toggled.connect(self.tsa_url_edit.setEnabled)
+        tsa_lay.addRow(t("cfg_tsa_enabled"), self.tsa_enabled)
+        tsa_lay.addRow(t("cfg_tsa_url"), self.tsa_url_edit)
+        lay.addWidget(tsa_grp)
+
         test_row = QHBoxLayout()
         test_no_pin = QPushButton(t("cfg_test_btn_no_pin"))
         test_no_pin.clicked.connect(lambda: self._test_token(with_pin=False))
@@ -184,6 +196,10 @@ class Pkcs11ConfigDialog(QDialog):
     def _load_values(self) -> None:
         self.lib_edit.setText(self.config.get("pkcs11", "lib_path"))
         self.key_edit.setText(self.config.get("pkcs11", "key_label"))
+        tsa_on = self.config.getbool("tsa", "enabled")
+        self.tsa_enabled.setChecked(tsa_on)
+        self.tsa_url_edit.setText(self.config.get("tsa", "url"))
+        self.tsa_url_edit.setEnabled(tsa_on)
 
     def _browse_lib(self) -> None:
         start = self.config.get("paths", "last_lib_dir")
@@ -196,6 +212,8 @@ class Pkcs11ConfigDialog(QDialog):
     def _save_and_close(self) -> None:
         self.config.set("pkcs11", "lib_path",  self.lib_edit.text().strip())
         self.config.set("pkcs11", "key_label", self.key_edit.text().strip())
+        self.config.setbool("tsa", "enabled", self.tsa_enabled.isChecked())
+        self.config.set("tsa", "url", self.tsa_url_edit.text().strip())
         self.config.save()
         self.accept()
 

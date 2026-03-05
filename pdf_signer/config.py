@@ -46,6 +46,10 @@ class AppConfig:
         "app": {
             "language": "de",
         },
+        "tsa": {
+            "enabled": "0",
+            "url":     "http://tsa.baltestamp.lt",
+        },
         "appearance": {
             "image_path":    "",
             "layout":        "img_left",  # img_left | img_right
