@@ -153,6 +153,18 @@ pdf_signer/
     └── en.py          # English translations
 ```
 
+## API documentation
+
+The source modules contain detailed docstrings explaining both the public API
+and key architectural decisions (field categories, incremental write strategy,
+image-padding trick, coordinate systems). To browse them as HTML:
+
+```bash
+source .venv/bin/activate
+pip install pdoc          # once, as a development tool
+pdoc pdf_signer           # opens browser – no files written to disk
+```
+
 ## License
 
 GNU General Public License v3.0 or later – see [LICENSE](LICENSE).

@@ -4,6 +4,48 @@ Main application window for PDF QES Signer.
 
 Provides:
   - PDFSignerApp  – the QMainWindow subclass that ties all components together
+
+## Three-category field model
+
+Every signature field in the application belongs to exactly one of three lists:
+
+| List            | Contents                                      | Editable?               |
+|-----------------|-----------------------------------------------|-------------------------|
+| `sig_fields`    | Unsigned, freely editable                     | Yes – add, delete, move |
+| `locked_fields` | Unsigned but frozen by an existing signature  | Sign only               |
+| `signed_fields` | Already signed                                | Display only            |
+
+### Why locked_fields?
+
+A PDF signature covers a cryptographic hash of all bytes up to and including
+the moment of signing.  Any unsigned form fields present at that time are
+*inside* the signed byte range.  Deleting or moving them afterwards would
+invalidate the existing signature – the hash would no longer match.  Those
+fields therefore appear in `locked_fields` and can only be signed, not deleted
+or repositioned.
+
+### In-memory working copy (_working_bytes)
+
+When a PDF is opened, all *free* unsigned fields (those in `sig_fields`) are
+stripped from the in-memory fitz document.  Only their Python representations
+remain in `sig_fields`.  This gives full freedom to add, delete, and rename
+them without touching the file on disk.
+
+The resulting bytes are stored as `_working_bytes`.  Workers
+(`SaveFieldsWorker`, `SignWorker`) always start from these bytes and re-embed
+the current `sig_fields` list just before writing to disk.  No temporary files
+are created; everything stays in memory until an explicit save or sign action.
+
+### Signing chain
+
+After a successful signing operation the application reloads the just-written
+signed PDF as the new working document.  This means:
+
+- The freshly signed field immediately appears with the ✓ marker.
+- Any subsequent signing operation uses the signed PDF as its base, so all
+  previous signatures are preserved in the output chain.  A document may
+  therefore accumulate multiple independent signatures, each in its own
+  incremental revision.
 """
 
 from __future__ import annotations
@@ -703,6 +745,7 @@ class PDFSignerApp(QMainWindow):
 
     def _open_pdf(self, path: str) -> None:
         try:
+            path = str(Path(path).resolve())
             doc = fitz.open(path)
             self.pdf_doc      = doc
             self.pdf_path     = path
@@ -723,23 +766,30 @@ class PDFSignerApp(QMainWindow):
         """Scan all pages for existing signature widgets and classify them.
 
         Three categories are produced:
-          sig_fields    – unsigned, no existing signatures in the document
+          sig_fields    – unsigned and outside any signed byte range
                           → free to edit, delete, or sign
-          locked_fields – unsigned, but the document already contains at least
-                          one signature; these fields are part of the signed
-                          byte range and must not be modified
+          locked_fields – unsigned but within the signed byte range of at least
+                          one signature; must not be modified
                           → can only be signed, not deleted or moved
           signed_fields – already signed (display only, rendered by fitz)
 
-        For documents without any signatures, unsigned widget annotations are
-        removed from the in-memory fitz doc (so fitz does not render the raw
-        "SIGN" placeholder) and stored only in sig_fields.  The resulting
-        PDF bytes (without those widgets) become _working_bytes so workers
-        always start from a state that matches the current field lists.
+        For documents without any signatures, all unsigned widget annotations
+        are removed from the in-memory fitz doc (so fitz does not render the
+        raw "SIGN" placeholder) and stored only in sig_fields.
 
-        For documents with existing signatures, unsigned fields stay in the
-        fitz doc unchanged (removing them would break the signature hash) and
-        go into locked_fields instead.
+        For documents with existing signatures, pyhanko is used to determine
+        which revision each unsigned field was introduced in.  Fields added
+        *after* the most recent signature (outside its /ByteRange) go into
+        sig_fields; fields present at signing time go into locked_fields.
+        _working_bytes is set to the raw file bytes up to the end of the last
+        signature's coverage so that post-signature incremental updates are
+        excluded; workers re-embed sig_fields on top of this clean base.
+
+        Page rotation (/Rotate entry): fitz always reports widget.rect in the
+        native (unrotated) page coordinate system regardless of /Rotate.  The
+        only correction needed is to flip Y using ``page.mediabox.height``
+        (the native page height) rather than ``page.rect.height`` (the
+        displayed height, which is swapped for 90°/270° rotations).
         """
         self.sig_fields.clear()
         self.locked_fields.clear()
@@ -749,18 +799,22 @@ class PDFSignerApp(QMainWindow):
         all_unsigned: list[tuple[SignatureFieldDef, int]] = []  # (fdef, xref)
         for page_num in range(len(doc)):
             page   = doc[page_num]
-            page_h = page.rect.height
+            mbox_h = page.mediabox.height
             for widget in list(page.widgets()):
                 if widget.field_type != fitz.PDF_WIDGET_TYPE_SIGNATURE:
                     continue
-                # Convert fitz rect (y=0 top) → PDF coords (y=0 bottom)
+                # fitz always reports widget.rect in the page's native (unrotated)
+                # coordinate system, y-down, regardless of /Rotate.  We only need
+                # to flip Y using the native page height (mediabox.height) to
+                # obtain PDF native coords (y-up, bottom-left origin).
                 r  = widget.rect
                 x1 = r.x0
-                y1 = page_h - r.y1
+                y1 = mbox_h - r.y1
                 x2 = r.x1
-                y2 = page_h - r.y0
+                y2 = mbox_h - r.y0
                 name = widget.field_name or f"Sig_p{page_num + 1}"
-                fdef = SignatureFieldDef(page_num, x1, y1, x2, y2, name)
+                fdef = SignatureFieldDef(page_num, x1, y1, x2, y2, name,
+                                        rotation=page.rotation)
 
                 # Detect signed state: /V entry references a signature dict
                 try:
@@ -774,27 +828,67 @@ class PDFSignerApp(QMainWindow):
                 else:
                     all_unsigned.append((fdef, widget.xref))
 
-        # Classify unsigned fields based on whether signatures already exist
+        # Classify unsigned fields.
+        # Fields added *after* the most recent signature are outside the signed
+        # byte range and can be freely edited (→ sig_fields).  Only fields that
+        # existed at the time of signing must be kept intact (→ locked_fields).
         has_signatures = bool(self.signed_fields)
         unsigned_xrefs_to_strip: list[int] = []
-        for fdef, xref in all_unsigned:
-            if has_signatures:
-                # Cannot strip these – they are covered by the signature hash
-                self.locked_fields.append(fdef)
-            else:
+        signed_end: int = 0  # byte offset where last signature's coverage ends
+
+        if has_signatures:
+            # Use pyhanko to separate pre-signature fields (locked) from
+            # post-signature fields (still freely editable).
+            try:
+                import io as _io
+                from pyhanko.pdf_utils.reader import PdfFileReader as _PR
+                from pyhanko.pdf_utils.generic import Reference as _Ref
+                with open(self.pdf_path, "rb") as _f:
+                    _raw = _f.read()
+                _rdr = _PR(_io.BytesIO(_raw), strict=False)
+                _sigs = list(_rdr.embedded_regular_signatures)
+                _max_rev = max(s.signed_revision for s in _sigs)
+                for _s in _sigs:
+                    _br = [int(v) for v in _s.byte_range]
+                    signed_end = max(signed_end, _br[2] + _br[3])
+                for fdef, xref in all_unsigned:
+                    try:
+                        _intro = _rdr.xrefs.get_introducing_revision(_Ref(xref, 0))
+                    except Exception:
+                        _intro = 0
+                    if _intro > _max_rev:
+                        # Introduced after last signature → freely editable
+                        self.sig_fields.append(fdef)
+                        unsigned_xrefs_to_strip.append(xref)
+                    else:
+                        self.locked_fields.append(fdef)
+            except Exception:
+                import traceback as _tb
+                _tb.print_exc(file=sys.stderr)
+                for fdef, _ in all_unsigned:
+                    self.locked_fields.append(fdef)
+        else:
+            for fdef, xref in all_unsigned:
                 self.sig_fields.append(fdef)
                 unsigned_xrefs_to_strip.append(xref)
 
-        # Strip free unsigned widgets from the in-memory fitz doc only when safe
-        if not has_signatures:
+        # Strip free unsigned widgets from the in-memory fitz doc
+        if unsigned_xrefs_to_strip:
+            strip_set = set(unsigned_xrefs_to_strip)
             for page_num in range(len(doc)):
                 page = doc[page_num]
                 for widget in list(page.widgets()):
-                    if widget.xref in unsigned_xrefs_to_strip:
+                    if widget.xref in strip_set:
                         page.delete_widget(widget)
 
-        # Store the resulting PDF as working bytes (no temp file on disk)
-        self._working_bytes = doc.tobytes(garbage=0, deflate=False)
+        # Store working bytes.  When post-signature free fields were stripped,
+        # use the raw file bytes truncated to the end of the last signature's
+        # coverage so the post-signature incremental update is excluded.
+        # Workers will re-embed sig_fields on top of this clean base.
+        if signed_end > 0:
+            self._working_bytes = _raw[:signed_end]  # type: ignore[name-defined]
+        else:
+            self._working_bytes = doc.tobytes(garbage=0, deflate=False)
 
     def prev_page(self) -> None:
         if self.pdf_doc and self.current_page > 0:
@@ -848,16 +942,13 @@ class PDFSignerApp(QMainWindow):
                 self, t("dlg_save_error_title"), t("dlg_pyhanko_missing"))
             return
 
+        pdf_dir = str(Path(self.pdf_path).parent)
         stem    = Path(self.pdf_path).stem
-        start   = self.config.get("paths", "last_save_dir")
-        default = str(Path(start) / (stem + t("dlg_save_fields_suffix") + ".pdf"))
+        default = str(Path(pdf_dir) / (stem + t("dlg_save_fields_suffix") + ".pdf"))
         out, _  = QFileDialog.getSaveFileName(
             self, t("dlg_save_fields_title"), default, t("dlg_pdf_filter"))
         if not out:
             return
-
-        self.config.set("paths", "last_save_dir", str(Path(out).parent))
-        self.config.save()
         self._set_status(t("status_saving_fields"))
         self._worker = SaveFieldsWorker(
             self._working_bytes, out, list(self.sig_fields))
@@ -915,16 +1006,13 @@ class PDFSignerApp(QMainWindow):
         elif n_sig + 1 <= row <= n_sig + n_locked:
             fdef = self.locked_fields[row - n_sig - 1]
 
+        pdf_dir = str(Path(self.pdf_path).parent)
         stem    = Path(self.pdf_path).stem
-        start   = self.config.get("paths", "last_save_dir")
-        default = str(Path(start) / (stem + t("dlg_save_signed_suffix") + ".pdf"))
+        default = str(Path(pdf_dir) / (stem + t("dlg_save_signed_suffix") + ".pdf"))
         out, _  = QFileDialog.getSaveFileName(
             self, t("dlg_save_signed_title"), default, t("dlg_pdf_filter"))
         if not out:
             return
-
-        self.config.set("paths", "last_save_dir", str(Path(out).parent))
-        self.config.save()
 
         pin = self._pin_edit.text().strip()
         lib = self.config.get("pkcs11", "lib_path")

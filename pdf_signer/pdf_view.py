@@ -7,6 +7,48 @@ Provides:
   - SignatureFieldDef – data class holding one signature field in PDF coordinates
   - PDFViewWidget     – interactive Qt widget for displaying a PDF page and
                         drawing/deleting signature fields
+
+## Coordinate systems
+
+Two coordinate systems are in use simultaneously:
+
+| Space       | Origin      | Y direction | Unit           | Used in                    |
+|-------------|-------------|-------------|----------------|----------------------------|
+| Widget/Qt   | Top-left    | Down        | pixels         | Mouse events, painting     |
+| PDF native  | Bottom-left | Up          | points (1/72") | SignatureFieldDef, pyhanko |
+
+`PDFViewWidget._w_to_pdf()` converts a mouse position to PDF native coordinates.
+`PDFViewWidget._pdf_to_w()` converts PDF native coordinates back to widget pixels.
+
+Both methods use `page.derotation_matrix` / `page.rotation_matrix` (fitz) to
+handle pages with a `/Rotate` entry (common in scanned documents).  Without
+this, a 90°-rotated page would cause fields to be placed at a mirrored or
+transposed position in the signed output.
+
+Conversion pipeline for `_w_to_pdf`:
+  widget pixels → fitz canonical (rotated, y-down) → derotate → flip Y → PDF native
+
+Conversion pipeline for `_pdf_to_w`:
+  PDF native → flip Y → rotate → fitz canonical (rotated, y-down) → widget pixels
+
+## Zoom and DPI
+
+`PDFViewWidget.ZOOM = 1.5` – the page is rendered at 1.5× PDF points, giving
+108 effective DPI on screen.  The canvas widget size is therefore
+`page_width_pt × ZOOM` by `page_height_pt × ZOOM` pixels.
+
+`DPI_SCALE = 96/72 ≈ 1.333` is used by the *preview panel* on the right side
+of the main window, which renders appearance thumbnails at 96 screen DPI.
+
+## Visual differentiation of field types
+
+Fields are painted with different colours to reflect their edit state:
+
+| Field type    | Colour            | Interaction          |
+|---------------|-------------------|----------------------|
+| sig_fields    | Blue (#1a73e8)    | Draw, delete, rename |
+| locked_fields | Orange (#e67e00)  | Sign only            |
+| signed_fields | Grey (#888888)    | Display only (✓)     |
 """
 
 from __future__ import annotations
@@ -44,11 +86,13 @@ class SignatureFieldDef:
     def __init__(self, page: int,
                  x1: float, y1: float,
                  x2: float, y2: float,
-                 name: str = "Signature") -> None:
+                 name: str = "Signature",
+                 rotation: int = 0) -> None:
         self.page = page
         self.x1, self.y1 = x1, y1
         self.x2, self.y2 = x2, y2
         self.name = name
+        self.page_rotation = rotation  # /Rotate value of the page (0/90/180/270)
 
     def __repr__(self) -> str:
         return (f"<SigField '{self.name}' page={self.page + 1} "
@@ -90,6 +134,10 @@ class PDFViewWidget(QWidget):
         self._pixmap:       Optional[QPixmap] = None
         self._page_w = self._page_h = 1.0
         self._img_w  = self._img_h  = 1
+        self._page_rotation: int     = 0        # current page /Rotate value
+        self._mediabox_h: float     = 1.0      # unrotated page height (PDF points)
+        self._derot_mat: fitz.Matrix = fitz.Matrix()  # rotated → unrotated fitz coords
+        self._rot_mat:   fitz.Matrix = fitz.Matrix()  # unrotated → rotated fitz coords
         self._drag_start: Optional[QPointF] = None
         self._drag_end:   Optional[QPointF] = None
         self._sig_fields:    list[SignatureFieldDef] = []
@@ -113,6 +161,10 @@ class PDFViewWidget(QWidget):
         self._img_h         = pix.height
         self._page_w        = page.rect.width
         self._page_h        = page.rect.height
+        self._page_rotation = page.rotation
+        self._mediabox_h    = page.mediabox.height
+        self._derot_mat     = page.derotation_matrix
+        self._rot_mat       = page.rotation_matrix
         self._sig_fields    = sig_fields
         self._locked_fields = locked_fields or []
         self._signed_fields = signed_fields or []
@@ -147,16 +199,18 @@ class PDFViewWidget(QWidget):
     # ── Coordinate conversion ─────────────────────────────────────────────
 
     def _pdf_to_w(self, x: float, y: float) -> QPointF:
-        """Convert PDF point coordinates to widget pixel coordinates."""
+        """Convert PDF native coordinates (unrotated, y-up) to widget pixels."""
         sx = self._img_w / self._page_w
         sy = self._img_h / self._page_h
-        return QPointF(x * sx, (self._page_h - y) * sy)
+        p = fitz.Point(x, self._mediabox_h - y) * self._rot_mat
+        return QPointF(p.x * sx, p.y * sy)
 
     def _w_to_pdf(self, cx: float, cy: float) -> tuple[float, float]:
-        """Convert widget pixel coordinates to PDF point coordinates."""
+        """Convert widget pixel coordinates to PDF native coordinates (unrotated, y-up)."""
         sx = self._img_w / self._page_w
         sy = self._img_h / self._page_h
-        return cx / sx, self._page_h - (cy / sy)
+        p = fitz.Point(cx / sx, cy / sy) * self._derot_mat
+        return p.x, self._mediabox_h - p.y
 
     # ── Painting ──────────────────────────────────────────────────────────
 
@@ -311,7 +365,8 @@ class PDFViewWidget(QWidget):
                 t("dlg_field_name_duplicate", name=name))
             return
 
-        fdef = SignatureFieldDef(self._current_page, px0, py0, px1, py1, name)
+        fdef = SignatureFieldDef(self._current_page, px0, py0, px1, py1, name,
+                                rotation=self._page_rotation)
         self._sig_fields.append(fdef)
         self.update()
         self.field_added.emit(fdef)

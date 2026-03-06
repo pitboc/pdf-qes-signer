@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "pdf-qes-signer"
-version = "0.1.0"
+version = "0.3.0.dev0"
 description = "GUI tool for visually placing signature fields in PDFs and applying qualified electronic signatures (QES) via PKCS#11 / smartcard, specifically developed for Telesec TCOS 3.0 SigG cards"
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }
@@ -42,10 +42,11 @@ dependencies = [
 dev = [
     "build",
     "twine",
+    "pdoc",
 ]
 
 [project.scripts]
-pdf-qes-signer = "pdf_signer.main:main"
+pdf-signer = "pdf_signer.main:main"
 
 [project.urls]
 Homepage = "https://codeberg.org/pitbo/pdf-qes-signer"

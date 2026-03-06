@@ -16,7 +16,7 @@ from pathlib import Path
 
 # PDF-14 standard fonts: (display name, PDF font name, avg_width, Qt family)
 PDF_STANDARD_FONTS: list[tuple[str, str, float, str]] = [
-    ("Helvetica",         "Helvetica",         0.5,  "Helvetica"),
+    ("Helvetica",         "Helvetica",          0.5,  "Helvetica"),
     ("Helvetica Bold",    "Helvetica-Bold",     0.5,  "Helvetica"),
     ("Helvetica Oblique", "Helvetica-Oblique",  0.5,  "Helvetica"),
     ("Times Roman",       "Times-Roman",        0.44, "Times New Roman"),
@@ -46,7 +46,6 @@ class AppConfig:
         },
         "paths": {
             "last_open_dir": str(Path.home()),
-            "last_save_dir": str(Path.home()),
             "last_lib_dir":  ("." if sys.platform == "win32" else "/usr/lib"),
             "last_img_dir":  str(Path.home()),
         },

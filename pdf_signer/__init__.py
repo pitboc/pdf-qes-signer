@@ -2,14 +2,18 @@
 """
 PDF QES Signer – visual signature field placement and QES signing via PKCS#11.
 
-Version: 0.1
 License: GPL-3.0-or-later
 """
 
 from pathlib import Path as _Path
 import subprocess as _subprocess
+from importlib.metadata import version as _pkg_version, PackageNotFoundError as _PNF
 
-__version__ = "0.1"
+try:
+    __version__ = _pkg_version("pdf-qes-signer")
+except _PNF:
+    __version__ = "0.0.0+dev"
+
 __author__  = "PDF QES Signer contributors"
 __license__ = "GPL-3.0-or-later"
 

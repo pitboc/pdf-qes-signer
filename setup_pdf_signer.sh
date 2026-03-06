@@ -18,7 +18,7 @@ error() { echo -e "${RED}[✗]${RESET} $*"; exit 1; }
 
 echo ""
 echo "  ╔══════════════════════════════════════╗"
-echo "  ║     PDF QES Signer v0.1 – Setup      ║"
+echo "  ║       PDF QES Signer – Setup         ║"
 echo "  ╚══════════════════════════════════════╝"
 echo ""
 
@@ -76,6 +76,18 @@ for pkg in "${PACKAGES[@]}"; do
         warn "$pkg could not be installed – QES functionality may be limited."
     fi
 done
+
+# ── Install the package itself (registers metadata for importlib.metadata) ──
+echo -n "    • setuptools … "
+"$PIP" install --upgrade setuptools wheel --quiet 2>/dev/null \
+    && echo -e "${GREEN}OK${RESET}" || echo -e "${YELLOW}WARNING${RESET}"
+echo -n "    • pdf-qes-signer (package) … "
+if "$PIP" install -e "$SCRIPT_DIR" --quiet 2>/dev/null; then
+    echo -e "${GREEN}OK${RESET}"
+else
+    echo -e "${YELLOW}WARNING${RESET}"
+    warn "Package install failed – version will show as 0.0.0+dev."
+fi
 
 # ── Create launcher script ─────────────────────────────────────────────────
 LAUNCHER="$SCRIPT_DIR/start_signer.sh"

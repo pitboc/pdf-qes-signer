@@ -7,23 +7,53 @@ Provides:
   - SaveFieldsWorker   – embeds signature field annotations via pyhanko
   - SignWorker         – applies a QES signature via PKCS#11
   - _make_pdf_font()   – helper to build a SimpleFontEngineFactory
-  - _prepare_pdf_with_appearance() – low-level fitz helper (internal)
 
-PKCS#11 session design:
-  The session is opened exactly once per signing operation and kept open until
-  the signature is written.  This ensures that a PIN-pad reader (e.g. CyberJack)
-  prompts the user only once, regardless of how many internal key/cert lookups
-  are performed.
+## Incremental write strategy
+
+PDF signatures are cryptographically tied to a specific byte range.  Rewriting
+or compressing a signed PDF breaks those signatures.  pyhanko therefore always
+appends a new incremental revision at the end of the file (`IncrementalPdfFileWriter`).
+The original bytes remain untouched; only a new cross-reference table and the
+signature object are appended.  This is why `_working_bytes` is always passed
+to workers as-is – it must not be modified or garbage-collected beforehand.
+
+## Two-phase embed-then-sign in SignWorker
+
+`SaveFieldsWorker` only embeds signature field annotations; it does not sign.
+`SignWorker` combines both steps in one operation:
+
+1. All free unsigned fields (`all_fields`) are embedded into an incremental
+   revision of the working bytes via `append_signature_field`.
+2. The target field is signed in the same pyhanko pass.
+
+Locked fields are already present in the PDF bytes and are therefore skipped
+during embedding (pyhanko raises an error for duplicate fields, which is
+silently ignored).
+
+## PKCS#11 session design
+
+The PKCS#11 session is opened exactly once per signing operation and kept open
+until the signature is written.  This ensures that a PIN-pad reader (e.g.
+CyberJack) prompts the user only once, regardless of how many internal
+key/cert lookups are performed.  Key and certificate are located by matching
+label and/or key-ID attributes; the first available object is used as fallback.
+
+## Visual appearance pipeline
+
+The appearance of the signed field (name, location, reason, date, image) is
+rendered by pyhanko's `TextStampStyle`.  When a background image is configured,
+`_make_background_image()` (see `appearance.py`) builds a canvas wider than the
+source image with a transparent strip on the text side.  pyhanko places this
+canvas as the field background and renders the text block into the transparent
+area.  See `appearance.py` for the image-padding strategy.
 """
 
 from __future__ import annotations
 
 import io
-import re
 import sys
 import traceback
 from pathlib import Path
-from typing import Optional
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -57,105 +87,82 @@ def _make_pdf_font(pdf_name: str, avg_width: float):
     return SimpleFontEngineFactory(pdf_name, avg_width)
 
 
-def _prepare_pdf_with_appearance(src_path: str, dst_path: str,
-                                  fdef,
-                                  appearance_png: Optional[str]) -> None:
-    """Copy *src_path* to *dst_path*, add the signature field, and attach the
-    appearance stream from *appearance_png*.
 
-    Strategy (pure fitz, no pyhanko internals):
-      1. Embed the PNG as an image XObject via an off-page rect.
-      2. Create a Form XObject that scales the image to the field dimensions.
-      3. Point /AP /N of the widget annotation to the Form XObject.
-      4. Save as a normal (non-incremental) PDF so that pyhanko can append its
-         own incremental revision cleanly.
+# ── Rotated appearance helper ─────────────────────────────────────────────────
+
+def _build_rotated_appearance(app, cert_cn: str, fdef):
+    """Return a TextStampStyle with a pre-rotated background image.
+
+    Used when the page has a non-zero /Rotate value.  pyhanko renders the
+    appearance stream in the PDF native (unrotated) coordinate space.  The PDF
+    viewer then rotates the page – and with it the appearance content – making
+    text and images appear tilted.
+
+    Fix: render the full appearance at the *visual* (displayed) dimensions using
+    the Pillow-based renderer, then rotate the image by ``-page_rotation`` (CW)
+    so that after the viewer's CCW page rotation the content appears upright.
+    The rotated image has exactly the native field dimensions and is passed to
+    pyhanko as a full-coverage background; stamp_text is set to a single space
+    at 1 pt so pyhanko does not add its own text layer.
 
     Args:
-        fdef:           SignatureFieldDef instance or None (invisible signature).
-        appearance_png: Path to a rendered PNG file, or None.
+        app:      SigAppearance instance.
+        cert_cn:  Signer CN extracted from the certificate (may be empty).
+        fdef:     SignatureFieldDef with page_rotation set.
     """
-    import fitz as _fitz
+    import os
+    from PIL import Image as PILImage
+    from pyhanko.pdf_utils.images import PdfImage
+    from pyhanko.pdf_utils.layout import BoxConstraints, SimpleBoxLayoutRule, AxisAlignment, Margins
+    from pyhanko.stamp import TextStampStyle
+    from pyhanko.pdf_utils.text import TextBoxStyle
 
-    doc = _fitz.open(src_path)
+    native_w = abs(fdef.x2 - fdef.x1)
+    native_h = abs(fdef.y2 - fdef.y1)
+    rot = fdef.page_rotation
 
-    if fdef is not None:
-        fw = abs(fdef.x2 - fdef.x1)
-        fh = abs(fdef.y2 - fdef.y1)
-        page   = doc[fdef.page]
-        page_h = page.rect.height
+    # Visual (displayed) dimensions: 90°/270° swap width and height
+    if rot in (90, 270):
+        vis_w, vis_h = native_h, native_w
+    else:
+        vis_w, vis_h = native_w, native_h
 
-        # Add the widget annotation if it does not already exist
-        field_exists = any(w.field_name == fdef.name for w in page.widgets())
-        if not field_exists:
-            annot_xref = doc.get_new_xref()
-            x0, y0, x1, y1 = fdef.x1, fdef.y1, fdef.x2, fdef.y2
-            doc.update_object(annot_xref,
-                f"<< /Type /Annot /Subtype /Widget "
-                f"/FT /Sig "
-                f"/Rect [{x0:.2f} {y0:.2f} {x1:.2f} {y1:.2f}] "
-                f"/T ({fdef.name}) "
-                f"/F 4 "
-                f"/P {page.xref} 0 R >>")
+    # Render at visual dimensions using the Pillow renderer (thread-safe, no Qt)
+    from .appearance import _render_appearance_to_png
+    png_path = _render_appearance_to_png(app, cert_cn, vis_w, vis_h)
+    if png_path is None:
+        return None  # fall back to caller's default stamp_style = None
 
-            # Add widget reference to the page's /Annots array
-            page_obj = doc.xref_object(page.xref, compressed=False)
-            if "/Annots" in page_obj:
-                page_obj = page_obj.replace(
-                    "/Annots [",
-                    f"/Annots [{annot_xref} 0 R ")
-            else:
-                page_obj = (page_obj.rstrip().rstrip(">").rstrip()
-                            + f" /Annots [{annot_xref} 0 R ] >>")
-            doc.update_object(page.xref, page_obj)
+    try:
+        img = PILImage.open(png_path).convert("RGBA")
+        # PDF /Rotate=N means the viewer rotates the page N° CW.
+        # PIL.rotate(angle) rotates CCW.  To compensate the viewer's CW rotation
+        # we pre-rotate the image by the same amount CCW = PIL.rotate(rot).
+        pil_angle = rot % 360
+        if pil_angle:
+            img = img.rotate(pil_angle, expand=True)
 
-            # Register in the AcroForm
-            root     = doc.pdf_catalog()
-            root_obj = doc.xref_object(root, compressed=False)
-            if "/AcroForm" not in root_obj:
-                root_obj = (root_obj.rstrip().rstrip(">").rstrip()
-                            + f" /AcroForm << /Fields [{annot_xref} 0 R]"
-                              f" /SigFlags 3 >> >>")
-                doc.update_object(root, root_obj)
-
-            w_xref = annot_xref
-        else:
-            w_xref = next(
-                w.xref for w in page.widgets() if w.field_name == fdef.name)
-
-        # Attach appearance stream from PNG if available
-        if appearance_png and Path(appearance_png).exists() and fw > 1 and fh > 1:
-            pix = _fitz.Pixmap(appearance_png)
-
-            # Embed image via off-page rect to obtain an xref
-            off_rect = _fitz.Rect(0, page_h + 10, fw, page_h + 10 + fh)
-            img_xref = page.insert_image(off_rect, pixmap=pix)
-
-            # Build a Form XObject that draws the image at field size
-            img_res  = "Im0"
-            xobj_cs  = (f"q {fw:.4f} 0 0 {fh:.4f} 0 0 cm "
-                        f"/{img_res} Do Q").encode()
-            form_xref = doc.get_new_xref()
-            doc.update_object(form_xref,
-                f"<< /Type /XObject /Subtype /Form "
-                f"/BBox [0 0 {fw:.4f} {fh:.4f}] "
-                f"/Resources << /XObject << /{img_res} {img_xref} 0 R >> >> "
-                f"/Length {len(xobj_cs)} >>")
-            doc.update_stream(form_xref, xobj_cs)
-
-            # Point the widget's /AP /N to the Form XObject
-            w_obj    = doc.xref_object(w_xref, compressed=False)
-            ap_entry = f"/AP << /N {form_xref} 0 R >>"
-            if re.search(r"/AP", w_obj):
-                w_obj = re.sub(r"/AP\s*<<[^>]*>>", ap_entry, w_obj)
-            else:
-                w_obj = w_obj.rstrip()
-                w_obj = (w_obj[:-2].rstrip() + f" {ap_entry} >>") \
-                    if w_obj.endswith(">>") else (w_obj + f" {ap_entry}")
-            doc.update_object(w_xref, w_obj)
-
-    # Save as a regular (non-incremental) PDF; pyhanko appends its revision.
-    doc.save(dst_path)
-    doc.close()
+        return TextStampStyle(
+            border_width=0,
+            stamp_text=" ",
+            background=PdfImage(img, box=BoxConstraints(native_w, native_h)),
+            background_opacity=1.0,
+            background_layout=SimpleBoxLayoutRule(
+                x_align=AxisAlignment.ALIGN_MID,
+                y_align=AxisAlignment.ALIGN_MID,
+                margins=Margins.uniform(0),
+            ),
+            text_box_style=TextBoxStyle(
+                font=_make_pdf_font("Helvetica", 0.5),
+                font_size=1,
+                border_width=0,
+            ),
+        )
+    finally:
+        try:
+            os.unlink(png_path)
+        except Exception:
+            pass
 
 
 # ── Worker threads ────────────────────────────────────────────────────────────
@@ -175,7 +182,7 @@ class SaveFieldsWorker(QThread):
     def run(self) -> None:
         try:
             buf = io.BytesIO(self.pdf_bytes)
-            writer = IncrementalPdfFileWriter(buf)
+            writer = IncrementalPdfFileWriter(buf, strict=False)
             for fdef in self.sig_fields:
                 spec = SigFieldSpec(
                     sig_field_name=fdef.name,
@@ -330,73 +337,88 @@ class SignWorker(QThread):
             )
 
             stamp_style = None
-            try:
-                # Compose text content
-                text_lines: list[str] = []
-                if app and app.show_name:
-                    name_val = (cert_cn if app.name_mode == "cert" and cert_cn
-                                else app.name_custom)
-                    if name_val:
-                        text_lines.append(name_val)
-                if app and app.show_location and app.location:
-                    text_lines.append(app.location)
-                if app and app.show_reason and app.reason:
-                    text_lines.append(app.reason)
+            page_rotation = self.fdef.page_rotation if self.fdef else 0
 
-                # Use pyhanko's %(ts)s placeholder for the timestamp
-                if app and app.show_date:
-                    text_lines.append("%(ts)s")
-                    ts_format = app.date_format or "%d.%m.%Y %H:%M"
-                else:
-                    ts_format = "%d.%m.%Y %H:%M"
+            # For rotated pages use a pre-rotated Pillow image as background so
+            # that the appearance content appears upright after the viewer applies
+            # the page rotation.  The normal pyhanko TextStampStyle path renders
+            # in the native (unrotated) field coordinate space which causes text
+            # and images to appear tilted when the page has /Rotate != 0.
+            if page_rotation != 0 and self.fdef is not None:
+                try:
+                    stamp_style = _build_rotated_appearance(
+                        app, cert_cn, self.fdef)
+                except Exception:
+                    traceback.print_exc(file=sys.stderr)
 
-                stamp_text = "\n".join(text_lines) if text_lines else " "
+            if stamp_style is None and page_rotation == 0:
+                try:
+                    # Compose text content
+                    text_lines: list[str] = []
+                    if app and app.show_name:
+                        name_val = (cert_cn if app.name_mode == "cert" and cert_cn
+                                    else app.name_custom)
+                        if name_val:
+                            text_lines.append(name_val)
+                    if app and app.show_location and app.location:
+                        text_lines.append(app.location)
+                    if app and app.show_reason and app.reason:
+                        text_lines.append(app.reason)
 
-                # Prepare background image if configured
-                from .appearance import _make_background_image
-                background_image = None
-                img_path = app.image_path if app else ""
-                if img_path and Path(img_path).exists():
-                    background_image = _make_background_image(
-                        img_path,
-                        layout=app.layout if app else "img_left",
-                        img_ratio=app.img_ratio if app else 40,
-                    )
+                    # Use pyhanko's %(ts)s placeholder for the timestamp
+                    if app and app.show_date:
+                        text_lines.append("%(ts)s")
+                        ts_format = app.date_format or "%d.%m.%Y %H:%M"
+                    else:
+                        ts_format = "%d.%m.%Y %H:%M"
 
-                style_kwargs: dict = dict(
-                    border_width=1 if (app and app.show_border) else 0,
-                    stamp_text=stamp_text,
-                    timestamp_format=ts_format,
-                    text_box_style=TextBoxStyle(
-                        font=_make_pdf_font(
-                            app.font_pdf_name  if app else "Helvetica",
-                            app.font_avg_width if app else 0.5,
+                    stamp_text = "\n".join(text_lines) if text_lines else " "
+
+                    # Prepare background image if configured
+                    from .appearance import _make_background_image
+                    background_image = None
+                    img_path = app.image_path if app else ""
+                    if img_path and Path(img_path).exists():
+                        background_image = _make_background_image(
+                            img_path,
+                            layout=app.layout if app else "img_left",
+                            img_ratio=app.img_ratio if app else 40,
+                        )
+
+                    style_kwargs: dict = dict(
+                        border_width=1 if (app and app.show_border) else 0,
+                        stamp_text=stamp_text,
+                        timestamp_format=ts_format,
+                        text_box_style=TextBoxStyle(
+                            font=_make_pdf_font(
+                                app.font_pdf_name  if app else "Helvetica",
+                                app.font_avg_width if app else 0.5,
+                            ),
+                            font_size=app.font_size if app else 8,
+                            border_width=0,
                         ),
-                        font_size=app.font_size if app else 8,
-                        border_width=0,
-                    ),
-                )
-                if background_image is not None:
-                    style_kwargs["background"]         = background_image
-                    style_kwargs["background_opacity"] = 1.0
-                    # Align text away from the image
-                    x_align = (AxisAlignment.ALIGN_MAX
-                                if app and app.layout == "img_left"
-                                else AxisAlignment.ALIGN_MIN)
-                    style_kwargs["inner_content_layout"] = SimpleBoxLayoutRule(
-                        x_align=x_align,
-                        y_align=AxisAlignment.ALIGN_MID,
-                        margins=Margins(left=4, right=4, top=4, bottom=4),
                     )
+                    if background_image is not None:
+                        style_kwargs["background"]         = background_image
+                        style_kwargs["background_opacity"] = 1.0
+                        # Align text away from the image
+                        x_align = (AxisAlignment.ALIGN_MAX
+                                    if app and app.layout == "img_left"
+                                    else AxisAlignment.ALIGN_MIN)
+                        style_kwargs["inner_content_layout"] = SimpleBoxLayoutRule(
+                            x_align=x_align,
+                            y_align=AxisAlignment.ALIGN_MID,
+                            margins=Margins(left=4, right=4, top=4, bottom=4),
+                        )
 
-                stamp_style = TextStampStyle(**style_kwargs)
+                    stamp_style = TextStampStyle(**style_kwargs)
 
-            except Exception:
-                traceback.print_exc(file=sys.stderr)
+                except Exception:
+                    traceback.print_exc(file=sys.stderr)
 
             # ── Sign the PDF ───────────────────────────────────────────────────
             buf    = io.BytesIO(self.pdf_bytes)
-            writer = IncrementalPdfFileWriter(buf)
+            writer = IncrementalPdfFileWriter(buf, strict=False)
 
             # Embed free unsigned fields (locked fields are already in the PDF bytes)
             fields_to_embed = list(self.all_fields)

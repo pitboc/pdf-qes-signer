@@ -3,10 +3,53 @@
 Signature field appearance rendering for PDF QES Signer.
 
 Provides:
-  - SigAppearance        – encapsulates all visual settings; renders Qt previews
-  - render_preview()     – method on SigAppearance
+  - SigAppearance            – encapsulates all visual settings; renders Qt previews
+  - render_preview()         – method on SigAppearance
   - _make_background_image() – compose Pillow image for pyhanko's TextStampStyle
   - _render_appearance_to_png() – Pillow-based PNG renderer (alternative path)
+
+## Image-padding trick for flexible positioning
+
+A signature field is a fixed rectangle inside the PDF.  pyhanko's
+`TextStampStyle` renders a background image and a text block side by side, but
+the image is always stretched to fill the full field height.  To place the
+image on the left or right *and* control the image-to-text ratio, a wider
+canvas is constructed:
+
+    total_width = image_width / (img_ratio / 100)
+
+The source image is pasted at position 0 (left layout) or at
+`total_width - image_width` (right layout).  The rest of the canvas is
+fully transparent.  pyhanko scales this wide canvas to fit the signature
+field rectangle and renders the text block into the transparent strip.
+
+This means the "width" of the canvas encodes the desired split ratio, not a
+pixel count – the final result is always scaled to the actual field dimensions.
+
+## Rendering paths
+
+| Path                       | Used by                                                          | Technology        |
+|----------------------------|------------------------------------------------------------------|-------------------|
+| `render_preview()`         | Live Qt canvas overlay and the preview panel on the right        | Qt (QPainter)     |
+| `_make_background_image()` | pyhanko at signing time – non-rotated pages                      | Pillow / PdfImage |
+| `_render_appearance_to_png()` | pyhanko at signing time – rotated pages (via `_build_rotated_appearance` in `signer.py`) | Pillow (PNG file) |
+
+The Qt preview deliberately mirrors the pyhanko layout so the user sees an
+accurate representation before committing to a PKCS#11 signing operation.
+
+### Why rotated pages need a separate path
+
+pyhanko renders a signature appearance stream in the PDF's native (unrotated)
+coordinate space.  When a page carries a ``/Rotate`` entry the PDF viewer
+rotates the *entire page* – including the appearance content – so text and
+images inside the signature field appear tilted.
+
+Fix: for pages with ``/Rotate != 0``, `_build_rotated_appearance` (in
+`signer.py`) calls `_render_appearance_to_png()` at the *visual* (displayed)
+dimensions, then counter-rotates the resulting image so that after the viewer
+applies its rotation the content appears upright.  The pre-rotated PNG is
+passed to pyhanko as a full-coverage background; the text layer is suppressed
+(1 pt space) so pyhanko does not add its own tilted text on top.
 """
 
 from __future__ import annotations
@@ -277,18 +320,20 @@ def _render_appearance_to_png(appearance: SigAppearance, cert_name: str,
         px_h = max(4, int(height_pt * SCALE))
         PADDING = int(4 * SCALE)
 
+        # RGBA with transparent base: empty areas and text background stay
+        # transparent (page content shows through), only the image area gets
+        # an opaque white backing so the signature graphic appears clearly.
         img = PILImage.new("RGBA", (px_w, px_h), (255, 255, 255, 0))
         draw = ImageDraw.Draw(img)
-        draw.rectangle([0, 0, px_w - 1, px_h - 1], fill=(208, 228, 255, 120))
         if appearance.show_border:
             draw.rectangle([1, 1, px_w - 2, px_h - 2],
-                           outline=(26, 115, 232, 255), width=max(1, SCALE))
+                           outline=(0, 0, 0, 255), width=max(1, SCALE))
 
         img_path = appearance.image_path
         has_image = bool(img_path and Path(img_path).exists())
 
         if has_image:
-            split = int(px_w * 0.40)
+            split = int(px_w * (appearance.img_ratio / 100.0))
             if appearance.layout == "img_left":
                 img_box  = (PADDING, PADDING, split - PADDING, px_h - PADDING)
                 text_box = (split + PADDING, PADDING, px_w - PADDING, px_h - PADDING)
@@ -336,10 +381,14 @@ def _render_appearance_to_png(appearance: SigAppearance, cert_name: str,
         if font is None:
             font = ImageFont.load_default()
 
-        text_color = (26, 48, 96, 255)
+        text_color = (0, 0, 0, 255)
         tb_x0, tb_y0, tb_x1, tb_y1 = text_box
         tb_w = tb_x1 - tb_x0
-        y = tb_y0 + int(2 * SCALE)
+        tb_h = tb_y1 - tb_y0
+        line_gap = int(1 * SCALE)
+
+        # Pre-compute line heights for vertical centering
+        line_data: list[tuple[str, int]] = []
         for line in lines:
             bbox = draw.textbbox((0, 0), line, font=font)
             lw = bbox[2] - bbox[0]
@@ -351,10 +400,16 @@ def _render_appearance_to_png(appearance: SigAppearance, cert_name: str,
                     if bbox[2] - bbox[0] <= tb_w:
                         line += "…"
                         break
+                lh = draw.textbbox((0, 0), line, font=font)[3]
+            line_data.append((line, lh))
+
+        total_h = sum(lh for _, lh in line_data) + line_gap * max(0, len(line_data) - 1)
+        y = tb_y0 + max(int(2 * SCALE), (tb_h - total_h) // 2)
+        for line, lh in line_data:
             if y + lh > tb_y1:
                 break
             draw.text((tb_x0, y), line, font=font, fill=text_color)
-            y += lh + int(1 * SCALE)
+            y += lh + line_gap
 
         tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
         img.save(tmp.name, "PNG")
