@@ -137,8 +137,10 @@ TRANSLATIONS: dict[str, str] = {
     "cfg_tsa_hint": "RFC 3161 timestamp service. Leave empty for default (BaltStamp).",
     "cfg_lib_label": "Library path (.so / .dll):",
     "cfg_lib_browse": "…",
-    "cfg_key_label": "Key Label:",
-    "cfg_key_hint": "↑ filled automatically on token test",
+    "cfg_key_id_label":       "Key ID:",
+    "cfg_key_id_placeholder": "hex ID (filled automatically on token test)",
+    "cfg_key_id_hint":        "↑ CKA_ID of the private key (from token dialog)",
+    "cfg_cert_cn_label":      "Name:",
     "cfg_pin_label": "PIN (test only):",
     "cfg_pin_placeholder": "leave empty for PIN pad",
     "cfg_pin_hint": "↑ for token test only, not saved",
@@ -150,7 +152,7 @@ TRANSLATIONS: dict[str, str] = {
         "because python-pkcs11 does not expose a separate login call.\n\n"
         "Alternatives:\n"
         "• Enter your PIN here to list private keys directly\n"
-        "• 'Test Token (no PIN)' – determines key label without PIN\n"
+        "• 'Test Token (no PIN)' – reads key ID from certificate\n"
         "• PIN pad works normally during signing"
     ),
     "cfg_save_btn": "Save",
@@ -159,13 +161,20 @@ TRANSLATIONS: dict[str, str] = {
     "dlg_token_error_title": "Token Error",
     "dlg_token_info_title": "Token Contents",
     "dlg_token_info_label": "Name: {label}    Manufacturer: {manufacturer}",
-    "dlg_token_keys_title": "Private Keys  (derived, double-click → apply)",
-    "dlg_token_certs_title": "Certificate Labels",
-    "dlg_token_use_key": "✓ Use Key Label",
-    "dlg_token_copy_key": "📋 Copy Key",
-    "dlg_token_copy_cert": "📋 Copy Cert",
+    "dlg_token_class_private_key":         "Private Keys",
+    "dlg_token_class_private_key_derived": "Private Keys (derived from public key)",
+    "dlg_token_class_certificate":         "Certificates",
+    "dlg_token_class_public_key":          "Public Keys",
+    "dlg_token_use_key": "Use ID",
     "dlg_token_close": "Close",
-    "dlg_token_auto_label": "Key label auto-set: {label}",
+    "dlg_token_no_key_title": "No Private Key Found",
+    "dlg_token_no_key_msg": (
+        "No private key found.\n\n"
+        "A PIN may be required to access the key.\n\n"
+        "Alternatively, the key label can be derived from the available public keys."
+    ),
+    "dlg_token_derive_btn": "Derive key label from public key",
+    "dlg_token_cancel_pin_btn": "Cancel – read token with PIN",
     # Appearance panel (main window)
     "ap_tab_text": "Text",
     "ap_tab_image_layout": "Image / Layout",

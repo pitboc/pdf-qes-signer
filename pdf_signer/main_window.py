@@ -87,6 +87,8 @@ class PDFSignerApp(QMainWindow):
       - Dispatching PDF open, save-with-fields, and sign operations to workers
     """
 
+    # Vordefinierte Datumsformate für die Erscheinungsbild-Einstellungen.
+    # Erstes Element: Python-strftime-Format; Zweites: Beispiel-String für Anzeige.
     DATE_FORMATS: list[tuple[str, str]] = [
         ("%d.%m.%Y %H:%M",    "31.12.2025 14:30"),
         ("%d.%m.%Y",          "31.12.2025"),
@@ -95,28 +97,41 @@ class PDFSignerApp(QMainWindow):
         ("%d/%m/%Y %H:%M",    "31/12/2025 14:30"),
         ("%B %d, %Y",         "December 31, 2025"),
     ]
+    # Sentinel-Wert für den "Benutzerdefiniert"-Eintrag in der Datumsformat-Combobox
     CUSTOM_FMT = "__custom__"
 
     def __init__(self, config: AppConfig,
                  initial_pdf: Optional[str] = None) -> None:
         super().__init__()
+        # config: AppConfig-Instanz mit allen persistierten Einstellungen
         self.config       = config
+        # appearance: kapselt alle visuellen Einstellungen des Signaturfelds;
+        # liest direkt aus config → Änderungen sofort wirksam
         self.appearance   = SigAppearance(config)
+        # pdf_doc: aktuell geöffnetes PyMuPDF-Dokument (None wenn kein PDF geöffnet)
         self.pdf_doc:     Optional[fitz.Document] = None
+        # pdf_path: absoluter Pfad zur aktuell geöffneten PDF-Datei
         self.pdf_path     = ""
+        # _working_bytes: PDF-Bytes der Arbeitskopie ohne freie unsigned Felder.
+        # Worker-Threads starten immer von dieser Basis und re-embedden sig_fields.
         self._working_bytes: bytes = b""  # PDF bytes without free unsigned fields
+        # current_page: 0-basierter Index der aktuell angezeigten Seite
         self.current_page = 0
+        # Drei-Kategorien-Modell (siehe Modul-Docstring):
         self.sig_fields:    list[SignatureFieldDef] = []  # free unsigned (editable)
         self.locked_fields: list[SignatureFieldDef] = []  # unsigned but frozen by existing sig
         self.signed_fields: list[SignatureFieldDef] = []  # already signed (display only)
+        # Worker-Referenzen halten damit GC sie nicht vorzeitig zerstört
         self._worker      = None
         self._sign_worker = None
 
         self._build_ui()
         self._apply_language()
         self.statusBar().showMessage(t("status_ready"))
+        # Fehlende Abhängigkeiten (pyhanko, python-pkcs11) beim Start prüfen
         self._check_dependencies()
 
+        # Optionale initiale PDF-Datei direkt öffnen (z.B. per Kommandozeilenargument)
         if initial_pdf:
             self._open_pdf(initial_pdf)
 
@@ -127,12 +142,15 @@ class PDFSignerApp(QMainWindow):
         self.resize(1340, 840)
 
         # Menu bar
+        # Menü-Leiste: Datei, Signieren, Einstellungen, Hilfe
         self._menu_file = self.menuBar().addMenu("")
         self._act_open  = QAction(self)
         self._act_open.setShortcut(QKeySequence.StandardKey.Open)
+        # Öffnet PDF-Dateidialog und lädt das ausgewählte Dokument
         self._act_open.triggered.connect(self.open_pdf)
         self._menu_file.addAction(self._act_open)
         self._act_save_fields = QAction(self)
+        # Speichert PDF mit eingebetteten Signaturfeld-Annotationen (ohne Signatur)
         self._act_save_fields.triggered.connect(self.save_with_fields)
         self._menu_file.addAction(self._act_save_fields)
         self._menu_file.addSeparator()
@@ -143,21 +161,26 @@ class PDFSignerApp(QMainWindow):
 
         self._menu_sign = self.menuBar().addMenu("")
         self._act_sign  = QAction(self)
+        # Startet den Signiervorgang für das ausgewählte Signaturfeld
         self._act_sign.triggered.connect(self.sign_document)
         self._menu_sign.addAction(self._act_sign)
 
         self._menu_settings  = self.menuBar().addMenu("")
         self._act_pkcs11     = QAction(self)
+        # Öffnet den PKCS#11-Konfigurationsdialog (Bibliothek, Schlüssel-ID, TSA)
         self._act_pkcs11.triggered.connect(self.open_pkcs11_config)
         self._menu_settings.addAction(self._act_pkcs11)
 
         # Language sub-menu
+        # Sprachauswahl-Untermenü: für jede verfügbare Sprache eine umschaltbare Aktion
         self._menu_lang = self.menuBar().addMenu("")
         self._lang_actions: dict[str, QAction] = {}
         for code, label in AVAILABLE_LANGUAGES.items():
             act = QAction(label, self)
             act.setCheckable(True)
+            # Aktuell aktive Sprache mit Häkchen markieren
             act.setChecked(code == i18n.lang)
+            # Lambda mit Default-Argument um Closures-Problem mit Schleifenvariable zu vermeiden
             act.triggered.connect(lambda _, c=code: self._set_language(c))
             self._lang_actions[code] = act
             self._menu_lang.addAction(act)
@@ -172,15 +195,18 @@ class PDFSignerApp(QMainWindow):
         self._menu_help.addAction(self._act_license)
 
         # Toolbar
+        # Werkzeugleiste mit den häufigsten Aktionen als Schaltflächen
         tb = self.addToolBar("main")
         tb.setMovable(False)
         self._tb_open = QAction(self)
         self._tb_open.triggered.connect(self.open_pdf)
         tb.addAction(self._tb_open)
         tb.addSeparator()
+        # Seitennavigation: vorherige/nächste Seite
         self._tb_prev = QAction(self)
         self._tb_prev.triggered.connect(self.prev_page)
         tb.addAction(self._tb_prev)
+        # Seitenanzahl-Label zwischen den Navigationspfeilen (z.B. "  2 / 5  ")
         self._page_label = QLabel("  –/–  ")
         self._page_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._page_label.setMinimumWidth(70)
@@ -189,6 +215,7 @@ class PDFSignerApp(QMainWindow):
         self._tb_next.triggered.connect(self.next_page)
         tb.addAction(self._tb_next)
         tb.addSeparator()
+        # Signieren und Felder speichern als Toolbar-Schnellzugriff
         self._tb_sign = QAction(self)
         self._tb_sign.triggered.connect(self.sign_document)
         tb.addAction(self._tb_sign)
@@ -197,21 +224,26 @@ class PDFSignerApp(QMainWindow):
         tb.addAction(self._tb_save_fields)
 
         # Central splitter: PDF canvas (left) + right panel
+        # Haupt-Splitter: PDF-Canvas links (größerer Anteil), Steuerbereich rechts
         splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(splitter)
 
+        # PDF-Canvas in ScrollArea eingebettet (kann bei hohem Zoom scrollen)
         scroll = QScrollArea()
         scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
         scroll.setStyleSheet("QScrollArea { background: #404040; }")
         self._pdf_view = PDFViewWidget(self.appearance)
+        # Signale vom PDFViewWidget: Feld hinzugefügt, gelöscht, angeklickt
         self._pdf_view.field_added.connect(self._on_field_added)
         self._pdf_view.field_deleted.connect(self._on_field_deleted)
+        # Klick auf Feld im Canvas → entsprechende Zeile in der Feldliste auswählen
         self._pdf_view.field_clicked.connect(self._on_field_clicked_in_view)
         scroll.setWidget(self._pdf_view)
         scroll.setWidgetResizable(False)
         splitter.addWidget(scroll)
 
         # Right panel
+        # Rechtes Panel: Feldliste, PIN-Eingabe, TSA-Checkbox, Erscheinungsbild-Tabs
         right = QWidget()
         right.setMinimumWidth(240)
         right.setMaximumWidth(310)
@@ -220,15 +252,22 @@ class PDFSignerApp(QMainWindow):
         rl.setSpacing(6)
 
         # Signature field list
+        # Gruppe mit der Liste aller Signaturfelder und Bearbeitungsschaltflächen
         self._fields_group = QGroupBox()
         fl = QVBoxLayout(self._fields_group)
+        # _field_list: listet alle drei Feldkategorien auf (farblich unterschieden).
+        # Zeile 0 = "Unsichtbare Signatur", 1…N = sig_fields (blau/schwarz),
+        # N+1…N+K = locked_fields (orange), Rest = signed_fields (grau)
         self._field_list = QListWidget()
         self._field_list.setFont(QFont("Courier", 9))
+        # Auswahl-Änderung: Vorschau im Canvas aktualisieren
         self._field_list.currentRowChanged.connect(self._on_field_selection_changed)
         fl.addWidget(self._field_list)
         btn_row = QHBoxLayout()
+        # "Löschen"-Schaltfläche: nur für sig_fields-Felder aktiv
         self._btn_delete = QPushButton()
         self._btn_delete.clicked.connect(self.delete_selected_field)
+        # "Speichern"-Schaltfläche: speichert PDF mit Signaturfeld-Annotationen
         self._btn_save = QPushButton()
         self._btn_save.clicked.connect(self.save_with_fields)
         btn_row.addWidget(self._btn_delete)
@@ -237,6 +276,7 @@ class PDFSignerApp(QMainWindow):
         rl.addWidget(self._fields_group)
 
         # Token / PIN panel
+        # PIN-Eingabebereich: Passwort-Modus; leer = Hardware-PIN-Pad verwenden
         self._token_group = QGroupBox()
         tl2 = QFormLayout(self._token_group)
         tl2.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
@@ -244,17 +284,24 @@ class PDFSignerApp(QMainWindow):
         self._pin_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self._pin_lbl_widget = QLabel()
         tl2.addRow(self._pin_lbl_widget, self._pin_edit)
+        # Hinweistext in grau/klein unter der PIN-Zeile
         self._pin_hint_lbl = QLabel()
         self._pin_hint_lbl.setStyleSheet("color: gray; font-size: 10px;")
         tl2.addRow("", self._pin_hint_lbl)
         rl.addWidget(self._token_group)
 
         # TSA toggle
+        # Checkbox zum Ein-/Ausschalten des RFC-3161-Zeitstempels.
+        # Wenn aktiviert, wird beim Signieren ein Zeitstempel von der
+        # konfigurierten TSA abgeholt und in die Signatur eingebettet.
         self._tsa_chk = QCheckBox()
+        # Checkbox-Änderung speichert den Zustand sofort in der Konfig
         self._tsa_chk.toggled.connect(self._on_tsa_toggled)
         rl.addWidget(self._tsa_chk)
 
         # Inline appearance panel
+        # Erscheinungsbild-Gruppe: inline in der Hauptansicht statt separatem Dialog,
+        # damit Änderungen sofort in der Canvas-Vorschau sichtbar sind
         self._app_group = QGroupBox()
         ag = QVBoxLayout(self._app_group)
         ag.setContentsMargins(4, 4, 4, 4)
@@ -263,20 +310,26 @@ class PDFSignerApp(QMainWindow):
         self._app_tabs.setTabPosition(QTabWidget.TabPosition.North)
         ag.addWidget(self._app_tabs, stretch=2)
 
+        # Erscheinungsbild-Tabs bauen (Tab 1: Text, Tab 2: Bild/Layout)
         self._build_appearance_tabs()
         rl.addWidget(self._app_group, stretch=1)
         rl.addStretch()
 
         splitter.addWidget(right)
+        # Canvas bekommt 5-fachen Anteil, rechtes Panel 1-fachen Anteil
         splitter.setStretchFactor(0, 5)
         splitter.setStretchFactor(1, 1)
 
+        # Erscheinungsbild-Panel aus gespeicherter Konfig befüllen
         self._load_appearance_panel()
+        # TSA-Checkbox aus Konfig initialisieren
         self._tsa_chk.setChecked(self.config.getbool("tsa", "enabled"))
 
     # ── Language support ──────────────────────────────────────────────────
 
     def _set_language(self, code: str) -> None:
+        # Sprache wechseln: i18n-Singleton aktualisieren, Konfig speichern,
+        # alle Sprach-Aktionen neu einrasten und UI neu beschriften
         i18n.lang = code
         self.config.set("app", "language", code)
         self.config.save()
@@ -286,6 +339,8 @@ class PDFSignerApp(QMainWindow):
 
     def _apply_language(self) -> None:
         """Retranslate all UI strings to the current language."""
+        # Alle sichtbaren Texte der Benutzeroberfläche auf die aktuelle Sprache setzen.
+        # Wird beim Sprachenwechsel und beim ersten Aufbau aufgerufen.
         self.setWindowTitle("PDF QES Signer")
         self._menu_file.setTitle(t("menu_file"))
         self._act_open.setText(t("menu_file_open"))
@@ -313,6 +368,7 @@ class PDFSignerApp(QMainWindow):
         self._app_group.setTitle(t("panel_appearance"))
         self._tsa_chk.setText(t("tsa_enabled_label"))
         # Appearance panel – retranslate all inline widgets
+        # Alle Erscheinungsbild-Widgets neu beschriften
         self._ap_chk_name.setText(t("app_name_label"))
         self._ap_chk_loc.setText(t("app_location_label"))
         self._ap_chk_reason.setText(t("app_reason_label"))
@@ -325,6 +381,7 @@ class PDFSignerApp(QMainWindow):
         self._ap_lbl_layout.setText(t("app_layout_label"))
         self._ap_layout.setItemText(0, t("ap_layout_left"))
         self._ap_layout.setItemText(1, t("ap_layout_right"))
+        # "Custom…"-Eintrag in der Datumsformat-Combobox übersetzen
         custom_idx = self._ap_date_combo.findData(self.CUSTOM_FMT)
         if custom_idx >= 0:
             self._ap_date_combo.setItemText(custom_idx, t("ap_date_custom"))
@@ -339,6 +396,7 @@ class PDFSignerApp(QMainWindow):
         """Build the Text and Image/Layout tabs in the right panel."""
 
         # Tab 1: Text
+        # Steuerung der Textinhalte im Signaturfeld: Name, Ort, Grund, Datum, Schrift
         txt_tab = QWidget()
         gl = QGridLayout(txt_tab)
         gl.setColumnStretch(1, 1)
@@ -347,10 +405,12 @@ class PDFSignerApp(QMainWindow):
         row = 0
 
         # Name
+        # Checkbox aktiviert Namensanzeige; Combobox wählt Quelle (Zertifikat oder Freitext)
         self._ap_chk_name = QCheckBox(t("app_name_label"))
         self._ap_name_mode = QComboBox()
         self._ap_name_mode.addItem(t("ap_name_from_cert"), "cert")
         self._ap_name_mode.addItem(t("ap_name_custom"),    "custom")
+        # Freitext-Eingabe für benutzerdefinierten Namen (nur im "custom"-Modus aktiv)
         self._ap_name_custom = QLineEdit()
         self._ap_name_custom.setPlaceholderText("Jane Doe")
         name_row = QHBoxLayout()
@@ -362,6 +422,7 @@ class PDFSignerApp(QMainWindow):
         row += 1
 
         # Location
+        # Signierort (z.B. "Berlin"); wird in den PDF-Signatur-Metadaten gespeichert
         self._ap_chk_loc = QCheckBox(t("app_location_label"))
         self._ap_loc = QLineEdit()
         gl.addWidget(self._ap_chk_loc, row, 0)
@@ -369,6 +430,7 @@ class PDFSignerApp(QMainWindow):
         row += 1
 
         # Reason
+        # Signaturgrund (z.B. "Genehmigung"); wird in den PDF-Signatur-Metadaten gespeichert
         self._ap_chk_reason = QCheckBox(t("app_reason_label"))
         self._ap_reason = QLineEdit()
         gl.addWidget(self._ap_chk_reason, row, 0)
@@ -376,13 +438,18 @@ class PDFSignerApp(QMainWindow):
         row += 1
 
         # Date
+        # Datum/Uhrzeit: pyhanko ersetzt %(ts)s beim Signieren durch den
+        # kryptographischen Zeitstempel aus dem Signaturprozess
         self._ap_chk_date = QCheckBox(t("app_date_label"))
         date_vl = QVBoxLayout()
         date_vl.setSpacing(2)
+        # Vordefinierte Datumsformate in der Combobox
         self._ap_date_combo = QComboBox()
         for fmt, ex in self.DATE_FORMATS:
             self._ap_date_combo.addItem(f"{fmt}  →  {ex}", fmt)
+        # "Benutzerdefiniert"-Eintrag ermöglicht freie Formatangabe
         self._ap_date_combo.addItem(t("ap_date_custom"), self.CUSTOM_FMT)
+        # Freitext-Eingabe für das Datumsformat (anfangs ausgeblendet)
         self._ap_date_custom = QLineEdit()
         self._ap_date_custom.setPlaceholderText("%d.%m.%Y %H:%M")
         self._ap_date_custom.setVisible(False)
@@ -393,6 +460,7 @@ class PDFSignerApp(QMainWindow):
         row += 1
 
         # Font size
+        # Schriftgröße in Punkten: Bereich 5–24pt; Spinbox mit direkter Eingabe
         self._ap_font_spin = QSpinBox()
         self._ap_font_spin.setRange(5, 24)
         self._ap_lbl_font_size = QLabel(t("ap_font_pt"))
@@ -402,6 +470,7 @@ class PDFSignerApp(QMainWindow):
         row += 1
 
         # Font family
+        # Schriftfamilie: nur PDF-14-Standardschriften (keine Einbettung nötig)
         self._ap_font_combo = QComboBox()
         for disp, pdf_name, _, _ in PDF_STANDARD_FONTS:
             self._ap_font_combo.addItem(disp, pdf_name)
@@ -410,16 +479,19 @@ class PDFSignerApp(QMainWindow):
         gl.addWidget(self._ap_font_combo,      row, 1)
         row += 1
 
+        # Restlicher Platz im Grid-Layout als Stretch-Zeile
         gl.setRowStretch(row, 1)
         self._app_tabs.addTab(txt_tab, t("ap_tab_text"))
 
         # Tab 2: Image / Layout
+        # Steuerung des Bildes und Layouts (links/rechts, Rahmen, Verhältnis)
         img_tab = QWidget()
         vl = QVBoxLayout(img_tab)
         vl.setContentsMargins(4, 4, 4, 4)
         vl.setSpacing(6)
 
         # Image path
+        # Zeile mit Bildpfad-Anzeige (read-only), Datei-Auswahl-Button und Löschen-Button
         img_row = QHBoxLayout()
         img_row.setSpacing(3)
         self._ap_img_path = QLineEdit()
@@ -435,11 +507,13 @@ class PDFSignerApp(QMainWindow):
         img_row.addWidget(self._ap_clr_btn)
         vl.addLayout(img_row)
 
+        # Hinweistext in grau: unterstützte Bildformate oder Empfehlungen
         self._ap_img_hint = QLabel(t("ap_img_hint"))
         self._ap_img_hint.setStyleSheet("color:gray; font-size:10px;")
         vl.addWidget(self._ap_img_hint)
 
         # Layout combo
+        # Wählt ob das Bild links oder rechts vom Text erscheint
         lay_row = QHBoxLayout()
         self._ap_lbl_layout = QLabel(t("app_layout_label"))
         lay_row.addWidget(self._ap_lbl_layout)
@@ -450,10 +524,13 @@ class PDFSignerApp(QMainWindow):
         vl.addLayout(lay_row)
 
         # Border checkbox
+        # Dünner Rahmen um das gesamte Signaturfeld (optional)
         self._ap_border = QCheckBox(t("ap_border"))
         vl.addWidget(self._ap_border)
 
         # Image/text ratio slider
+        # Slider steuert den Anteil des Bildes an der Gesamtbreite (10–70 %).
+        # Linkes und rechtes Label zeigen den aktuellen Wert.
         ratio_row = QHBoxLayout()
         self._ap_ratio_lbl_l = QLabel("◀ Image 40%")
         self._ap_ratio_lbl_l.setFixedWidth(84)
@@ -473,18 +550,25 @@ class PDFSignerApp(QMainWindow):
         self._app_tabs.addTab(img_tab, t("ap_tab_image_layout"))
 
         # Connect signals
+        # Alle Checkboxen lösen bei Aktivierung/Deaktivierung einen Speicher- und
+        # Vorschau-Refresh aus; dabei werden abhängige Eingabefelder en-/deaktiviert
         for chk in (self._ap_chk_name, self._ap_chk_loc,
                     self._ap_chk_reason, self._ap_chk_date):
             chk.toggled.connect(self._ap_on_checks)
+        # Name-Modus-Wechsel (cert/custom) beeinflusst den Freitext-Inhalt
         self._ap_name_mode.currentIndexChanged.connect(self._ap_on_checks)
+        # Datumsformat-Wechsel: "Custom…"-Feld ein-/ausblenden
         self._ap_date_combo.currentIndexChanged.connect(self._ap_on_date_fmt)
+        # Texteingaben lösen sofortiges Speichern und Canvas-Refresh aus
         for w in (self._ap_loc, self._ap_reason, self._ap_name_custom,
                   self._ap_date_custom):
             w.textChanged.connect(self._ap_save_and_refresh)
         self._ap_font_spin.valueChanged.connect(self._ap_save_and_refresh)
         self._ap_font_combo.currentIndexChanged.connect(self._ap_save_and_refresh)
+        # Layout-Wechsel invertiert ggf. den Slider (Bild rechts → invertierte Anzeige)
         self._ap_layout.currentIndexChanged.connect(self._ap_on_layout)
         self._ap_border.toggled.connect(self._ap_save_and_refresh)
+        # Slider-Wertänderung: Labels und Vorschau aktualisieren
         self._ap_ratio.valueChanged.connect(self._ap_on_ratio)
 
     # ── Slots for the inline appearance panel ─────────────────────────────
@@ -493,8 +577,23 @@ class PDFSignerApp(QMainWindow):
         """Enable/disable fields based on checkbox states."""
         name_on = self._ap_chk_name.isChecked()
         self._ap_name_mode.setEnabled(name_on)
-        self._ap_name_custom.setEnabled(
-            name_on and self._ap_name_mode.currentData() == "custom")
+        is_cert_mode = self._ap_name_mode.currentData() == "cert"
+        # Freitext-Eingabe nur aktiv wenn Name aktiviert UND Modus "custom"
+        self._ap_name_custom.setEnabled(name_on and not is_cert_mode)
+        # Set field text based on mode (block signals to avoid triggering saves)
+        # Signale blockieren damit das programmatische Setzen des Textes keinen
+        # weiteren _ap_save_and_refresh auslöst
+        self._ap_name_custom.blockSignals(True)
+        if is_cert_mode:
+            # Im Cert-Modus: cert_cn aus Konfig anzeigen (read-only)
+            self._ap_name_custom.setText(self.config.get("pkcs11", "cert_cn"))
+            self._ap_name_custom.setPlaceholderText("")
+        else:
+            # Im Custom-Modus: gespeicherten benutzerdefinierten Namen wiederherstellen
+            self._ap_name_custom.setText(self.config.get("appearance", "name_custom"))
+            self._ap_name_custom.setPlaceholderText("Jane Doe")
+        self._ap_name_custom.blockSignals(False)
+        # Eingabefelder entsprechend den Checkbox-Zuständen aktivieren/deaktivieren
         self._ap_loc.setEnabled(self._ap_chk_loc.isChecked())
         self._ap_reason.setEnabled(self._ap_chk_reason.isChecked())
         self._ap_date_combo.setEnabled(self._ap_chk_date.isChecked())
@@ -502,22 +601,29 @@ class PDFSignerApp(QMainWindow):
         self._ap_save_and_refresh()
 
     def _ap_on_date_fmt(self) -> None:
+        # "Custom…" ausgewählt → Freitext-Eingabe einblenden; sonst ausblenden
         is_custom = self._ap_date_combo.currentData() == self.CUSTOM_FMT
         self._ap_date_custom.setVisible(is_custom)
         self._ap_save_and_refresh()
 
     def _ap_on_layout(self) -> None:
         """Invert slider direction when image is on the right."""
+        # Bei Bild rechts: Slider-Erscheinung invertieren, damit der Slider
+        # intuitiv funktioniert (nach rechts schieben = mehr Bild)
         val = self._ap_layout.currentData() or "img_left"
         self._ap_ratio.setInvertedAppearance(val == "img_right")
         self._ap_update_ratio_labels()
         self._ap_save_and_refresh()
 
     def _ap_on_ratio(self, _v: int) -> None:
+        # Slider-Wert geändert: Beschriftungen und Canvas-Vorschau aktualisieren
         self._ap_update_ratio_labels()
         self._ap_save_and_refresh()
 
     def _ap_update_ratio_labels(self) -> None:
+        # Beschriftungen links und rechts des Ratio-Sliders aktualisieren.
+        # Semantik hängt vom Layout ab: bei "img_left" zeigt linkes Label den
+        # Bildanteil, bei "img_right" ist es umgekehrt.
         val = self._ap_layout.currentData() or "img_left"
         v   = self._ap_ratio.value()
         if val == "img_left":
@@ -525,29 +631,37 @@ class PDFSignerApp(QMainWindow):
             self._ap_ratio_lbl_r.setText(f"Text {100 - v}% ▶")
         else:
             # Slider is inverted: left = high value (lots of text)
+            # Slider ist invertiert: hoher Wert → mehr Bild, aber auf der rechten Seite
             self._ap_ratio_lbl_l.setText(f"Text {100 - v}% ▶")
             self._ap_ratio_lbl_r.setText(f"◀ Image {v}%")
 
     def _ap_browse_image(self) -> None:
+        # Bilddatei-Dialog öffnen; Startverzeichnis aus letztem gespeicherten Pfad
         start = self.config.get("paths", "last_img_dir")
         path, _ = QFileDialog.getOpenFileName(
             self, t("ap_browse_img"), start, t("ap_img_filter"))
         if path:
             self._ap_img_path.setText(path)
+            # Letztes Bildverzeichnis für künftige Dialoge speichern
             self.config.set("paths", "last_img_dir", str(Path(path).parent))
             self._ap_save_and_refresh()
 
     def _ap_clear_image(self) -> None:
+        # Bildpfad löschen und Vorschau ohne Bild neu rendern
         self._ap_img_path.clear()
         self._ap_save_and_refresh()
 
     def _ap_date_fmt_value(self) -> str:
+        # Aktuell gewähltes Datumsformat zurückgeben.
+        # Bei "Custom…": aus dem Freitext-Feld lesen, Fallback auf Standard
         if self._ap_date_combo.currentData() == self.CUSTOM_FMT:
             return self._ap_date_custom.text().strip() or "%d.%m.%Y %H:%M"
         return self._ap_date_combo.currentData() or "%d.%m.%Y %H:%M"
 
     def _ap_save_and_refresh(self) -> None:
         """Write all appearance values to config and repaint the canvas."""
+        # Alle aktuellen Widget-Werte in die AppConfig schreiben und auf Disk speichern.
+        # Danach Canvas-Vorschau neu zeichnen damit Änderungen sofort sichtbar sind.
         cfg = self.config
         cfg.set("appearance", "image_path",
                 self._ap_img_path.text().strip())
@@ -558,8 +672,12 @@ class PDFSignerApp(QMainWindow):
         cfg.setbool("appearance", "show_name",    self._ap_chk_name.isChecked())
         cfg.set("appearance", "name_mode",
                 self._ap_name_mode.currentData() or "cert")
-        cfg.set("appearance", "name_custom",
-                self._ap_name_custom.text().strip())
+        # Only overwrite the custom name when in custom mode;
+        # in cert mode the field displays cert_cn which must not clobber name_custom.
+        # Im Cert-Modus zeigt das Feld den cert_cn an – dieser darf name_custom
+        # nicht überschreiben, da er beim nächsten Wechsel zu "custom" verloren wäre
+        if self._ap_name_mode.currentData() != "cert":
+            cfg.set("appearance", "name_custom", self._ap_name_custom.text().strip())
         cfg.setbool("appearance", "show_location", self._ap_chk_loc.isChecked())
         cfg.set("appearance", "location",     self._ap_loc.text().strip())
         cfg.setbool("appearance", "show_reason",  self._ap_chk_reason.isChecked())
@@ -570,10 +688,13 @@ class PDFSignerApp(QMainWindow):
         cfg.set("appearance", "font_family",
                 self._ap_font_combo.currentData() or "Helvetica")
         cfg.save()
+        # Canvas-Vorschau neu zeichnen (aktualisiert das Overlay der Signaturfelder)
         self._pdf_view.refresh()
 
     def _load_appearance_panel(self) -> None:
         """Populate the inline appearance widgets from config (no signals fired)."""
+        # Alle Widgets aus der Konfig befüllen ohne dabei Signale auszulösen,
+        # die vorzeitig Speicher- und Refresh-Operationen anstoßen würden.
         cfg = self.config
         widgets = [
             self._ap_chk_name, self._ap_name_mode, self._ap_name_custom,
@@ -586,6 +707,7 @@ class PDFSignerApp(QMainWindow):
             w.blockSignals(True)
 
         # Text tab
+        # Alle Text-bezogenen Einstellungen aus der Konfig laden
         self._ap_chk_name.setChecked(cfg.getbool("appearance", "show_name"))
         nm_idx = self._ap_name_mode.findData(cfg.get("appearance", "name_mode"))
         self._ap_name_mode.setCurrentIndex(max(0, nm_idx))
@@ -601,18 +723,22 @@ class PDFSignerApp(QMainWindow):
         saved_fmt = cfg.get("appearance", "date_format") or "%d.%m.%Y %H:%M"
         fmt_idx   = self._ap_date_combo.findData(saved_fmt)
         if fmt_idx >= 0:
+            # Format direkt in der Combobox gefunden → auswählen
             self._ap_date_combo.setCurrentIndex(fmt_idx)
         else:
+            # Format nicht in der Liste → "Custom…" wählen und Freitext-Feld füllen
             custom_idx = self._ap_date_combo.findData(self.CUSTOM_FMT)
             self._ap_date_combo.setCurrentIndex(custom_idx)
             self._ap_date_custom.setText(saved_fmt)
             self._ap_date_custom.setVisible(True)
 
+        # Schriftgröße laden; ungültige Werte auf gültigen Bereich clampen
         try:
             fs = int(cfg.get("appearance", "font_size") or "8")
         except (ValueError, TypeError):
             fs = 8
         self._ap_font_spin.setValue(max(5, min(24, fs)))
+        # Schriftfamilie: gespeicherten PDF-Fontnamen in der Combobox suchen
         ff_idx = self._ap_font_combo.findData(
             cfg.get("appearance", "font_family") or "Helvetica")
         self._ap_font_combo.setCurrentIndex(max(0, ff_idx))
@@ -623,53 +749,66 @@ class PDFSignerApp(QMainWindow):
         self._ap_layout.setCurrentIndex(max(0, lay_idx))
         self._ap_border.setChecked(cfg.getbool("appearance", "show_border"))
 
+        # Verhältnis-Slider: ungültige Werte auf gültigen Bereich clampen
         try:
             ratio = int(cfg.get("appearance", "img_ratio") or "40")
         except (ValueError, TypeError):
             ratio = 40
         self._ap_ratio.setValue(max(10, min(70, ratio)))
+        # Slider invertieren wenn Bild rechts ausgewählt ist
         self._ap_ratio.setInvertedAppearance(
             (self._ap_layout.currentData() or "img_left") == "img_right")
 
+        # Signale wieder freigeben
         for w in widgets:
             w.blockSignals(False)
 
+        # Checkbox-abhängige Felder aktivieren/deaktivieren und Slider-Labels setzen
         self._ap_on_checks()
         self._ap_on_layout()
 
     # ── Utility methods ───────────────────────────────────────────────────
 
     def _set_status(self, msg: str) -> None:
+        # Statusleiste am unteren Fensterrand aktualisieren
         self.statusBar().showMessage(msg)
 
     def _update_field_list(self) -> None:
         from PyQt6.QtWidgets import QListWidgetItem
         from PyQt6.QtGui import QColor
+        # Aktuelle Auswahl merken damit sie nach dem Neuaufbau wiederhergestellt wird
         prev_row = self._field_list.currentRow()
         self._field_list.clear()
         # Row 0: invisible signature option
+        # Zeile 0: Sonderoption "Unsichtbare Signatur" (kein Feld im Canvas)
         self._field_list.addItem(t("dlg_invisible_field"))
         # Rows 1 … len(sig_fields): free unsigned fields (blue, deletable)
+        # Freie unsigned Felder: schwarz/normal, löschbar
         for fdef in self.sig_fields:
             self._field_list.addItem(
                 f"p.{fdef.page + 1}  {fdef.name}  [{fdef.x1:.0f},{fdef.y1:.0f}]")
         # Rows after sig_fields: locked unsigned fields (orange, only signable)
+        # Gesperrte unsigned Felder: orange markiert, nicht löschbar (durch Signatur-Hash geschützt)
         for fdef in self.locked_fields:
             item = QListWidgetItem(
                 f"🔒 p.{fdef.page + 1}  {fdef.name}  [{fdef.x1:.0f},{fdef.y1:.0f}]")
             item.setForeground(QColor("#e67e00"))
             self._field_list.addItem(item)
         # Rows after: already-signed fields (grey, display only)
+        # Bereits signierte Felder: grau mit ✓-Symbol, keine Aktion möglich
         for fdef in self.signed_fields:
             item = QListWidgetItem(f"✓ p.{fdef.page + 1}  {fdef.name}")
             item.setForeground(QColor("#888888"))
             self._field_list.addItem(item)
+        # Letzte gültige Auswahl wiederherstellen (oder letztes Element)
         n = self._field_list.count()
         if n > 0:
             row = prev_row if 0 <= prev_row < n else (n - 1 if n > 1 else 0)
             self._field_list.setCurrentRow(row)
 
     def _check_dependencies(self) -> None:
+        # Prüfen ob optionale Bibliotheken vorhanden sind;
+        # bei fehlenden Paketen einen Warn-Dialog mit Installationshinweis zeigen
         missing = []
         if not _pyhanko_available:
             missing.append("pyhanko  (pip install pyhanko)")
@@ -682,12 +821,15 @@ class PDFSignerApp(QMainWindow):
                   packages="\n".join(f"  • {m}" for m in missing)))
 
     def _render_current_page(self) -> None:
+        # Aktuelle Seite im PDFViewWidget rendern; alle drei Feldlisten übergeben
+        # damit das Widget die Felder farblich korrekt überlagern kann
         if not self.pdf_doc:
             return
         page = self.pdf_doc[self.current_page]
         self._pdf_view.set_page(
             page, self.sig_fields, self.current_page,
             self.locked_fields, self.signed_fields)
+        # Seitenzähler im Toolbar-Label aktualisieren (1-basiert für den Benutzer)
         self._page_label.setText(
             f"  {self.current_page + 1} / {len(self.pdf_doc)}  ")
 
@@ -697,33 +839,45 @@ class PDFSignerApp(QMainWindow):
         """Show appearance preview in the selected unsigned field (free or locked)."""
         n_sig    = len(self.sig_fields)
         n_locked = len(self.locked_fields)
+        # Auswahl in der Feldliste auf das entsprechende PDFViewWidget-Feld abbilden.
+        # Row 0 = unsichtbar → kein Feld hervorheben
         if 1 <= row <= n_sig:
+            # sig_fields-Bereich: frei editierbares Feld hervorheben
             self._pdf_view.set_selected_field(self.sig_fields[row - 1])
         elif n_sig + 1 <= row <= n_sig + n_locked:
+            # locked_fields-Bereich: gesperrtes Feld hervorheben
             self._pdf_view.set_selected_field(self.locked_fields[row - n_sig - 1])
         else:
+            # Kein Feld hervorheben (Row 0 oder bereits signierte Felder)
             self._pdf_view.set_selected_field(None)
 
     # ── Signals from PDFViewWidget ────────────────────────────────────────
 
     def _on_field_clicked_in_view(self, fdef: SignatureFieldDef) -> None:
         """Synchronize list selection when a field is clicked in the PDF view."""
+        # Wenn der Benutzer im Canvas auf ein Feld klickt, wird die entsprechende
+        # Zeile in der rechten Feldliste ausgewählt (bidirektionale Synchronisation)
         n_sig    = len(self.sig_fields)
         n_locked = len(self.locked_fields)
+        # Suche in sig_fields (Zeilen 1…N)
         for i, f in enumerate(self.sig_fields):
             if f is fdef:
                 self._field_list.setCurrentRow(i + 1)
                 return
+        # Suche in locked_fields (Zeilen N+1…N+K)
         for i, f in enumerate(self.locked_fields):
             if f is fdef:
                 self._field_list.setCurrentRow(n_sig + 1 + i)
                 return
+        # Suche in signed_fields (Zeilen N+K+1…Ende)
         for i, f in enumerate(self.signed_fields):
             if f is fdef:
                 self._field_list.setCurrentRow(n_sig + n_locked + 1 + i)
                 return
 
     def _on_field_added(self, fdef: SignatureFieldDef) -> None:
+        # Feld wurde im Canvas gezeichnet → Feldliste aktualisieren und
+        # das neue Feld als aktive Auswahl setzen
         self._update_field_list()
         self._field_list.setCurrentRow(self._field_list.count() - 1)
         # currentRowChanged fires above and calls _on_field_selection_changed
@@ -731,12 +885,15 @@ class PDFSignerApp(QMainWindow):
             t("status_field_added", name=fdef.name, page=fdef.page + 1))
 
     def _on_field_deleted(self, fdef: SignatureFieldDef) -> None:
+        # Feld wurde per Tastatur oder Kontextmenü im Canvas gelöscht →
+        # Feldliste aktualisieren und Status-Meldung anzeigen
         self._update_field_list()
         self._set_status(t("status_field_deleted", name=fdef.name))
 
     # ── PDF navigation ────────────────────────────────────────────────────
 
     def open_pdf(self) -> None:
+        # Dateiauswahl-Dialog öffnen; Startverzeichnis aus letztem geöffneten Pfad
         start = self.config.get("paths", "last_open_dir")
         path, _ = QFileDialog.getOpenFileName(
             self, t("dlg_open_pdf_title"), start, t("dlg_pdf_filter"))
@@ -745,16 +902,19 @@ class PDFSignerApp(QMainWindow):
 
     def _open_pdf(self, path: str) -> None:
         try:
+            # Pfad normalisieren (Symlinks auflösen, absolut machen)
             path = str(Path(path).resolve())
             doc = fitz.open(path)
             self.pdf_doc      = doc
             self.pdf_path     = path
             self.current_page = 0
+            # Bestehende Signaturfelder klassifizieren und _working_bytes setzen
             self._load_existing_fields(doc)
             self._update_field_list()
             self._render_current_page()
             self.setWindowTitle(f"PDF QES Signer – {os.path.basename(path)}")
             self._set_status(t("status_opened", path=path, pages=len(doc)))
+            # Letztes geöffnetes Verzeichnis speichern
             self.config.set("paths", "last_open_dir", str(Path(path).parent))
             self.config.save()
         except Exception as exc:
@@ -791,14 +951,20 @@ class PDFSignerApp(QMainWindow):
         (the native page height) rather than ``page.rect.height`` (the
         displayed height, which is swapped for 90°/270° rotations).
         """
+        # Alle drei Kategorien zurücksetzen vor dem neuen Klassifizierungsdurchlauf
         self.sig_fields.clear()
         self.locked_fields.clear()
         self.signed_fields.clear()
 
         # First pass: collect all signature widgets
+        # all_unsigned: Sammlung aller noch nicht signierten Widget-Felder mit ihrem xref.
+        # Der xref wird benötigt, um das Widget später aus dem in-memory fitz-Dokument
+        # zu entfernen (strip), damit fitz keine "SIGN"-Platzhalter rendert.
         all_unsigned: list[tuple[SignatureFieldDef, int]] = []  # (fdef, xref)
         for page_num in range(len(doc)):
             page   = doc[page_num]
+            # mediabox.height: native Seitenhöhe unabhängig von der Rotation.
+            # Wird für die Y-Achsen-Umrechnung (fitz: y-down → PDF: y-up) benötigt.
             mbox_h = page.mediabox.height
             for widget in list(page.widgets()):
                 if widget.field_type != fitz.PDF_WIDGET_TYPE_SIGNATURE:
@@ -807,16 +973,23 @@ class PDFSignerApp(QMainWindow):
                 # coordinate system, y-down, regardless of /Rotate.  We only need
                 # to flip Y using the native page height (mediabox.height) to
                 # obtain PDF native coords (y-up, bottom-left origin).
+                # Y-Koordinaten von fitz (y-down, links oben) in PDF-Koordinaten
+                # (y-up, links unten) umrechnen mittels nativer Seitenhöhe
                 r  = widget.rect
                 x1 = r.x0
                 y1 = mbox_h - r.y1
                 x2 = r.x1
                 y2 = mbox_h - r.y0
                 name = widget.field_name or f"Sig_p{page_num + 1}"
+                # SignatureFieldDef mit Seitenrotation anlegen (für Rotations-Korrektur
+                # beim Signieren auf rotierten Seiten, siehe signer.py)
                 fdef = SignatureFieldDef(page_num, x1, y1, x2, y2, name,
                                         rotation=page.rotation)
 
                 # Detect signed state: /V entry references a signature dict
+                # Prüfen ob das Feld bereits signiert ist:
+                # Ein signiertes Feld hat eine /V-Referenz auf ein Signaturobjekt
+                # (Format: /V <objnum> <gennum> R)
                 try:
                     obj = doc.xref_object(widget.xref, compressed=False)
                     already_signed = bool(re.search(r'/V\s+\d+\s+\d+\s+R', obj))
@@ -833,12 +1006,20 @@ class PDFSignerApp(QMainWindow):
         # byte range and can be freely edited (→ sig_fields).  Only fields that
         # existed at the time of signing must be kept intact (→ locked_fields).
         has_signatures = bool(self.signed_fields)
+        # unsigned_xrefs_to_strip: xrefs der Felder, die aus dem in-memory fitz-Doc
+        # entfernt werden sollen (nur freie Felder, nicht locked_fields)
         unsigned_xrefs_to_strip: list[int] = []
+        # signed_end: Byte-Offset bis zu dem die letzte Signatur abgedeckt ist.
+        # _working_bytes wird auf diesen Bereich gekürzt damit post-signature
+        # inkrementelle Updates ausgeschlossen werden.
         signed_end: int = 0  # byte offset where last signature's coverage ends
 
         if has_signatures:
             # Use pyhanko to separate pre-signature fields (locked) from
             # post-signature fields (still freely editable).
+            # pyhanko-Reader öffnen um die Revisionen der Felder zu bestimmen:
+            # Felder die vor der letzten Signatur existierten → locked_fields,
+            # Felder die danach hinzugefügt wurden → sig_fields
             try:
                 import io as _io
                 from pyhanko.pdf_utils.reader import PdfFileReader as _PR
@@ -846,33 +1027,46 @@ class PDFSignerApp(QMainWindow):
                 with open(self.pdf_path, "rb") as _f:
                     _raw = _f.read()
                 _rdr = _PR(_io.BytesIO(_raw), strict=False)
+                # Alle eingebetteten Signaturen und deren Revisionsnummern ermitteln
                 _sigs = list(_rdr.embedded_regular_signatures)
+                # Höchste Revisionsnummer = zuletzt hinzugefügte Signatur
                 _max_rev = max(s.signed_revision for s in _sigs)
+                # ByteRange der Signaturen auswerten, um das Ende der Abdeckung zu finden.
+                # ByteRange = [offset1, len1, offset2, len2]; gesamte Abdeckung bis offset2+len2
                 for _s in _sigs:
                     _br = [int(v) for v in _s.byte_range]
                     signed_end = max(signed_end, _br[2] + _br[3])
                 for fdef, xref in all_unsigned:
                     try:
+                        # Revision in der das Feld eingeführt wurde ermitteln
                         _intro = _rdr.xrefs.get_introducing_revision(_Ref(xref, 0))
                     except Exception:
                         _intro = 0
                     if _intro > _max_rev:
                         # Introduced after last signature → freely editable
+                        # Feld wurde nach der letzten Signatur hinzugefügt → frei editierbar
                         self.sig_fields.append(fdef)
                         unsigned_xrefs_to_strip.append(xref)
                     else:
+                        # Feld existierte zum Zeitpunkt der Signatur → gesperrt
                         self.locked_fields.append(fdef)
             except Exception:
+                # Fehler bei der pyhanko-Analyse → konservativ: alle unsigned Felder
+                # als gesperrt behandeln um bestehende Signaturen nicht zu brechen
                 import traceback as _tb
                 _tb.print_exc(file=sys.stderr)
                 for fdef, _ in all_unsigned:
                     self.locked_fields.append(fdef)
         else:
+            # Kein signiertes Feld vorhanden → alle unsigned Felder sind frei editierbar
             for fdef, xref in all_unsigned:
                 self.sig_fields.append(fdef)
                 unsigned_xrefs_to_strip.append(xref)
 
         # Strip free unsigned widgets from the in-memory fitz doc
+        # Freie unsigned Felder aus dem in-memory fitz-Dokument entfernen.
+        # Zweck: fitz soll keine "SIGN"-Platzhalter-Annotationen rendern;
+        # die Python-Representationen bleiben in sig_fields erhalten.
         if unsigned_xrefs_to_strip:
             strip_set = set(unsigned_xrefs_to_strip)
             for page_num in range(len(doc)):
@@ -885,17 +1079,24 @@ class PDFSignerApp(QMainWindow):
         # use the raw file bytes truncated to the end of the last signature's
         # coverage so the post-signature incremental update is excluded.
         # Workers will re-embed sig_fields on top of this clean base.
+        # _working_bytes setzen: bei vorhandenen Signaturen auf den Bereich
+        # bis zum Ende der letzten Signaturabdeckung kürzen; sonst komplette Bytes.
         if signed_end > 0:
             self._working_bytes = _raw[:signed_end]  # type: ignore[name-defined]
         else:
+            # Keine Signaturen → Bytes aus dem bereinigten fitz-Dokument exportieren
+            # (garbage=0, deflate=False: keine Komprimierung, keine Bereinigung
+            # damit bestehende Struktur erhalten bleibt)
             self._working_bytes = doc.tobytes(garbage=0, deflate=False)
 
     def prev_page(self) -> None:
+        # Eine Seite zurückblättern (Minimum: Seite 0)
         if self.pdf_doc and self.current_page > 0:
             self.current_page -= 1
             self._render_current_page()
 
     def next_page(self) -> None:
+        # Eine Seite vorblättern (Maximum: letzte Seite)
         if self.pdf_doc and self.current_page < len(self.pdf_doc) - 1:
             self.current_page += 1
             self._render_current_page()
@@ -906,21 +1107,26 @@ class PDFSignerApp(QMainWindow):
         row      = self._field_list.currentRow()
         n_sig    = len(self.sig_fields)
         n_locked = len(self.locked_fields)
+        # Zeile 0 = "Unsichtbare Signatur" → keine Löschaktion möglich
         if row <= 0:
             QMessageBox.information(
                 self, t("dlg_no_field_sel"), t("dlg_no_field_sel_msg"))
             return
         if n_sig + 1 <= row <= n_sig + n_locked:
             # Locked field – explain why it cannot be deleted
+            # Gesperrtes Feld: dem Benutzer erklären warum es nicht gelöscht werden kann
+            # (Kryptographischer Hash-Schutz durch bestehende Signatur)
             fdef = self.locked_fields[row - n_sig - 1]
             QMessageBox.information(
                 self, t("dlg_locked_field_title"),
                 t("dlg_locked_field_msg", name=fdef.name))
             return
+        # Bereits signierte Felder ebenfalls nicht löschbar
         if row > n_sig:
             QMessageBox.information(
                 self, t("dlg_no_field_sel"), t("dlg_no_field_sel_msg"))
             return
+        # Freies unsigned Feld: Bestätigung einholen bevor gelöscht wird
         fdef = self.sig_fields[row - 1]
         if QMessageBox.question(
             self, t("dlg_delete_title"),
@@ -931,6 +1137,7 @@ class PDFSignerApp(QMainWindow):
             self._render_current_page()
 
     def save_with_fields(self) -> None:
+        # Vorbedingungen prüfen: Dokument geladen, Felder vorhanden, pyhanko verfügbar
         if not self.pdf_doc:
             QMessageBox.warning(self, t("dlg_no_doc"), t("dlg_no_doc_msg"))
             return
@@ -942,6 +1149,7 @@ class PDFSignerApp(QMainWindow):
                 self, t("dlg_save_error_title"), t("dlg_pyhanko_missing"))
             return
 
+        # Vorschlag für den Ausgabedateinamen: Originalname + Suffix + ".pdf"
         pdf_dir = str(Path(self.pdf_path).parent)
         stem    = Path(self.pdf_path).stem
         default = str(Path(pdf_dir) / (stem + t("dlg_save_fields_suffix") + ".pdf"))
@@ -950,6 +1158,7 @@ class PDFSignerApp(QMainWindow):
         if not out:
             return
         self._set_status(t("status_saving_fields"))
+        # SaveFieldsWorker im Hintergrund-Thread starten; UI bleibt reaktionsfähig
         self._worker = SaveFieldsWorker(
             self._working_bytes, out, list(self.sig_fields))
         self._worker.finished.connect(self._on_save_done)
@@ -957,12 +1166,14 @@ class PDFSignerApp(QMainWindow):
         self._worker.start()
 
     def _on_save_done(self, path: str) -> None:
+        # Erfolgsmeldung in Statusleiste und Dialogfenster anzeigen
         self._set_status(t("status_saved", path=path))
         QMessageBox.information(
             self, t("dlg_save_success_title"),
             t("dlg_save_success_msg", path=path))
 
     def _on_save_error(self, msg: str) -> None:
+        # Fehlermeldung in Statusleiste und Fehler-Dialog anzeigen
         self._set_status(t("status_save_failed"))
         QMessageBox.critical(
             self, t("dlg_save_error_title"),
@@ -971,17 +1182,24 @@ class PDFSignerApp(QMainWindow):
     # ── Config dialogs ────────────────────────────────────────────────────
 
     def open_pkcs11_config(self) -> None:
+        # PKCS#11-Konfigurationsdialog modal öffnen
         Pkcs11ConfigDialog(self, self.config).exec()
         # Sync TSA checkbox in case the user changed the URL in the dialog
+        # TSA-Checkbox synchronisieren falls der Benutzer die URL im Dialog geändert hat
         self._tsa_chk.setChecked(self.config.getbool("tsa", "enabled"))
+        # Refresh name placeholder in case cert_cn changed
+        # Namen-Anzeige aktualisieren falls cert_cn im Dialog geändert wurde
+        self._ap_on_checks()
 
     def _on_tsa_toggled(self, enabled: bool) -> None:
+        # TSA-Aktivierungszustand sofort in der Konfig speichern
         self.config.setbool("tsa", "enabled", enabled)
         self.config.save()
 
     # ── Signing ───────────────────────────────────────────────────────────
 
     def sign_document(self) -> None:
+        # Vorbedingungen prüfen: Dokument geladen, pyhanko verfügbar
         if not self.pdf_doc:
             QMessageBox.warning(self, t("dlg_no_doc"), t("dlg_no_doc_msg"))
             return
@@ -991,21 +1209,26 @@ class PDFSignerApp(QMainWindow):
             return
 
         # Row 0 = invisible, 1…N = sig_fields, N+1…N+K = locked_fields, rest = signed
+        # Feldlistenzeile in die entsprechende Feldkategorie übersetzen
         row      = self._field_list.currentRow()
         n_sig    = len(self.sig_fields)
         n_locked = len(self.locked_fields)
         fdef: Optional[SignatureFieldDef] = None
+        # signed_offset: erste Zeile der signed_fields in der Liste
         signed_offset = 1 + n_sig + n_locked
+        # Bereits signiertes Feld ausgewählt: Hinweis anzeigen
         if row >= signed_offset and self.signed_fields:
             QMessageBox.information(
                 self, t("dlg_sign_error_title"),
                 t("dlg_field_already_signed"))
             return
+        # Ziel-Feld ermitteln: sig_fields oder locked_fields; None = unsichtbar
         if 1 <= row <= n_sig:
             fdef = self.sig_fields[row - 1]
         elif n_sig + 1 <= row <= n_sig + n_locked:
             fdef = self.locked_fields[row - n_sig - 1]
 
+        # Vorschlag für Ausgabedateiname: Originalname + Signatur-Suffix + ".pdf"
         pdf_dir = str(Path(self.pdf_path).parent)
         stem    = Path(self.pdf_path).stem
         default = str(Path(pdf_dir) / (stem + t("dlg_save_signed_suffix") + ".pdf"))
@@ -1014,15 +1237,20 @@ class PDFSignerApp(QMainWindow):
         if not out:
             return
 
-        pin = self._pin_edit.text().strip()
-        lib = self.config.get("pkcs11", "lib_path")
-        key = self.config.get("pkcs11", "key_label")
+        # PIN, PKCS#11-Bibliothek, Schlüssel-ID und Zertifikats-CN aus der Konfig holen
+        pin     = self._pin_edit.text().strip()
+        lib     = self.config.get("pkcs11", "lib_path")
+        key_id  = self.config.get("pkcs11", "key_id")
+        cert_cn = self.config.get("pkcs11", "cert_cn")
 
         self._set_status(t("status_signing"))
+        # TSA-URL nur übergeben wenn TSA in der Konfig aktiviert ist
         tsa_url = (self.config.get("tsa", "url")
                    if self.config.getbool("tsa", "enabled") else "")
 
         # Generate a unique name for invisible signatures
+        # Für unsichtbare Signaturen: eindeutigen Feldnamen generieren
+        # (Format: "Signature_N" wobei N die kleinste freie Nummer ist)
         if fdef is None:
             existing = ({f.name for f in self.sig_fields}
                         | {f.name for f in self.locked_fields}
@@ -1034,10 +1262,14 @@ class PDFSignerApp(QMainWindow):
         else:
             invis_name = "Signature"
 
+        # SignWorker im Hintergrund-Thread starten.
+        # all_fields=list(self.sig_fields): alle freien Felder werden vor dem
+        # Signieren eingebettet; locked_fields sind bereits in _working_bytes.
         self._sign_worker = SignWorker(
-            self._working_bytes, out, fdef, lib, pin, key, self.appearance,
-            all_fields=list(self.sig_fields), tsa_url=tsa_url,
+            self._working_bytes, out, fdef, lib, pin, key_id, cert_cn,
+            self.appearance, all_fields=list(self.sig_fields), tsa_url=tsa_url,
             field_name=invis_name)
+        # finished-Signal: signiertes PDF als neues Arbeitsdokument laden
         self._sign_worker.finished.connect(self._on_sign_done)
         self._sign_worker.error.connect(self._on_sign_error)
         self._sign_worker.start()
@@ -1052,6 +1284,9 @@ class PDFSignerApp(QMainWindow):
         # 1. The just-signed field is shown as already signed (grey/✓)
         # 2. Any further signing uses the signed PDF as base, preserving
         #    all previous signatures in the output chain.
+        # Signiertes PDF als neues Arbeitsdokument laden:
+        # - gerade signiertes Feld erscheint sofort mit ✓-Markierung
+        # - weitere Signaturen bauen auf dem signierten PDF auf (Signaturkette)
         try:
             doc = fitz.open(path)
             self.pdf_doc  = doc
@@ -1064,18 +1299,21 @@ class PDFSignerApp(QMainWindow):
             pass  # Non-critical – UI stays in previous state
 
     def _on_sign_error(self, msg: str) -> None:
+        # Fehlermeldung bei Signaturfehlern (z.B. falsche PIN, Token nicht vorhanden)
         self._set_status(t("status_sign_failed"))
         QMessageBox.critical(
             self, t("dlg_sign_error_title"),
             t("dlg_sign_error_msg", error=msg))
 
     def _show_about(self) -> None:
+        # "Über"-Dialog mit Versionsnummer und Git-Commit-Hash anzeigen
         from . import __version__, __commit__
         QMessageBox.about(
             self, t("about_title"),
             t("about_msg", version=__version__, commit=__commit__))
 
     def _show_license(self) -> None:
+        # Lizenzdialog mit scrollbarem Textfeld für den GPL-3.0-Lizenztext
         from PyQt6.QtWidgets import QDialog, QTextEdit, QPushButton, QVBoxLayout
         dlg = QDialog(self)
         dlg.setWindowTitle(t("license_title"))

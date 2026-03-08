@@ -13,13 +13,14 @@ Verwendung:
 """
 
 import argparse
+import getpass
 import sys
 
 # Standardpfad zur PKCS#11-Bibliothek (anpassen falls nötig)
 DEFAULT_MODULE = "./libpkcs11tcos_SigG_PCSC.so"
 
 
-def list_objects(module_path: str) -> None:
+def list_objects(module_path: str, pin: str | None = None) -> None:
     try:
         import pkcs11
         from pkcs11 import Attribute, ObjectClass
@@ -72,8 +73,12 @@ def list_objects(module_path: str) -> None:
         print("=" * 60)
 
         try:
-            # Sitzung ohne PIN (nur öffentliche Objekte)
-            session = token.open()
+            if pin:
+                print(f"  Öffne Sitzung mit PIN …")
+                session = token.open(rw=True, user_pin=pin)
+            else:
+                print(f"  Öffne Sitzung ohne PIN …")
+                session = token.open()
         except Exception as e:
             print(f"FEHLER beim Öffnen der Sitzung: {e}")
             continue
@@ -211,7 +216,13 @@ def main():
     )
     args = parser.parse_args()
 
-    list_objects(args.module)
+    try:
+        pin = getpass.getpass("PIN (leer lassen für Abfrage ohne PIN): ")
+    except (EOFError, KeyboardInterrupt):
+        print()
+        sys.exit(0)
+
+    list_objects(args.module, pin=pin or None)
 
 
 if __name__ == "__main__":

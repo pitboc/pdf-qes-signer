@@ -137,8 +137,10 @@ TRANSLATIONS: dict[str, str] = {
     "cfg_tsa_hint": "RFC 3161 Zeitstempel-Dienst. Leer lassen für Standard (BaltStamp).",
     "cfg_lib_label": "Library-Pfad (.so / .dll):",
     "cfg_lib_browse": "…",
-    "cfg_key_label": "Key-Label:",
-    "cfg_key_hint": "↑ wird beim Token-Test automatisch gefüllt",
+    "cfg_key_id_label":       "Schlüssel-ID:",
+    "cfg_key_id_placeholder": "hex-ID (wird beim Token-Test automatisch gefüllt)",
+    "cfg_key_id_hint":        "↑ CKA_ID des privaten Schlüssels (aus Token-Dialog)",
+    "cfg_cert_cn_label":      "Name:",
     "cfg_pin_label": "PIN (nur Test):",
     "cfg_pin_placeholder": "leer lassen für PIN-Pad",
     "cfg_pin_hint": "↑ nur für Token-Test, wird nicht gespeichert",
@@ -150,7 +152,7 @@ TRANSLATIONS: dict[str, str] = {
         "da python-pkcs11 keinen separaten Login-Aufruf erlaubt.\n\n"
         "Alternativen:\n"
         "• PIN hier eingeben, um private Keys direkt aufzulisten\n"
-        "• 'Token testen (ohne PIN)' – ermittelt Key-Label ohne PIN\n"
+        "• 'Token testen (ohne PIN)' – ermittelt Key-ID aus Zertifikat\n"
         "• PIN-Pad funktioniert normal beim Signieren"
     ),
     "cfg_save_btn": "Speichern",
@@ -159,13 +161,20 @@ TRANSLATIONS: dict[str, str] = {
     "dlg_token_error_title": "Token-Fehler",
     "dlg_token_info_title": "Token-Inhalt",
     "dlg_token_info_label": "Name: {label}    Hersteller: {manufacturer}",
-    "dlg_token_keys_title": "Private Keys  (abgeleitet, Doppelklick → übernehmen)",
-    "dlg_token_certs_title": "Zertifikat-Labels",
-    "dlg_token_use_key": "✓ Key-Label übernehmen",
-    "dlg_token_copy_key": "📋 Key kopieren",
-    "dlg_token_copy_cert": "📋 Zert. kopieren",
+    "dlg_token_class_private_key":         "Private Schlüssel",
+    "dlg_token_class_private_key_derived": "Private Schlüssel (abgeleitet aus Öffentlichem Schlüssel)",
+    "dlg_token_class_certificate":         "Zertifikate",
+    "dlg_token_class_public_key":          "Öffentliche Schlüssel",
+    "dlg_token_use_key": "ID übernehmen",
     "dlg_token_close": "Schließen",
-    "dlg_token_auto_label": "Key-Label automatisch gesetzt: {label}",
+    "dlg_token_no_key_title": "Kein privater Schlüssel gefunden",
+    "dlg_token_no_key_msg": (
+        "Kein privater Schlüssel gefunden.\n\n"
+        "Möglicherweise ist eine PIN-Eingabe erforderlich, um den Schlüssel anzuzeigen.\n\n"
+        "Alternativ kann das Key-Label aus den vorhandenen öffentlichen Schlüsseln abgeleitet werden."
+    ),
+    "dlg_token_derive_btn": "Key-Label aus öffentlichem Schlüssel ableiten",
+    "dlg_token_cancel_pin_btn": "Abbrechen – Token mit PIN lesen",
     # Appearance panel (main window)
     "ap_tab_text": "Text",
     "ap_tab_image_layout": "Bild / Layout",

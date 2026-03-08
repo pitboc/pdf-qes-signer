@@ -42,7 +42,8 @@ class AppConfig:
             "lib_path": ("P11TCOSSigGx64.dll"
                          if sys.platform == "win32"
                          else "/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so"),
-            "key_label": "",
+            "key_id":   "",   # hex CKA_ID of the private key / certificate
+            "cert_cn":  "",   # CN from the certificate subject (for signature display)
         },
         "paths": {
             "last_open_dir": str(Path.home()),

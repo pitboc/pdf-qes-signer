@@ -19,10 +19,10 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
-    QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox,
-    QPushButton, QSizePolicy, QSlider, QSpinBox, QSplitter, QTabWidget,
-    QVBoxLayout, QWidget, QCheckBox, QComboBox, QAbstractItemView,
-    QGridLayout,
+    QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+    QPushButton, QSizePolicy, QSlider, QSpinBox, QTabWidget,
+    QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QCheckBox, QComboBox,
+    QAbstractItemView, QGridLayout,
 )
 
 from .config import AppConfig, PDF_STANDARD_FONTS
@@ -31,82 +31,366 @@ from .pdf_view import DPI_SCALE
 from .i18n import t
 
 
+# ── Token data helpers ────────────────────────────────────────────────────────
+
+# Mapping von EC-Kurven-OIDs (Dotted-String) zu lesbaren Bezeichnungen.
+# Wird genutzt, um den Schlüsseltyp eines ECC-Schlüssels im Token-Baum
+# anzuzeigen, anstatt der rohen OID-Zeichenkette.
+_EC_CURVES: dict[str, str] = {
+    "1.2.840.10045.3.1.7":        "P-256 (256 Bit)",
+    "1.3.132.0.34":               "P-384 (384 Bit)",
+    "1.3.132.0.35":               "P-521 (521 Bit)",
+    "1.3.36.3.3.2.8.1.1.7":      "brainpoolP256r1 (256 Bit)",
+    "1.3.36.3.3.2.8.1.1.11":     "brainpoolP384r1 (384 Bit)",
+    "1.3.36.3.3.2.8.1.1.13":     "brainpoolP512r1 (512 Bit)",
+}
+
+# Mapping von X.509-Zertifikat-OIDs zu lesbaren deutschen Bezeichnungen.
+# Wird beim Formatieren von Subject- und Issuer-Distinguished-Names genutzt,
+# damit der Benutzer "Nachname=Mustermann" statt "2.5.4.4=Mustermann" sieht.
+_CERT_OID_NAMES: dict[str, str] = {
+    "2.5.4.3":               "CN",
+    "2.5.4.4":               "Nachname",
+    "2.5.4.42":              "Vorname",
+    "2.5.4.12":              "Titel",
+    "2.5.4.5":               "Zert-Nr",
+    "2.5.4.6":               "Land",
+    "2.5.4.7":               "Ort",
+    "2.5.4.8":               "Bundesland",
+    "2.5.4.10":              "Organisation",
+    "2.5.4.11":              "Abteilung",
+    "2.5.4.97":              "Org-Kennung",
+    "1.2.840.113549.1.9.1":  "E-Mail",
+}
+
+
+def _decode_der_oid(der: bytes) -> str:
+    """Decode a DER-encoded OID (tag 0x06) to dotted-string notation."""
+    # Mindestlänge prüfen und sicherstellen, dass das Tag 0x06 (OID) vorliegt
+    if len(der) < 2 or der[0] != 0x06:
+        return ""
+    # OID-Inhalt hinter Tag (0x06) und Längen-Byte extrahieren
+    oid_bytes = der[2:2 + der[1]]
+    # Erstes Byte kodiert die ersten beiden Komponenten: x.y → x*40 + y
+    components = [oid_bytes[0] // 40, oid_bytes[0] % 40]
+    # Restliche Bytes dekodieren (Base-128-Kodierung, MSB=1 bedeutet Folgebyte)
+    i, value = 1, 0
+    while i < len(oid_bytes):
+        b = oid_bytes[i]; i += 1
+        value = (value << 7) | (b & 0x7F)
+        # MSB=0 signalisiert das letzte Byte einer Komponente
+        if not (b & 0x80):
+            components.append(value)
+            value = 0
+    return ".".join(str(c) for c in components)
+
+
+def _read_key_info(obj, p11) -> dict:
+    """Extract displayable attributes from a PKCS#11 key object."""
+    info: dict = {}
+    # Label des Schlüssels auslesen – wird als Anzeigename im Baum genutzt
+    try:
+        info["label"] = obj[p11.Attribute.LABEL]
+    except Exception:
+        info["label"] = "(unknown)"
+    # CKA_ID als Hex-String – verbindet Schlüssel mit zugehörigem Zertifikat
+    try:
+        info["id"] = bytes(obj[p11.Attribute.ID]).hex()
+    except Exception:
+        pass
+    # Schlüsseltyp ermitteln (RSA oder EC/ECC)
+    try:
+        from pkcs11 import KeyType
+        kt = obj[p11.Attribute.KEY_TYPE]
+        info["key_type"] = {KeyType.RSA: "RSA", KeyType.EC: "EC (ECC)"}.get(kt, str(kt))
+    except Exception:
+        pass
+    # RSA: key size from modulus bits
+    try:
+        info["key_size"] = f"{obj[p11.Attribute.MODULUS_BITS]} Bit"
+    except Exception:
+        pass
+    # EC: curve name from EC_PARAMS OID
+    # Nur wenn RSA-Größe nicht ermittelt werden konnte (ECC hat kein MODULUS_BITS)
+    if "key_size" not in info:
+        try:
+            # EC_PARAMS enthält die Kurvendefinition als DER-kodierte OID
+            oid = _decode_der_oid(bytes(obj[p11.Attribute.EC_PARAMS]))
+            info["key_size"] = _EC_CURVES.get(oid, oid) if oid else None
+            if not info["key_size"]:
+                del info["key_size"]
+        except Exception:
+            pass
+    return info
+
+
+def _read_cert_info(obj, p11) -> dict:
+    """Extract displayable attributes from a PKCS#11 certificate object."""
+    info: dict = {}
+    # Label des Zertifikats – oft identisch mit dem Schlüssel-Label
+    try:
+        info["label"] = obj[p11.Attribute.LABEL]
+    except Exception:
+        info["label"] = "(no label)"
+    # CKA_ID als Hex-String – verknüpft Zertifikat mit privatem Schlüssel
+    try:
+        info["id"] = bytes(obj[p11.Attribute.ID]).hex()
+    except Exception:
+        pass
+    try:
+        import warnings
+        from cryptography import x509 as cx509
+        # Rohe DER-Daten des Zertifikats vom Token lesen und parsen
+        cert_data = bytes(obj[p11.Attribute.VALUE])
+        with warnings.catch_warnings():
+            # Veraltete API-Warnungen unterdrücken (z.B. bei alten Zertifikaten)
+            warnings.simplefilter("ignore")
+            cert = cx509.load_der_x509_certificate(cert_data)
+
+        def fmt_dn(name) -> str:
+            """Formatiert einen Distinguished Name als lesbare Zeichenkette."""
+            parts = []
+            for attr in name:
+                # OID in lesbares Kürzel umwandeln, Fallback auf Dotted-String
+                lbl = _CERT_OID_NAMES.get(attr.oid.dotted_string, attr.oid.dotted_string)
+                parts.append(f"{lbl}={attr.value}")
+            return ", ".join(parts)
+
+        # Subject (Zertifikatsinhaber) und Issuer (Aussteller) formatieren
+        info["subject"]    = fmt_dn(cert.subject)
+        info["issuer"]     = fmt_dn(cert.issuer)
+        # Seriennummer in Großbuchstaben-Hex für bessere Lesbarkeit
+        info["serial"]     = f"{cert.serial_number:X}"
+        info["valid_from"] = cert.not_valid_before_utc.strftime("%d.%m.%Y")
+        info["valid_to"]   = cert.not_valid_after_utc.strftime("%d.%m.%Y")
+        # Individual name components for display-name composition
+        # Einzelne Namensbestandteile separat extrahieren, damit später
+        # der Anzeigename (Titel Vorname Nachname) zusammengesetzt werden kann
+        for attr in cert.subject:
+            dotted = attr.oid.dotted_string
+            if dotted == "2.5.4.12":   # Title
+                info["name_titel"] = attr.value
+            elif dotted == "2.5.4.42": # GivenName
+                info["name_vorname"] = attr.value
+            elif dotted == "2.5.4.4":  # Surname
+                info["name_nachname"] = attr.value
+        # Subject Alternative Name (SAN) auslesen – enthält oft E-Mail-Adressen
+        try:
+            san = cert.extensions.get_extension_for_class(cx509.SubjectAlternativeName)
+            info["san_emails"] = san.value.get_values_for_type(cx509.RFC822Name)
+        except cx509.ExtensionNotFound:
+            # Viele Zertifikate haben keine SAN-Erweiterung – kein Fehler
+            info["san_emails"] = []
+    except Exception:
+        info["san_emails"] = []
+    return info
+
+
 # ── Token info dialog ─────────────────────────────────────────────────────────
 
 class TokenInfoDialog(QDialog):
-    """Display token contents and let the user select or copy a key label."""
+    """Display all token objects in a unified tree grouped by CKA_CLASS.
 
-    key_selected = pyqtSignal(str)
+    all_items – list of dicts, each with an "obj_class" key
+                ("PRIVATE_KEY", "PRIVATE_KEY_DERIVED", "PUBLIC_KEY",
+                "CERTIFICATE") plus the attributes from _read_key_info()
+                or _read_cert_info().
 
-    def __init__(self, parent, token, key_labels: list[str],
-                 cert_labels: list[str]) -> None:
+    Section headers separate each class.  Only private-key items can be
+    transferred to the key-label field via "Key-Label übernehmen".
+    """
+
+    # Reihenfolge der Objektklassen im Baum: Private Keys zuerst (wichtigste
+    # für den Benutzer), dann Zertifikate, dann öffentliche Schlüssel
+    _CLASS_ORDER  = ["PRIVATE_KEY", "CERTIFICATE", "PUBLIC_KEY"]
+    # i18n-Schlüssel für die Abschnittsüberschriften im Baum
+    _CLASS_LABELS = {
+        "PRIVATE_KEY": "dlg_token_class_private_key",
+        "CERTIFICATE": "dlg_token_class_certificate",
+        "PUBLIC_KEY":  "dlg_token_class_public_key",
+    }
+
+    # Signal: wird ausgelöst wenn der Benutzer einen Schlüssel/Zertifikat
+    # auswählt und "Übernehmen" klickt. Übergibt (key_id_hex, cert_cn).
+    key_selected = pyqtSignal(str, str)  # (key_id_hex, cert_cn)
+
+    def __init__(self, parent, token, all_items: list[dict]) -> None:
         super().__init__(parent)
-        self.token        = token
-        self.key_labels   = key_labels
-        self.cert_labels  = cert_labels
+        # token: PKCS#11-Token-Objekt (für Metadaten wie Label, Hersteller)
+        self.token     = token
+        # all_items: Liste aller gefundenen Objekte als Dicts (von _read_key_info
+        # und _read_cert_info erzeugt, jeweils mit "obj_class"-Schlüssel)
+        self.all_items = all_items
         self.setWindowTitle(t("dlg_token_info_title"))
-        self.resize(540, 420)
+        self.resize(680, 520)
         self._build_ui()
 
     def _build_ui(self) -> None:
         lay = QVBoxLayout(self)
 
-        info = QGroupBox()
-        QHBoxLayout(info).addWidget(QLabel(
-            t("dlg_token_info_label",
-              label=self.token.label.strip(),
-              manufacturer=self.token.manufacturer_id.strip())))
-        lay.addWidget(info)
+        # ── Token meta info ───────────────────────────────────────────────
+        # Obere Gruppe mit Token-Metadaten (Name, Hersteller, Modell, Seriennummer)
+        info_grp = QGroupBox()
+        info_form = QFormLayout(info_grp)
+        info_form.setHorizontalSpacing(16)
+        info_form.setContentsMargins(8, 4, 8, 4)
 
-        split = QSplitter(Qt.Orientation.Horizontal)
+        def _token_str(attr: str) -> str:
+            """Liest ein Token-Attribut und gibt es als bereinigten String zurück."""
+            try:
+                v = getattr(self.token, attr)
+                if isinstance(v, (bytes, bytearray)):
+                    # Bytes-Felder (z.B. manufacturer_id) als ASCII dekodieren
+                    return v.decode("ascii", errors="replace").strip()
+                return str(v).strip()
+            except Exception:
+                return ""
 
-        kg = QGroupBox(t("dlg_token_keys_title"))
-        kl = QVBoxLayout(kg)
-        self.key_list = QListWidget()
-        self.key_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        for lbl in self.key_labels:
-            self.key_list.addItem(lbl)
-        if self.key_labels:
-            self.key_list.setCurrentRow(0)
-        self.key_list.itemDoubleClicked.connect(self._use_selected)
-        kl.addWidget(self.key_list)
-        split.addWidget(kg)
+        info_form.addRow("Name:",       QLabel(_token_str("label")))
+        info_form.addRow("Hersteller:", QLabel(_token_str("manufacturer_id")))
+        # Modell und Seriennummer nur anzeigen wenn vorhanden (walrus operator)
+        if v := _token_str("model"):
+            info_form.addRow("Modell:", QLabel(v))
+        if v := _token_str("serial"):
+            info_form.addRow("Seriennr.:", QLabel(v))
+        lay.addWidget(info_grp)
 
-        cg = QGroupBox(t("dlg_token_certs_title"))
-        cl = QVBoxLayout(cg)
-        self.cert_list = QListWidget()
-        for lbl in self.cert_labels:
-            self.cert_list.addItem(lbl)
-        cl.addWidget(self.cert_list)
-        split.addWidget(cg)
-        lay.addWidget(split)
+        # ── Unified object tree ───────────────────────────────────────────
+        # Baumwidget mit allen Token-Objekten, gruppiert nach Objektklasse
+        self.tree = QTreeWidget()
+        self.tree.setHeaderHidden(True)
+        self.tree.setColumnCount(2)
+        self.tree.header().setStretchLastSection(True)
+        self.tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        # Auswahl-Änderung: Schaltfläche "Übernehmen" aktivieren/deaktivieren
+        self.tree.itemSelectionChanged.connect(self._on_selection_changed)
+        # Doppelklick auf ein Objekt-Element löst direkt "Übernehmen" aus
+        self.tree.itemDoubleClicked.connect(self._on_double_click)
 
+        # all_items nach Objektklasse gruppieren (dict: Klasse → Liste von Dicts)
+        grouped: dict[str, list[dict]] = {}
+        for item in self.all_items:
+            grouped.setdefault(item.get("obj_class", ""), []).append(item)
+
+        # Hintergrundfarbe für Abschnittsüberschriften aus dem System-Palette holen
+        alt_brush = self.palette().alternateBase()
+
+        for cls in self._CLASS_ORDER:
+            # Objektklassen überspringen, für die keine Objekte vorhanden sind
+            if cls not in grouped:
+                continue
+
+            # Section header – not selectable, bold, shaded background
+            # Abschnitts-Header: fett, grauer Hintergrund, nicht auswählbar
+            hdr = QTreeWidgetItem([t(self._CLASS_LABELS[cls]), ""])
+            hdr.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            font = hdr.font(0); font.setBold(True); hdr.setFont(0, font)
+            hdr.setBackground(0, alt_brush); hdr.setBackground(1, alt_brush)
+            self.tree.addTopLevelItem(hdr)
+
+            for item_data in grouped[cls]:
+                # Haupteintrag für das Token-Objekt (auswählbar)
+                obj = QTreeWidgetItem(hdr, [item_data["label"], ""])
+                # Objektklasse im UserRole speichern, damit _selected_item() den
+                # Typ ermitteln kann ohne erneut in all_items zu suchen
+                obj.setData(0, Qt.ItemDataRole.UserRole, cls)
+
+                # Attribute children (non-selectable)
+                # Attribute je nach Objekttyp unterschiedlich anzeigen
+                if cls in ("PRIVATE_KEY", "PUBLIC_KEY"):
+                    attrs = (("id", "ID"), ("key_type", "Schlüsseltyp"),
+                             ("key_size", "Schlüssellänge"))
+                elif cls == "CERTIFICATE":
+                    attrs = (("id", "ID"), ("subject", "Inhaber"),
+                             ("issuer", "Aussteller"), ("serial", "Seriennummer"),
+                             ("valid_from", "Gültig ab"), ("valid_to", "Gültig bis"))
+                else:
+                    attrs = ()
+
+                # Attribut-Kindknoten anlegen (nur sichtbar, nicht auswählbar)
+                for attr, lbl in attrs:
+                    if attr in item_data:
+                        child = QTreeWidgetItem(obj, [lbl, item_data[attr]])
+                        child.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                # SAN-E-Mail-Adressen als eigene Kindknoten anzeigen
+                for email in item_data.get("san_emails", []):
+                    child = QTreeWidgetItem(obj, ["E-Mail (SAN)", email])
+                    child.setFlags(Qt.ItemFlag.ItemIsEnabled)
+
+        # Alle Abschnitte aufklappen damit der Benutzer sofort alle Objekte sieht
+        self.tree.expandAll()
+        self.tree.resizeColumnToContents(0)
+        lay.addWidget(self.tree)
+
+        # ── Buttons ───────────────────────────────────────────────────────
         btn_row = QHBoxLayout()
-        b1 = QPushButton(t("dlg_token_use_key"))
-        b1.clicked.connect(self._use_selected)
-        b2 = QPushButton(t("dlg_token_copy_key"))
-        b2.clicked.connect(lambda: self._copy(self.key_list))
-        b3 = QPushButton(t("dlg_token_copy_cert"))
-        b3.clicked.connect(lambda: self._copy(self.cert_list))
-        b4 = QPushButton(t("dlg_token_close"))
-        b4.clicked.connect(self.accept)
-        btn_row.addWidget(b1)
-        btn_row.addWidget(b2)
-        btn_row.addWidget(b3)
+        # "Key-Label übernehmen": überträgt die CKA_ID des gewählten Objekts
+        # in das Konfigurationsfeld und schließt den Dialog
+        self.btn_use = QPushButton(t("dlg_token_use_key"))
+        self.btn_use.setEnabled(False)  # erst nach Auswahl eines Objekts aktiv
+        self.btn_use.clicked.connect(self._use_selected)
+        b_close = QPushButton(t("dlg_token_close"))
+        b_close.clicked.connect(self.accept)
+        btn_row.addWidget(self.btn_use)
         btn_row.addStretch()
-        btn_row.addWidget(b4)
+        btn_row.addWidget(b_close)
         lay.addLayout(btn_row)
 
-    def _use_selected(self) -> None:
-        items = self.key_list.selectedItems()
-        if items:
-            self.key_selected.emit(items[0].text())
-        self.accept()
+    def _selected_item(self):
+        """Return the selected object item (any class), or None for headers/attributes."""
+        items = self.tree.selectedItems()
+        if not items:
+            return None
+        item = items[0]
+        parent = item.parent()
+        # Must be a direct child of a section header (grandparent is None)
+        # Abschnitts-Header haben keinen Parent, Attribute-Kinder haben einen Großeltern-Knoten.
+        # Nur direkte Kinder der Header (=Objekt-Zeilen) sind gültige Auswahlen.
+        if parent is None or parent.parent() is not None:
+            return None
+        return item if item.data(0, Qt.ItemDataRole.UserRole) is not None else None
 
-    def _copy(self, lw: QListWidget) -> None:
-        items = lw.selectedItems()
-        if items:
-            QApplication.clipboard().setText(items[0].text())
+    def _on_selection_changed(self) -> None:
+        # "Übernehmen"-Schaltfläche nur aktivieren wenn ein Objekt-Element
+        # (kein Header, kein Attribut-Kind) ausgewählt ist
+        self.btn_use.setEnabled(self._selected_item() is not None)
+
+    def _on_double_click(self, item, _col) -> None:
+        # Doppelklick auf Objekt-Element löst direkt die Übernahme aus;
+        # Klick auf Header oder Attribut-Kinder wird ignoriert (kein UserRole)
+        if item.data(0, Qt.ItemDataRole.UserRole) is not None:
+            self._use_selected()
+
+    def _use_selected(self) -> None:
+        item = self._selected_item()
+        if item:
+            key_id_hex = ""
+            composed_name = ""
+            cls = item.data(0, Qt.ItemDataRole.UserRole)
+            # Get the ID from the matching entry in all_items
+            # CKA_ID des ausgewählten Objekts aus all_items heraussuchen
+            for entry in self.all_items:
+                if entry.get("obj_class") == cls and entry.get("label") == item.text(0):
+                    key_id_hex = entry.get("id", "")
+                    break
+            # Compose display name from the certificate with the same ID
+            # Das zu diesem Schlüssel gehörende Zertifikat suchen (gleiche CKA_ID)
+            # und daraus den Anzeigenamen (Titel Vorname Nachname) zusammensetzen
+            for entry in self.all_items:
+                if entry.get("obj_class") == "CERTIFICATE" and entry.get("id") == key_id_hex:
+                    parts = []
+                    if titel := entry.get("name_titel"):
+                        parts.append(titel)
+                    if vorname := entry.get("name_vorname"):
+                        parts.append(vorname)
+                    if nachname := entry.get("name_nachname"):
+                        parts.append(nachname)
+                    composed_name = " ".join(parts)
+                    break
+            # Signal mit CKA_ID und zusammengesetztem Namen senden;
+            # der Slot im aufrufenden Dialog füllt damit die Eingabefelder
+            self.key_selected.emit(key_id_hex, composed_name)
+        self.accept()
 
 
 # ── PKCS#11 configuration dialog ──────────────────────────────────────────────
@@ -120,6 +404,8 @@ class Pkcs11ConfigDialog(QDialog):
 
     def __init__(self, parent, config: AppConfig) -> None:
         super().__init__(parent)
+        # config: AppConfig-Instanz, aus der Werte gelesen und in die
+        # gespeichert werden (persistiert als INI-Datei auf Disk)
         self.config = config
         self.setWindowTitle(t("cfg_title"))
         self.setMinimumWidth(520)
@@ -129,6 +415,7 @@ class Pkcs11ConfigDialog(QDialog):
     def _build_ui(self) -> None:
         lay  = QVBoxLayout(self)
 
+        # Dialog ist in zwei Tabs aufgeteilt: PKCS#11-Einstellungen und TSA-URL
         tabs = QTabWidget()
 
         # ── Tab 1: PKCS#11 ────────────────────────────────────────────────
@@ -137,6 +424,8 @@ class Pkcs11ConfigDialog(QDialog):
         form = QFormLayout()
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
+        # Eingabezeile für den Pfad zur PKCS#11-Bibliothek (.so/.dll)
+        # Platzhaltertext zeigt plattformspezifische Beispiele
         lib_row = QHBoxLayout()
         self.lib_edit = QLineEdit()
         self.lib_edit.setPlaceholderText(
@@ -144,6 +433,7 @@ class Pkcs11ConfigDialog(QDialog):
             if sys.platform == "win32"
             else "/usr/lib/.../opensc-pkcs11.so"
         )
+        # "…"-Schaltfläche öffnet Dateiauswahl-Dialog
         bb = QPushButton(t("cfg_lib_browse"))
         bb.setFixedWidth(36)
         bb.clicked.connect(self._browse_lib)
@@ -151,12 +441,24 @@ class Pkcs11ConfigDialog(QDialog):
         lib_row.addWidget(bb)
         form.addRow(t("cfg_lib_label"), lib_row)
 
-        self.key_edit = QLineEdit()
-        hint = QLabel(t("cfg_key_hint"))
-        hint.setStyleSheet("color: gray; font-size: 10px;")
-        form.addRow(t("cfg_key_label"), self.key_edit)
-        form.addRow("", hint)
+        # Eingabefeld für die CKA_ID des privaten Schlüssels (Hex-String).
+        # Wird aus dem Token-Info-Dialog übernommen oder manuell eingegeben.
+        self.key_id_edit = QLineEdit()
+        self.key_id_edit.setPlaceholderText(t("cfg_key_id_placeholder"))
+        key_id_hint = QLabel(t("cfg_key_id_hint"))
+        key_id_hint.setStyleSheet("color: gray; font-size: 10px;")
+        form.addRow(t("cfg_key_id_label"), self.key_id_edit)
+        form.addRow("", key_id_hint)
 
+        # Anzeige des CN aus dem Zertifikat – read-only, wird aus dem
+        # Token-Info-Dialog übernommen und dient als Anzeigename in der Signatur
+        self.cert_cn_edit = QLineEdit()
+        self.cert_cn_edit.setReadOnly(True)
+        self.cert_cn_edit.setStyleSheet("color: gray;")
+        form.addRow(t("cfg_cert_cn_label"), self.cert_cn_edit)
+
+        # PIN-Eingabe für den Test-Modus mit PIN.
+        # Im Hauptfenster wird die PIN gesondert eingegeben (vor dem Signieren).
         self.pin_edit = QLineEdit()
         self.pin_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self.pin_edit.setPlaceholderText(t("cfg_pin_placeholder"))
@@ -166,6 +468,8 @@ class Pkcs11ConfigDialog(QDialog):
         form.addRow("", pin_hint)
         ptab_lay.addLayout(form)
 
+        # Zwei Test-Schaltflächen: ohne PIN (liest öffentliche Objekte)
+        # und mit PIN (authentifiziert und zeigt auch private Schlüssel)
         test_row = QHBoxLayout()
         test_no_pin = QPushButton(t("cfg_test_btn_no_pin"))
         test_no_pin.clicked.connect(lambda: self._test_token(with_pin=False))
@@ -175,6 +479,7 @@ class Pkcs11ConfigDialog(QDialog):
         test_row.addWidget(test_with_pin)
         ptab_lay.addLayout(test_row)
 
+        # Status-Label zeigt Ergebnis des Token-Tests oder Fehlermeldungen
         self.status_lbl = QLabel("")
         self.status_lbl.setWordWrap(True)
         ptab_lay.addWidget(self.status_lbl)
@@ -182,6 +487,7 @@ class Pkcs11ConfigDialog(QDialog):
         tabs.addTab(pkcs11_tab, t("cfg_tab_pkcs11"))
 
         # ── Tab 2: TSA ────────────────────────────────────────────────────
+        # TSA (Time Stamp Authority) – optionaler RFC-3161-Zeitstempel für die Signatur
         tsa_tab = QWidget()
         tsa_form = QFormLayout(tsa_tab)
         tsa_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
@@ -196,22 +502,29 @@ class Pkcs11ConfigDialog(QDialog):
 
         lay.addWidget(tabs)
 
+        # Speichern/Abbrechen-Schaltflächen am unteren Rand
         bb2 = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save |
             QDialogButtonBox.StandardButton.Cancel)
         bb2.button(QDialogButtonBox.StandardButton.Save).setText(t("cfg_save_btn"))
         bb2.button(QDialogButtonBox.StandardButton.Cancel).setText(t("cfg_cancel_btn"))
+        # "Speichern" schreibt Werte in AppConfig und schließt den Dialog
         bb2.accepted.connect(self._save_and_close)
         bb2.rejected.connect(self.reject)
         lay.addWidget(bb2)
 
     def _load_values(self) -> None:
+        # Alle Felder aus der gespeicherten Konfiguration füllen
         self.lib_edit.setText(self.config.get("pkcs11", "lib_path"))
-        self.key_edit.setText(self.config.get("pkcs11", "key_label"))
+        self.key_id_edit.setText(self.config.get("pkcs11", "key_id"))
+        self.cert_cn_edit.setText(self.config.get("pkcs11", "cert_cn"))
         self.tsa_url_edit.setText(self.config.get("tsa", "url"))
 
     def _browse_lib(self) -> None:
+        # Dateiauswahl-Dialog für die PKCS#11-Bibliothek öffnen.
+        # Startverzeichnis: zuletzt genutztes Lib-Verzeichnis aus der Konfig.
         start = self.config.get("paths", "last_lib_dir")
+        # Dateifilter ist plattformspezifisch (DLL auf Windows, .so auf Linux/Mac)
         if sys.platform == "win32":
             lib_filter = "DLL (*.dll);;Shared Libraries (*.so *.so.*);;All Files (*)"
         else:
@@ -220,26 +533,35 @@ class Pkcs11ConfigDialog(QDialog):
             self, t("dlg_browse_lib"), start, lib_filter)
         if path:
             self.lib_edit.setText(path)
+            # Zuletzt genutztes Verzeichnis speichern für künftige Dateidialoge
             self.config.set("paths", "last_lib_dir", str(Path(path).parent))
 
     def _save_and_close(self) -> None:
-        self.config.set("pkcs11", "lib_path",  self.lib_edit.text().strip())
-        self.config.set("pkcs11", "key_label", self.key_edit.text().strip())
+        # Alle Eingabewerte in die AppConfig übertragen und persistent speichern
+        self.config.set("pkcs11", "lib_path", self.lib_edit.text().strip())
+        self.config.set("pkcs11", "key_id",   self.key_id_edit.text().strip())
+        self.config.set("pkcs11", "cert_cn",  self.cert_cn_edit.text().strip())
         self.config.set("tsa", "url", self.tsa_url_edit.text().strip())
         self.config.save()
         self.accept()
 
     def _test_token(self, with_pin: bool = False) -> None:
         lib_path = self.lib_edit.text().strip()
+        # Sofortige UI-Rückmeldung vor dem blockierenden Token-Zugriff
         self.status_lbl.setText(t("status_token_reading"))
         QApplication.processEvents()
         try:
             import pkcs11 as p11
             lib   = p11.lib(lib_path)
+            # Ersten Slot mit vorhandenem Token ermitteln
             slots = lib.get_slots(token_present=True)
             if not slots:
                 raise RuntimeError("No token found.")
             token = slots[0].get_token()
+
+            # all_items: Sammelliste aller Token-Objekte als Dicts.
+            # Jedes Dict enthält mindestens "obj_class" und "label".
+            all_items: list[dict] = []
 
             if with_pin:
                 # Use PIN from the dialog's own PIN field; empty = PIN pad.
@@ -259,69 +581,65 @@ class Pkcs11ConfigDialog(QDialog):
                         t("cfg_pinpad_test_msg"))
                     self.status_lbl.setText("")
                     return
+                # Session mit PIN öffnen: dadurch werden auch private Schlüssel
+                # sichtbar (auf TCOS-Karten ohne PIN sind sie nicht sichtbar)
                 with token.open(rw=True, user_pin=pin) as session:
-                    priv_keys = list(session.get_objects(
-                        {p11.Attribute.CLASS: p11.ObjectClass.PRIVATE_KEY}))
-                    key_labels = []
-                    for k in priv_keys:
-                        try:
-                            key_labels.append(k[p11.Attribute.LABEL])
-                        except Exception:
-                            key_labels.append("(unknown)")
-
-                    certs = list(session.get_objects(
-                        {p11.Attribute.CLASS: p11.ObjectClass.CERTIFICATE}))
-                    cert_labels = []
-                    for c in certs:
-                        try:
-                            cert_labels.append(c[p11.Attribute.LABEL])
-                        except Exception:
-                            cert_labels.append("(no label)")
+                    # Private Schlüssel lesen (nur nach Authentifizierung sichtbar)
+                    for k in session.get_objects(
+                            {p11.Attribute.CLASS: p11.ObjectClass.PRIVATE_KEY}):
+                        item = _read_key_info(k, p11)
+                        item["obj_class"] = "PRIVATE_KEY"
+                        all_items.append(item)
+                    # Zertifikate lesen
+                    for c in session.get_objects(
+                            {p11.Attribute.CLASS: p11.ObjectClass.CERTIFICATE}):
+                        item = _read_cert_info(c, p11)
+                        item["obj_class"] = "CERTIFICATE"
+                        all_items.append(item)
+                    # Öffentliche Schlüssel lesen
+                    for k in session.get_objects(
+                            {p11.Attribute.CLASS: p11.ObjectClass.PUBLIC_KEY}):
+                        item = _read_key_info(k, p11)
+                        item["obj_class"] = "PUBLIC_KEY"
+                        all_items.append(item)
             else:
-                # Open without PIN – public keys and certificates are accessible
-                # without authentication on TCOS cards and most PKCS#11 tokens.
+                # Open without PIN.  Most tokens expose private key metadata
+                # without authentication (the key itself never leaves the
+                # hardware).  TCOS cards hide private key objects completely
+                # without PIN; in that case we offer derivation from the
+                # public key labels as a fallback.
+                # Öffentliche Session: private Schlüssel können leer sein (TCOS-Karten)
                 with token.open() as session:
                     pub_keys = list(session.get_objects(
                         {p11.Attribute.CLASS: p11.ObjectClass.PUBLIC_KEY}))
-                    pub_labels = []
+                    for k in session.get_objects(
+                            {p11.Attribute.CLASS: p11.ObjectClass.PRIVATE_KEY}):
+                        item = _read_key_info(k, p11)
+                        item["obj_class"] = "PRIVATE_KEY"
+                        all_items.append(item)
+                    for c in session.get_objects(
+                            {p11.Attribute.CLASS: p11.ObjectClass.CERTIFICATE}):
+                        item = _read_cert_info(c, p11)
+                        item["obj_class"] = "CERTIFICATE"
+                        all_items.append(item)
                     for k in pub_keys:
-                        try:
-                            pub_labels.append(k[p11.Attribute.LABEL])
-                        except Exception:
-                            pub_labels.append("(unknown)")
+                        item = _read_key_info(k, p11)
+                        item["obj_class"] = "PUBLIC_KEY"
+                        all_items.append(item)
 
-                    certs = list(session.get_objects(
-                        {p11.Attribute.CLASS: p11.ObjectClass.CERTIFICATE}))
-                    cert_labels = []
-                    for c in certs:
-                        try:
-                            cert_labels.append(c[p11.Attribute.LABEL])
-                        except Exception:
-                            cert_labels.append("(no label)")
-
-                # Derive private key labels from public key labels.
-                # Telesec TCOS cards use the convention "Public X" / "Private X".
-                key_labels = []
-                for lbl in pub_labels:
-                    if lbl.startswith("Public "):
-                        key_labels.append("Private " + lbl[len("Public "):])
-                    else:
-                        key_labels.append(lbl)
-
+            # Zusammenfassung der gefundenen Objekte für das Status-Label
+            n_priv  = sum(1 for i in all_items if i["obj_class"] == "PRIVATE_KEY")
+            n_certs = sum(1 for i in all_items if i["obj_class"] == "CERTIFICATE")
             status = t("status_token_ok",
-                       label=token.label.strip(),
-                       keys=len(key_labels), certs=len(certs))
+                       label=token.label.strip(), keys=n_priv, certs=n_certs)
             self.status_lbl.setText(status)
 
-            # Auto-fill key label if there is exactly one key
-            if len(key_labels) == 1 and not self.key_edit.text().strip():
-                self.key_edit.setText(key_labels[0])
-                self.status_lbl.setText(
-                    status + "\n"
-                    + t("dlg_token_auto_label", label=key_labels[0]))
-
-            dlg = TokenInfoDialog(self, token, key_labels, cert_labels)
-            dlg.key_selected.connect(self.key_edit.setText)
+            # Token-Info-Dialog anzeigen; wenn der Benutzer einen Schlüssel
+            # auswählt, werden key_id_edit und cert_cn_edit automatisch gefüllt
+            dlg = TokenInfoDialog(self, token, all_items)
+            dlg.key_selected.connect(
+                lambda kid, cn: (self.key_id_edit.setText(kid),
+                                 self.cert_cn_edit.setText(cn)))
             dlg.exec()
 
         except Exception as exc:
@@ -339,6 +657,9 @@ class AppearanceConfigDialog(QDialog):
     in the main window; this dialog is kept for potential future use.
     """
 
+    # Vordefinierte Datumsformate mit Beispielen für die Auswahlbox.
+    # Das erste Element des Tupels ist das Python-strftime-Format,
+    # das zweite ist ein Beispiel-String für die Anzeige im Dropdown.
     DATE_FORMATS: list[tuple[str, str]] = [
         ("%d.%m.%Y %H:%M",    "31.12.2025 14:30"),
         ("%d.%m.%Y",          "31.12.2025"),
@@ -347,6 +668,7 @@ class AppearanceConfigDialog(QDialog):
         ("%d/%m/%Y %H:%M",    "31/12/2025 14:30"),
         ("%B %d, %Y",         "December 31, 2025"),
     ]
+    # Sentinel-Wert für den "Benutzerdefiniert…"-Eintrag in der Datumsformat-Combobox
     CUSTOM_FMT = "__custom__"
 
     def __init__(self, parent, config: AppConfig,
@@ -355,6 +677,8 @@ class AppearanceConfigDialog(QDialog):
         super().__init__(parent)
         self.config        = config
         self.appearance    = appearance
+        # selected_fdef: das aktuell ausgewählte Signaturfeld (für die Vorschaugröße);
+        # None → keine feldgrößenabhängige Vorschau möglich
         self.selected_fdef = selected_fdef  # used for preview size
         self.setWindowTitle(t("appdlg_title"))
         self.setMinimumSize(600, 500)
@@ -376,6 +700,8 @@ class AppearanceConfigDialog(QDialog):
         self._build_tab_text()
 
         # Full-size preview (always visible below the tabs)
+        # Vollbreite-Vorschau unterhalb der Tabs – zeigt die Signatur so,
+        # wie sie im Unterschriftsfeld des PDFs erscheinen wird
         prev_grp = QGroupBox(t("appdlg_img_preview"))
         prev_lay = QVBoxLayout(prev_grp)
         prev_lay.setContentsMargins(6, 4, 6, 4)
@@ -393,6 +719,7 @@ class AppearanceConfigDialog(QDialog):
         bb.button(QDialogButtonBox.StandardButton.Save).setText(t("appdlg_save"))
         bb.button(QDialogButtonBox.StandardButton.Cancel).setText(
             t("appdlg_cancel"))
+        # "Speichern" schreibt Konfiguration und schließt Dialog
         bb.accepted.connect(self._save_and_close)
         bb.rejected.connect(self.reject)
         root.addWidget(bb)
@@ -407,6 +734,7 @@ class AppearanceConfigDialog(QDialog):
         img_grp = QGroupBox(t("appdlg_tab_image"))
         ig = QVBoxLayout(img_grp)
 
+        # Zeile: Pfad-Eingabe (read-only) + "…"-Button + "Löschen"-Button
         img_row = QHBoxLayout()
         self.img_path_edit = QLineEdit()
         self.img_path_edit.setReadOnly(True)
@@ -427,21 +755,27 @@ class AppearanceConfigDialog(QDialog):
         vl.addWidget(img_grp)
 
         # Layout + border group
+        # Steuerung des Layouts: Bild links/rechts, Rahmen, Bild-Text-Verhältnis
         lay_grp = QGroupBox(t("appdlg_tab_layout"))
         lg = QFormLayout(lay_grp)
         lg.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
+        # Combobox: Bild links ("img_left") oder rechts ("img_right")
         self.layout_combo = QComboBox()
         self.layout_combo.addItem(t("app_layout_img_left"),  "img_left")
         self.layout_combo.addItem(t("app_layout_img_right"), "img_right")
+        # Bei Layout-Änderung: Beschriftungen des Sliders aktualisieren und
+        # Vorschau neu rendern
         self.layout_combo.currentIndexChanged.connect(self._on_layout_changed_dlg)
         lg.addRow(t("app_layout_label"), self.layout_combo)
 
+        # Checkbox: dünner Rahmen um das Signaturfeld
         self.chk_border = QCheckBox(t("appdlg_border"))
         self.chk_border.toggled.connect(self._update_preview)
         lg.addRow("", self.chk_border)
 
         # Image / text ratio slider
+        # Slider steuert den Anteil des Bildes an der Gesamtbreite (10–70 %)
         ratio_row = QHBoxLayout()
         self._ratio_lbl_img = QLabel("Image 30%")
         self._ratio_lbl_img.setFixedWidth(70)
@@ -472,6 +806,8 @@ class AppearanceConfigDialog(QDialog):
         row = 0
 
         # Name
+        # Checkbox aktiviert die Namensanzeige; Combobox wählt Quelle
+        # (aus Zertifikat-CN oder benutzerdefinierter Text)
         self.chk_name = QCheckBox(t("app_name_label"))
         self.name_mode_combo = QComboBox()
         self.name_mode_combo.addItem(t("ap_name_from_cert"), "cert")
@@ -486,6 +822,7 @@ class AppearanceConfigDialog(QDialog):
         row += 1
 
         # Location
+        # Ort der Signatur (z.B. "Berlin") – frei eingebbarer Text
         self.chk_location = QCheckBox(t("app_location_label"))
         self.location_edit = QLineEdit()
         gl.addWidget(self.chk_location, row, 0)
@@ -493,6 +830,7 @@ class AppearanceConfigDialog(QDialog):
         row += 1
 
         # Reason
+        # Signaturgrund (z.B. "Genehmigung") – frei eingebbarer Text
         self.chk_reason = QCheckBox(t("app_reason_label"))
         self.reason_edit = QLineEdit()
         gl.addWidget(self.chk_reason, row, 0)
@@ -500,12 +838,15 @@ class AppearanceConfigDialog(QDialog):
         row += 1
 
         # Date
+        # Datum der Signatur – pyhanko fügt automatisch den Zeitstempel
+        # über den %(ts)s-Platzhalter ein; das Format ist frei wählbar
         self.chk_date = QCheckBox(t("app_date_label"))
         date_col = QVBoxLayout()
         self.date_fmt_combo = QComboBox()
         for fmt, example in self.DATE_FORMATS:
             self.date_fmt_combo.addItem(f"{fmt}  →  {example}", fmt)
         self.date_fmt_combo.addItem("Custom…", self.CUSTOM_FMT)
+        # Bei "Custom…" wird das Freitext-Feld eingeblendet
         self.date_fmt_combo.currentIndexChanged.connect(self._on_date_fmt_changed)
         self.date_fmt_custom = QLineEdit()
         self.date_fmt_custom.setPlaceholderText("%d.%m.%Y %H:%M")
@@ -518,6 +859,7 @@ class AppearanceConfigDialog(QDialog):
         row += 1
 
         # Font size
+        # Schriftgröße in Punkten für den Text im Signaturfeld
         lbl_font = QLabel(t("appdlg_font_size"))
         self.font_size_spin = QSpinBox()
         self.font_size_spin.setRange(5, 24)
@@ -530,6 +872,9 @@ class AppearanceConfigDialog(QDialog):
         gl.setRowStretch(row, 1)
 
         # Connect signals
+        # Alle Checkboxen und Eingabefelder lösen bei Änderung eine Vorschau-
+        # Aktualisierung aus; Checkboxen steuern zusätzlich die Aktivierung
+        # der zugehörigen Eingabefelder
         self.chk_name.toggled.connect(self._on_checks_changed)
         self.chk_location.toggled.connect(self._on_checks_changed)
         self.chk_reason.toggled.connect(self._on_checks_changed)
@@ -546,8 +891,10 @@ class AppearanceConfigDialog(QDialog):
         """Enable/disable input fields depending on checkbox states."""
         name_on = self.chk_name.isChecked()
         self.name_mode_combo.setEnabled(name_on)
+        # Freitext-Eingabe nur aktiv wenn Name aktiviert UND Modus "custom"
         self.name_custom_edit.setEnabled(
             name_on and self.name_mode_combo.currentData() == "custom")
+        # Eingabefelder nur aktiv wenn die zugehörige Checkbox aktiviert ist
         self.location_edit.setEnabled(self.chk_location.isChecked())
         self.reason_edit.setEnabled(self.chk_reason.isChecked())
         self.date_fmt_combo.setEnabled(self.chk_date.isChecked())
@@ -555,10 +902,12 @@ class AppearanceConfigDialog(QDialog):
         self._update_preview()
 
     def _on_layout_changed_dlg(self) -> None:
+        # Bei Layout-Änderung (Bild links/rechts) Slider-Beschriftungen aktualisieren
         self._update_ratio_labels()
         self._update_preview()
 
     def _on_date_fmt_changed(self) -> None:
+        # Freitext-Eingabe ein-/ausblenden je nach Auswahl in der Combobox
         is_custom = self.date_fmt_combo.currentData() == self.CUSTOM_FMT
         self.date_fmt_custom.setVisible(is_custom)
         self._update_preview()
@@ -568,6 +917,9 @@ class AppearanceConfigDialog(QDialog):
         self._update_preview()
 
     def _update_ratio_labels(self, value: int = None) -> None:
+        # Beschriftungen links/rechts des Sliders aktualisieren.
+        # Wenn Bild links: linkes Label zeigt Bildanteil, rechtes Textanteil.
+        # Wenn Bild rechts: linkes Label zeigt Textanteil, rechtes Bildanteil.
         if value is None:
             value = self.ratio_slider.value()
         layout = self.layout_combo.currentData() or "img_left"
@@ -579,6 +931,7 @@ class AppearanceConfigDialog(QDialog):
             self._ratio_lbl_txt.setText(f"Image {value}% ▶")
 
     def _browse_image(self) -> None:
+        # Bild-Dateidialog; zuletzt genutztes Verzeichnis aus Konfig als Startpunkt
         start = self.config.get("paths", "last_img_dir")
         path, _ = QFileDialog.getOpenFileName(
             self, t("appdlg_browse_img"), start, t("appdlg_img_filter"))
@@ -588,13 +941,17 @@ class AppearanceConfigDialog(QDialog):
             self._update_preview()
 
     def _clear_image(self) -> None:
+        # Bildpfad löschen → Vorschau zeigt nur Text
         self.img_path_edit.clear()
         self._update_preview()
 
     def _update_preview(self) -> None:
         """Render preview using the currently selected signature field size."""
+        # Aktuelle UI-Werte temporär in AppConfig schreiben (ohne auf Disk zu speichern)
+        # damit SigAppearance.render_preview() die aktuellen Einstellungen liest
         self._apply_to_config(save=False)
         fdef = self.selected_fdef
+        # Ohne ausgewähltes Feld: Hinweistext statt Vorschau anzeigen
         if fdef is None:
             self.full_preview.clear()
             self.full_preview.setText(t("ap_preview_hint"))
@@ -602,6 +959,7 @@ class AppearanceConfigDialog(QDialog):
                 "background: #f0f0f0; border: 1px solid #ccc; color: gray;")
             return
 
+        # Skalierung: Signaturfeld in den verfügbaren Vorschaubereich einpassen
         fw      = abs(fdef.x2 - fdef.x1)
         fh      = abs(fdef.y2 - fdef.y1)
         avail_w = max(10, self.full_preview.width()  - 4)
@@ -610,9 +968,11 @@ class AppearanceConfigDialog(QDialog):
         pw      = max(10, int(fw * scale))
         ph      = max(10, int(fh * scale))
 
+        # Vorschau-Pixmap vom SigAppearance-Renderer erzeugen lassen
         px = self.appearance.render_preview(
             pw, ph, pixels_per_point=DPI_SCALE * scale)
 
+        # Vorschau-Pixmap auf grauen Canvas zentriert zeichnen
         from PyQt6.QtGui import QPainter as _P, QColor as _C
         canvas = QPixmap(avail_w, avail_h)
         canvas.fill(_C("#f0f0f0"))
@@ -624,23 +984,29 @@ class AppearanceConfigDialog(QDialog):
             "background: #f0f0f0; border: 1px solid #ccc;")
 
     def resizeEvent(self, ev) -> None:
+        # Vorschau bei Dialoggrößenänderung neu berechnen,
+        # damit sie immer den verfügbaren Platz optimal ausfüllt
         super().resizeEvent(ev)
         self._update_preview()
 
     # ── Load / save ───────────────────────────────────────────────────────
 
     def _date_fmt_value(self) -> str:
+        # Aktuell ausgewähltes Datumsformat zurückgeben:
+        # Bei "Custom…" aus dem Freitext-Feld lesen, sonst aus der Combobox
         if self.date_fmt_combo.currentData() == self.CUSTOM_FMT:
             return self.date_fmt_custom.text().strip() or "%d.%m.%Y %H:%M"
         return self.date_fmt_combo.currentData() or "%d.%m.%Y %H:%M"
 
     def _load_values(self) -> None:
+        # Alle Widgets aus der AppConfig befüllen (beim Dialog-Öffnen)
         self.img_path_edit.setText(self.config.get("appearance", "image_path"))
 
         idx = self.layout_combo.findData(self.config.get("appearance", "layout"))
         self.layout_combo.setCurrentIndex(max(0, idx))
         self.chk_border.setChecked(self.config.getbool("appearance", "show_border"))
 
+        # Verhältnis-Slider: ungültige Werte auf gültigen Bereich clampen
         try:
             ratio = int(self.config.get("appearance", "img_ratio") or "40")
         except ValueError:
@@ -663,6 +1029,8 @@ class AppearanceConfigDialog(QDialog):
         self.reason_edit.setText(self.config.get("appearance", "reason"))
 
         self.chk_date.setChecked(self.config.getbool("appearance", "show_date"))
+        # Datumsformat: gespeichertes Format in der Combobox suchen;
+        # falls nicht vorhanden → "Custom…" wählen und Freitext-Feld befüllen
         saved_fmt = self.config.get("appearance", "date_format") or "%d.%m.%Y %H:%M"
         fmt_idx   = self.date_fmt_combo.findData(saved_fmt)
         if fmt_idx >= 0:
@@ -673,15 +1041,20 @@ class AppearanceConfigDialog(QDialog):
             self.date_fmt_custom.setText(saved_fmt)
             self.date_fmt_custom.setVisible(True)
 
+        # Schriftgröße: ungültige Werte abfangen
         try:
             fs = int(self.config.get("appearance", "font_size") or "8")
         except (ValueError, TypeError):
             fs = 8
         self.font_size_spin.setValue(max(5, min(24, fs)))
 
+        # Checkbox-abhängige Felder aktivieren/deaktivieren
         self._on_checks_changed()
 
     def _apply_to_config(self, save: bool = True) -> None:
+        # Alle aktuellen Widget-Werte in die AppConfig schreiben.
+        # save=False: nur In-Memory (für Vorschau-Aktualisierung ohne Disk-Zugriff)
+        # save=True: zusätzlich auf Disk persistieren
         self.config.set("appearance", "image_path",
                         self.img_path_edit.text().strip())
         self.config.set("appearance", "layout",
@@ -713,5 +1086,6 @@ class AppearanceConfigDialog(QDialog):
             self.config.save()
 
     def _save_and_close(self) -> None:
+        # Alle Werte dauerhaft speichern und Dialog schließen
         self._apply_to_config(save=True)
         self.accept()
