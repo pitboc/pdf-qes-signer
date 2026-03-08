@@ -3,6 +3,13 @@
 A GUI tool for visually placing signature fields in PDF documents and applying
 **qualified electronic signatures (QES)** via PKCS#11 / smartcard.
 
+> **Repository:**
+> Primary: [codeberg.org/pitbo/pdf-qes-signer](https://codeberg.org/pitbo/pdf-qes-signer)
+> Mirror: [github.com/pitboc/pdf-qes-signer](https://github.com/pitboc/pdf-qes-signer) *(read-only)*
+>
+> **Issues and contributions:** Please use the Codeberg repository.
+> The GitHub repository is a read-only mirror and does not accept issues or pull requests.
+
 ## Background and motivation
 
 Qualified electronic signatures (QES) in Germany require a signature card issued
@@ -67,7 +74,12 @@ pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
 ## Installation
 
 ```bash
+# Primary (Codeberg)
 git clone https://codeberg.org/pitbo/pdf-qes-signer.git
+
+# Mirror (GitHub)
+git clone https://github.com/pitboc/pdf-qes-signer.git
+
 cd pdf-qes-signer
 ```
 
