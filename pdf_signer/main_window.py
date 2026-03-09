@@ -62,7 +62,7 @@ from PyQt6.QtGui import QAction, QFont, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow,
-    QMessageBox, QPushButton, QScrollArea,
+    QMessageBox, QPushButton, QScrollArea, QStackedWidget,
     QSplitter, QVBoxLayout, QWidget, QCheckBox,
 )
 
@@ -76,7 +76,7 @@ from .pdf_view import PDFViewWidget, SignatureFieldDef
 from .dialogs import Pkcs11ConfigDialog
 from .i18n import t, i18n, AVAILABLE_LANGUAGES
 from .appearance_panel import AppearancePanel
-from .continuous_view import ContinuousView  # noqa: F401 – imported for future use
+from .continuous_view import ContinuousView
 
 
 class PDFSignerApp(QMainWindow):
@@ -113,11 +113,8 @@ class PDFSignerApp(QMainWindow):
         # Worker-Referenzen halten damit GC sie nicht vorzeitig zerstört
         self._worker      = None
         self._sign_worker = None
-        # Fortlaufende Ansicht: Zustand und per-Seite-Widgets
+        # Fortlaufende Ansicht: Modus-Flag; Widget wird in _build_ui erstellt
         self._continuous_mode: bool = False
-        self._page_widgets:    list[PDFViewWidget]  = []
-        self._page_y_offsets:  list[int]            = []  # widget-top y per page
-        self._continuous_doc_id: int = 0  # id(pdf_doc) when page widgets were built
 
         self._build_ui()
         self._apply_language()
@@ -233,17 +230,15 @@ class PDFSignerApp(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(splitter)
 
-        # PDF-Canvas in ScrollArea eingebettet (kann bei hohem Zoom scrollen).
+        # Einzelseitenansicht: PDF-Canvas in ScrollArea (zoombar)
         # _outer_container ist das permanente ScrollArea-Widget (wird NIE ersetzt).
-        # Beim Moduswechsel werden nur die Kinder des Containers ausgetauscht,
-        # um Qt-Ownership-Probleme bei wiederholtem setWidget() zu vermeiden.
+        # ID-Selektor (#name) kaskadiert nicht auf Kind-Widgets – verhindert,
+        # dass QInputDialog-Dialoge den dunklen Hintergrund erben.
         self._scroll_area = QScrollArea()
         self._scroll_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._scroll_area.setStyleSheet("QScrollArea { background: #404040; }")
         self._outer_container = QWidget()
         self._outer_container.setObjectName("pdfOuterContainer")
-        # ID-Selektor (#name) kaskadiert nicht auf Kind-Widgets – verhindert,
-        # dass QInputDialog-Dialoge den dunklen Hintergrund erben
         self._outer_container.setStyleSheet(
             "#pdfOuterContainer { background: #404040; }")
         self._outer_layout = QVBoxLayout(self._outer_container)
@@ -251,18 +246,25 @@ class PDFSignerApp(QMainWindow):
         self._outer_layout.setSpacing(0)
         self._outer_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._pdf_view = PDFViewWidget(self.appearance)
-        # Signale vom PDFViewWidget: Feld hinzugefügt, gelöscht, angeklickt
         self._pdf_view.field_added.connect(self._on_field_added)
         self._pdf_view.field_deleted.connect(self._on_field_deleted)
-        # Klick auf Feld im Canvas → entsprechende Zeile in der Feldliste auswählen
         self._pdf_view.field_clicked.connect(self._on_field_clicked_in_view)
         self._outer_layout.addWidget(self._pdf_view)
         self._scroll_area.setWidget(self._outer_container)
         self._scroll_area.setWidgetResizable(False)
-        splitter.addWidget(self._scroll_area)
-        # Scroll-Signal für fortlaufende Ansicht (Slot prüft selbst den Modus)
-        self._scroll_area.verticalScrollBar().valueChanged.connect(
-            self._on_continuous_scroll)
+
+        # Fortlaufende Ansicht: ContinuousView kapselt die gesamte Logik
+        self._cv = ContinuousView()
+        self._cv.page_changed.connect(self._on_cv_page_changed)
+        self._cv.field_clicked.connect(self._on_field_clicked_in_view)
+        self._cv.field_added.connect(self._on_field_added)
+        self._cv.field_deleted.connect(self._on_field_deleted)
+
+        # QStackedWidget schaltet zwischen den beiden Ansichten um
+        self._stacked = QStackedWidget()
+        self._stacked.addWidget(self._scroll_area)  # Index 0: Einzelseite
+        self._stacked.addWidget(self._cv)           # Index 1: Fortlaufend
+        splitter.addWidget(self._stacked)
 
         # Right panel
         # Rechtes Panel: Feldliste, PIN-Eingabe, TSA-Checkbox, Erscheinungsbild-Tabs
@@ -445,24 +447,24 @@ class PDFSignerApp(QMainWindow):
     def _render_current_page(self) -> None:
         """Render the current page (single-page mode) or refresh overlays
         (continuous mode).  A full rebuild of the continuous view is triggered
-        whenever the loaded document changed since the last build."""
+        whenever the loaded document changed since the last open() call."""
         if not self.pdf_doc:
             return
         if self._continuous_mode:
-            # Rebuild wenn neues Dokument; overlay-refresh wenn selbes Dokument
-            if not self._page_widgets or self._continuous_doc_id != id(self.pdf_doc):
-                self._rebuild_continuous_view()
+            if not self._cv.is_open_for(self.pdf_doc):
+                self._cv.open(self.pdf_doc, self.appearance,
+                              self.sig_fields, self.locked_fields, self.signed_fields)
+                self._cv.scroll_to_page(self.current_page)
             else:
-                self._refresh_continuous_view()
+                self._cv.update_fields(self.sig_fields, self.locked_fields, self.signed_fields)
+            self._page_edit.setText(str(self.current_page + 1))
+            self._page_total_lbl.setText(f"/ {len(self.pdf_doc)}")
             return
         page = self.pdf_doc[self.current_page]
         self._pdf_view.set_page(
             page, self.sig_fields, self.current_page,
             self.locked_fields, self.signed_fields)
-        # Layout-Größe sofort neu berechnen, damit die ScrollArea die
-        # aktualisierte Größe des _outer_container sofort übernimmt
         self._outer_container.adjustSize()
-        # Seitenzähler im Toolbar aktualisieren (1-basiert für den Benutzer)
         self._page_edit.setText(str(self.current_page + 1))
         self._page_total_lbl.setText(f"/ {len(self.pdf_doc)}")
 
@@ -488,11 +490,8 @@ class PDFSignerApp(QMainWindow):
                 selected_for_scroll = self.signed_fields[row - n_sig - n_locked - 1]
 
         # Vorschau-Hervorhebung auf dem richtigen Widget setzen
-        if self._continuous_mode and self._page_widgets:
-            for pw in self._page_widgets:
-                pw.set_selected_field(None)
-            if fdef_preview is not None and fdef_preview.page < len(self._page_widgets):
-                self._page_widgets[fdef_preview.page].set_selected_field(fdef_preview)
+        if self._continuous_mode:
+            self._cv.set_selected_field(fdef_preview)
         else:
             self._pdf_view.set_selected_field(fdef_preview)
 
@@ -511,10 +510,9 @@ class PDFSignerApp(QMainWindow):
             self._page_edit.setText(str(self.current_page + 1))
             return
         page = max(0, min(page, len(self.pdf_doc) - 1))
-        if self._continuous_mode and self._page_y_offsets:
+        if self._continuous_mode:
             self.current_page = page
-            self._scroll_area.verticalScrollBar().setValue(
-                self._page_y_offsets[page])
+            self._cv.scroll_to_page(page)
             self._page_edit.setText(str(page + 1))
         elif page != self.current_page:
             self.current_page = page
@@ -524,32 +522,19 @@ class PDFSignerApp(QMainWindow):
             self._page_edit.setText(str(self.current_page + 1))
 
     def _scroll_to_field(self, fdef: SignatureFieldDef) -> None:
-        """Ensure *fdef* is visible; if not, scroll so it appears in the lower
-        portion of the viewport.  The page-top never drops below the viewport top."""
-        vbar       = self._scroll_area.verticalScrollBar()
-        viewport_h = self._scroll_area.viewport().height()
+        """Ensure *fdef* is visible; scroll so it appears in the lower 80 % of
+        the viewport.  In continuous mode delegates to ContinuousView.
 
-        if self._continuous_mode and self._page_widgets:
-            # Fortlaufende Ansicht: Feld-Koordinaten relativ zur Gesamt-Scroll-Fläche
-            if fdef.page >= len(self._page_widgets):
-                return
-            pw = self._page_widgets[fdef.page]
-            page_top = self._page_y_offsets[fdef.page]
-            tl = pw._pdf_to_w(fdef.x1, fdef.y2)
-            br = pw._pdf_to_w(fdef.x2, fdef.y1)
-            field_top_y    = page_top + min(tl.y(), br.y())
-            field_bottom_y = page_top + max(tl.y(), br.y())
-            cur_scroll = vbar.value()
-            if cur_scroll <= field_top_y and field_bottom_y <= cur_scroll + viewport_h:
-                return  # bereits vollständig sichtbar
-            target = int(field_bottom_y - viewport_h * 0.80)
-            # Seitenanfang darf nicht unterhalb des Viewport-Obeenrandes rutschen
-            target = max(page_top, target)
-            target = min(target, vbar.maximum())
-            vbar.setValue(target)
+        Single-page mode: the page top is clamped to the viewport top so that
+        the page never appears to start below the visible area.
+        """
+        if self._continuous_mode:
+            self._cv.scroll_to_field(fdef)
             return
 
         # Einzelseitenansicht
+        vbar       = self._scroll_area.verticalScrollBar()
+        viewport_h = self._scroll_area.viewport().height()
         page_changed = fdef.page != self.current_page
         if page_changed:
             self.current_page = fdef.page
@@ -573,104 +558,20 @@ class PDFSignerApp(QMainWindow):
         self._continuous_mode = self._tb_view_toggle.isChecked()
         if self._continuous_mode:
             self._tb_view_toggle.setToolTip("Einzelseitenansicht")
+            self._stacked.setCurrentIndex(1)
             if self.pdf_doc:
-                self._rebuild_continuous_view()
+                self._render_current_page()
         else:
             self._tb_view_toggle.setToolTip("Fortlaufende Seitenansicht")
-            # Seiten-Widgets löschen (wurden direkt am _outer_container gehängt)
-            for pw in self._page_widgets:
-                pw.hide()
-                pw.deleteLater()
-            self._page_widgets    = []
-            self._page_y_offsets  = []
-            self._continuous_doc_id = 0
-            # Einzelseitenansicht wieder ins Layout einfügen und anzeigen
-            self._outer_layout.addWidget(self._pdf_view)
-            self._pdf_view.show()
+            self._stacked.setCurrentIndex(0)
             self._render_current_page()
 
-    def _rebuild_continuous_view(self) -> None:
-        """Rasterize all pages and position them manually in _outer_container.
-
-        Bypasses QVBoxLayout for the continuous view entirely to avoid Qt
-        layout quirks (deferred positioning, sizeHint inaccuracies) that cause
-        page overlap or wrong scrollbar ranges on large documents.
-
-        Each page widget is parented directly to _outer_container and positioned
-        with move(x, y).  Pages are centred horizontally relative to the widest
-        page.  The container is resized explicitly to the exact content size.
-        """
-        _GAP = 10  # Abstand zwischen Seiten in Pixeln
-
-        # Vorherige Seiten-Widgets bereinigen
-        for pw in self._page_widgets:
-            pw.hide()
-            pw.deleteLater()
-        self._page_widgets   = []
-        self._page_y_offsets = []
-
-        # Einzelseitenansicht aus dem Layout entfernen und verstecken
-        if self._outer_layout.indexOf(self._pdf_view) >= 0:
-            self._outer_layout.removeWidget(self._pdf_view)
-        self._pdf_view.hide()
-
-        # Alle Seiten rasterisieren und Maße sammeln
-        y = 0
-        max_w = 0
-        for page_num in range(len(self.pdf_doc)):
-            page = self.pdf_doc[page_num]
-            pv = PDFViewWidget(self.appearance)
-            pv.set_page(page, self.sig_fields, page_num,
-                        self.locked_fields, self.signed_fields)
-            pv.field_added.connect(self._on_field_added)
-            pv.field_deleted.connect(self._on_field_deleted)
-            pv.field_clicked.connect(self._on_field_clicked_in_view)
-            # Widget direkt am Container hängen, NICHT über das Layout
-            pv.setParent(self._outer_container)
-            self._page_y_offsets.append(y)
-            y += pv.height() + _GAP
-            max_w = max(max_w, pv.width())
-            self._page_widgets.append(pv)
-
-        # Seiten horizontal zentrieren und an exakter Position platzieren
-        total_h = y - _GAP if self._page_widgets else 0  # letzten Gap abziehen
-        for i, pv in enumerate(self._page_widgets):
-            x = (max_w - pv.width()) // 2
-            pv.move(x, self._page_y_offsets[i])
-            pv.show()
-
-        # Container exakt auf Inhaltsgröße setzen – kein adjustSize(), da das
-        # von sizeHint() abhängt und bei manueller Positionierung unzuverlässig ist
-        self._outer_container.resize(max_w, total_h)
-
-        self._continuous_doc_id = id(self.pdf_doc)
-        self._page_edit.setText(str(self.current_page + 1))
-        self._page_total_lbl.setText(f"/ {len(self.pdf_doc)}")
-        if self._page_y_offsets:
-            self._scroll_area.verticalScrollBar().setValue(
-                self._page_y_offsets[self.current_page])
-
-    def _refresh_continuous_view(self) -> None:
-        """Update field overlays on all page widgets without re-rasterizing."""
-        for pw in self._page_widgets:
-            pw.update_fields(self.sig_fields, self.locked_fields, self.signed_fields)
-
-    def _on_continuous_scroll(self, value: int) -> None:
-        """Update the page indicator while scrolling in continuous mode."""
-        if not self._continuous_mode or not self._page_y_offsets:
-            return
-        # Letzte Seite ermitteln, deren Oberkante oberhalb des Viewport-Mittelpunkts liegt
-        viewport_mid = value + self._scroll_area.viewport().height() // 2
-        current = 0
-        for i, y_off in enumerate(self._page_y_offsets):
-            if y_off <= viewport_mid:
-                current = i
-            else:
-                break
-        if self.current_page != current:
-            self.current_page = current
+    def _on_cv_page_changed(self, page: int) -> None:
+        """Update toolbar page indicator when ContinuousView reports a scroll."""
+        if self.current_page != page:
+            self.current_page = page
             self._page_edit.blockSignals(True)
-            self._page_edit.setText(str(current + 1))
+            self._page_edit.setText(str(page + 1))
             self._page_edit.blockSignals(False)
 
     def _on_field_clicked_in_view(self, fdef: SignatureFieldDef) -> None:
@@ -913,9 +814,8 @@ class PDFSignerApp(QMainWindow):
         # Eine Seite zurückblättern (Minimum: Seite 0)
         if self.pdf_doc and self.current_page > 0:
             self.current_page -= 1
-            if self._continuous_mode and self._page_y_offsets:
-                self._scroll_area.verticalScrollBar().setValue(
-                    self._page_y_offsets[self.current_page])
+            if self._continuous_mode:
+                self._cv.scroll_to_page(self.current_page)
                 self._page_edit.setText(str(self.current_page + 1))
             else:
                 self._render_current_page()
@@ -924,9 +824,8 @@ class PDFSignerApp(QMainWindow):
         # Eine Seite vorblättern (Maximum: letzte Seite)
         if self.pdf_doc and self.current_page < len(self.pdf_doc) - 1:
             self.current_page += 1
-            if self._continuous_mode and self._page_y_offsets:
-                self._scroll_area.verticalScrollBar().setValue(
-                    self._page_y_offsets[self.current_page])
+            if self._continuous_mode:
+                self._cv.scroll_to_page(self.current_page)
                 self._page_edit.setText(str(self.current_page + 1))
             else:
                 self._render_current_page()
