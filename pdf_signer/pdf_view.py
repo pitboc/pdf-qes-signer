@@ -176,6 +176,16 @@ class PDFViewWidget(QWidget):
         """Repaint the overlay (e.g. after an appearance change)."""
         self.update()
 
+    def update_fields(self,
+                      sig_fields: list[SignatureFieldDef],
+                      locked_fields: list[SignatureFieldDef],
+                      signed_fields: list[SignatureFieldDef]) -> None:
+        """Update field lists and repaint without re-rasterizing the page."""
+        self._sig_fields    = sig_fields
+        self._locked_fields = locked_fields
+        self._signed_fields = signed_fields
+        self.update()
+
     def set_selected_field(self, fdef: Optional[SignatureFieldDef]) -> None:
         """Set which field shows the full appearance preview (None = none)."""
         self._selected_field = fdef
