@@ -57,7 +57,7 @@ from typing import Optional
 
 import fitz  # PyMuPDF
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction, QFont, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication, QFileDialog, QFormLayout, QGroupBox,
@@ -553,18 +553,96 @@ class PDFSignerApp(QMainWindow):
 
     # ── Continuous / single-page view toggle ──────────────────────────────
 
+    @staticmethod
+    def _transfer_hscroll(src: QScrollArea, dst: QScrollArea) -> None:
+        """Transfer the horizontal scroll side from *src* to *dst*.
+
+        Determines whether the user was left-of-centre, centred, or
+        right-of-centre in *src*, then applies the same side to *dst*:
+        - left  → dst hbar = 0
+        - right → dst hbar = maximum
+        - centre (or no scrollbar in src) → dst hbar = centre
+
+        This preserves the user's horizontal focus when switching between
+        single-page and continuous view without snapping to an unexpected edge.
+        """
+        src_hbar  = src.horizontalScrollBar()
+        dst_hbar  = dst.horizontalScrollBar()
+        src_vp_w  = src.viewport().width()
+        src_cw    = src.widget().width() if src.widget() else 0
+        dst_cw    = dst.widget().width() if dst.widget() else 0
+        dst_vp_w  = dst.viewport().width()
+
+        # Determine side in source
+        if src_cw <= src_vp_w:
+            # No scrollbar in source – content was centred
+            side = 0  # centre
+        else:
+            centre_pos = (src_cw - src_vp_w) / 2
+            val = src_hbar.value()
+            if val < centre_pos - 2:
+                side = -1  # left
+            elif val > centre_pos + 2:
+                side = 1   # right
+            else:
+                side = 0   # centre
+
+        # Apply side to destination
+        if side == -1 or dst_cw <= dst_vp_w:
+            dst_hbar.setValue(0)
+        elif side == 1:
+            dst_hbar.setValue(dst_hbar.maximum())
+        else:
+            dst_hbar.setValue(max(0, min((dst_cw - dst_vp_w) // 2,
+                                        dst_hbar.maximum())))
+
     def _toggle_view_mode(self) -> None:
         """Switch between single-page and continuous scroll view."""
         self._continuous_mode = self._tb_view_toggle.isChecked()
         if self._continuous_mode:
+            # single-page → continuous
+            # Capture within-page offset before switching
+            sp_offset = self._scroll_area.verticalScrollBar().value()
+            page      = self.current_page
+            src       = self._scroll_area
             self._tb_view_toggle.setToolTip("Einzelseitenansicht")
             self._stacked.setCurrentIndex(1)
             if self.pdf_doc:
                 self._render_current_page()
+            self._transfer_hscroll(src, self._cv)
+            # Defer scroll so Qt can finalise the scrollbar range first,
+            # then restore the same within-page offset
+            def _apply_vscroll():
+                if page < len(self._cv._page_y_offsets):
+                    target = self._cv._page_y_offsets[page] + sp_offset
+                    vbar   = self._cv.verticalScrollBar()
+                    vbar.setValue(max(0, min(target, vbar.maximum())))
+            QTimer.singleShot(0, _apply_vscroll)
         else:
+            # continuous → single-page
+            # Capture what part of the current page is visible before switching
+            top_vis, bot_vis = self._cv.page_edge_visibility(self.current_page)
+            src = self._cv
             self._tb_view_toggle.setToolTip("Fortlaufende Seitenansicht")
             self._stacked.setCurrentIndex(0)
             self._render_current_page()
+            self._transfer_hscroll(src, self._scroll_area)
+            # Apply vertical position based on page-edge visibility in continuous mode
+            vbar = self._scroll_area.verticalScrollBar()
+            if top_vis and bot_vis:
+                # Whole page was visible → centre vertically
+                vbar.setValue(max(0, vbar.maximum() // 2))
+            elif top_vis:
+                # Only top visible → show page top
+                vbar.setValue(0)
+            elif bot_vis:
+                # Only bottom visible → show page bottom
+                vbar.setValue(vbar.maximum())
+            else:
+                # Page filled viewport entirely → transfer the within-page offset
+                page_top = self._cv._page_y_offsets[self.current_page]
+                offset   = self._cv.verticalScrollBar().value() - page_top
+                vbar.setValue(max(0, min(offset, vbar.maximum())))
 
     def _on_cv_page_changed(self, page: int) -> None:
         """Update toolbar page indicator when ContinuousView reports a scroll."""
