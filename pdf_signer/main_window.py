@@ -117,6 +117,9 @@ class PDFSignerApp(QMainWindow):
         self._continuous_mode: bool = False
         # Aktueller Zoom-Faktor (1.0 = 100 %, geteilt von Einzel- und Fortlaufend-Ansicht)
         self._zoom_factor: float = 1.5
+        # Scrollbar-Startwerte für Middle-Drag-Panning (single-page mode)
+        self._pan_hbar_start: int = 0
+        self._pan_vbar_start: int = 0
 
         self._build_ui()
         self._apply_language()
@@ -272,6 +275,8 @@ class PDFSignerApp(QMainWindow):
         self._pdf_view.field_clicked.connect(self._on_field_clicked_in_view)
         self._pdf_view.zoom_requested.connect(self._on_zoom_wheel)
         self._pdf_view.zoom_rect_requested.connect(self._on_zoom_rect_single)
+        self._pdf_view.pan_started.connect(self._on_pan_started_single)
+        self._pdf_view.pan_requested.connect(self._on_pan_single)
         self._pdf_view.hscroll_requested.connect(self._on_hscroll_single)
         self._outer_layout.addWidget(self._pdf_view)
         self._scroll_area.setWidget(self._outer_container)
@@ -590,6 +595,16 @@ class PDFSignerApp(QMainWindow):
             vbar.setRange(0, vbar_max)
         hbar.setValue(max(0, min(int(cx * actual_ratio + cx_new - vp_w / 2), hbar_max)))
         vbar.setValue(max(0, min(int(cy * actual_ratio + cy_new - vp_h / 2), vbar_max)))
+
+    def _on_pan_started_single(self) -> None:
+        """Capture scrollbar origin when middle-drag pan begins (single-page mode)."""
+        self._pan_hbar_start = self._scroll_area.horizontalScrollBar().value()
+        self._pan_vbar_start = self._scroll_area.verticalScrollBar().value()
+
+    def _on_pan_single(self, dx: int, dy: int) -> None:
+        """Middle-drag panning in single-page mode (dx/dy = total offset from pan start)."""
+        self._scroll_area.horizontalScrollBar().setValue(self._pan_hbar_start - dx)
+        self._scroll_area.verticalScrollBar().setValue(self._pan_vbar_start - dy)
 
     def _on_cv_zoom_changed(self, factor: float) -> None:
         """ContinuousView reports an internal zoom change (e.g. Ctrl+wheel)."""

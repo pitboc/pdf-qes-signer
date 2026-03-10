@@ -179,6 +179,8 @@ class ContinuousView(QScrollArea):
         self.setWidget(self._container)
 
         self._zoom: float = PDFViewWidget.ZOOM   # current zoom factor
+        self._pan_hbar_start: int = 0            # scrollbar origin for middle-drag panning
+        self._pan_vbar_start: int = 0
 
         # Per-slot state: one entry per page; each is either a
         # _PagePlaceholder or a rendered PDFViewWidget
@@ -469,6 +471,8 @@ class ContinuousView(QScrollArea):
         pv.zoom_rect_requested.connect(
             lambda rect, _pv=pv: self._on_pv_zoom_rect(rect, _pv))
         pv.hscroll_requested.connect(self._on_pv_hscroll)
+        pv.pan_started.connect(self._on_pv_pan_started)
+        pv.pan_requested.connect(self._on_pv_pan)
         pv.setParent(self._container)
         pv.move(x, y)
         pv.show()
@@ -579,3 +583,13 @@ class ContinuousView(QScrollArea):
         hbar = self.horizontalScrollBar()
         step = max(20, hbar.singleStep()) * 3
         hbar.setValue(hbar.value() - delta * step // 120)
+
+    def _on_pv_pan_started(self) -> None:
+        """Capture scrollbar origin when middle-drag pan begins (continuous mode)."""
+        self._pan_hbar_start = self.horizontalScrollBar().value()
+        self._pan_vbar_start = self.verticalScrollBar().value()
+
+    def _on_pv_pan(self, dx: int, dy: int) -> None:
+        """Middle-drag panning from a rendered page (dx/dy = total offset from pan start)."""
+        self.horizontalScrollBar().setValue(self._pan_hbar_start - dx)
+        self.verticalScrollBar().setValue(self._pan_vbar_start - dy)

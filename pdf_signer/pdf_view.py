@@ -138,6 +138,8 @@ class PDFViewWidget(QWidget):
     zoom_requested      = pyqtSignal(int, QPointF) # Ctrl+wheel: (angleDelta.y, cursor_in_widget)
     hscroll_requested   = pyqtSignal(int)          # Shift+wheel: angleDelta.y
     zoom_rect_requested = pyqtSignal(QRectF)       # Ctrl+drag: rubber-band rect (widget coords)
+    pan_started         = pyqtSignal()             # middle button pressed: pan begins
+    pan_requested       = pyqtSignal(int, int)     # middle-drag: (dx, dy) total offset from pan start
 
     def __init__(self, appearance: SigAppearance, parent=None) -> None:
         super().__init__(parent)
@@ -158,6 +160,7 @@ class PDFViewWidget(QWidget):
         self._drag_end:   Optional[QPointF] = None
         self._rb_start:   Optional[QPointF] = None   # Ctrl+drag rubber-band start
         self._rb_end:     Optional[QPointF] = None   # Ctrl+drag rubber-band end
+        self._pan_start:  Optional[QPointF] = None   # middle-drag panning start
         self._sig_fields:    list[SignatureFieldDef] = []
         self._locked_fields: list[SignatureFieldDef] = []
         self._signed_fields: list[SignatureFieldDef] = []
@@ -348,10 +351,21 @@ class PDFViewWidget(QWidget):
                 else:
                     self._drag_start = QPointF(ev.position())
                     self._drag_end   = None
+        elif ev.button() == Qt.MouseButton.MiddleButton:
+            self._pan_start = QPointF(ev.globalPosition())
+            self.setCursor(Qt.CursorShape.SizeAllCursor)
+            self.pan_started.emit()
         elif ev.button() == Qt.MouseButton.RightButton:
             self._right_click(ev.position())
 
     def mouseMoveEvent(self, ev) -> None:
+        if self._pan_start:
+            pos = QPointF(ev.globalPosition())
+            self.pan_requested.emit(
+                int(pos.x() - self._pan_start.x()),
+                int(pos.y() - self._pan_start.y()),
+            )
+            return
         if self._rb_start:
             self._rb_end = QPointF(ev.position())
             self.update()
@@ -367,6 +381,10 @@ class PDFViewWidget(QWidget):
             )
 
     def mouseReleaseEvent(self, ev) -> None:
+        if ev.button() == Qt.MouseButton.MiddleButton:
+            self._pan_start = None
+            self.setCursor(Qt.CursorShape.CrossCursor)
+            return
         if ev.button() != Qt.MouseButton.LeftButton:
             return
 
