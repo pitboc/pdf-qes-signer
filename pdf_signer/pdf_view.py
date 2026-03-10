@@ -111,8 +111,10 @@ class PDFViewWidget(QWidget):
     """Interactive widget that renders a PDF page and lets the user draw and
     delete signature fields by mouse interaction.
 
-    Left-click + drag  → draw a new signature field rectangle.
-    Right-click on field → delete that field (with confirmation dialog).
+    Left-click + drag        → draw a new signature field rectangle.
+    Ctrl + left-click + drag → rubber-band zoom: drag a rectangle and the view
+                               zooms to fit it in the viewport.
+    Right-click on field     → delete that field (with confirmation dialog).
 
     Coordinate system:
         *Widget* space uses pixel coordinates (origin top-left, Y down).
@@ -122,17 +124,20 @@ class PDFViewWidget(QWidget):
     Signals:
         field_added(SignatureFieldDef):   emitted after a new field is confirmed.
         field_deleted(SignatureFieldDef): emitted after a field is deleted.
+        zoom_rect_requested(QRectF):      Ctrl+drag rubber-band rectangle
+                                          (widget coordinates).
     """
 
     # Default zoom factor (class constant – instances shadow it via _zoom).
     ZOOM: float = 1.5
 
     from PyQt6.QtCore import pyqtSignal
-    field_added       = pyqtSignal(object)
-    field_deleted     = pyqtSignal(object)
-    field_clicked     = pyqtSignal(object)    # click on existing field
-    zoom_requested    = pyqtSignal(int, QPointF)  # Ctrl+wheel: (angleDelta.y, cursor_in_widget)
-    hscroll_requested = pyqtSignal(int)           # Shift+wheel: angleDelta.y
+    field_added         = pyqtSignal(object)
+    field_deleted       = pyqtSignal(object)
+    field_clicked       = pyqtSignal(object)       # click on existing field
+    zoom_requested      = pyqtSignal(int, QPointF) # Ctrl+wheel: (angleDelta.y, cursor_in_widget)
+    hscroll_requested   = pyqtSignal(int)          # Shift+wheel: angleDelta.y
+    zoom_rect_requested = pyqtSignal(QRectF)       # Ctrl+drag: rubber-band rect (widget coords)
 
     def __init__(self, appearance: SigAppearance, parent=None) -> None:
         super().__init__(parent)
@@ -151,6 +156,8 @@ class PDFViewWidget(QWidget):
         self._rot_mat:   fitz.Matrix = fitz.Matrix()  # unrotated → rotated fitz coords
         self._drag_start: Optional[QPointF] = None
         self._drag_end:   Optional[QPointF] = None
+        self._rb_start:   Optional[QPointF] = None   # Ctrl+drag rubber-band start
+        self._rb_end:     Optional[QPointF] = None   # Ctrl+drag rubber-band end
         self._sig_fields:    list[SignatureFieldDef] = []
         self._locked_fields: list[SignatureFieldDef] = []
         self._signed_fields: list[SignatureFieldDef] = []
@@ -307,7 +314,7 @@ class PDFViewWidget(QWidget):
             painter.drawText(QPointF(rect.left() + 2, rect.top() + 10),
                              f"✓ {fdef.name}")
 
-        # Drag-to-draw preview rectangle
+        # Drag-to-draw preview rectangle (signature field)
         if self._drag_start and self._drag_end:
             pen = QPen(QColor("#1a73e8"), 2, Qt.PenStyle.DashLine)
             painter.setPen(pen)
@@ -315,24 +322,40 @@ class PDFViewWidget(QWidget):
             painter.drawRect(
                 QRectF(self._drag_start, self._drag_end).normalized())
 
+        # Rubber-band zoom selection rectangle (Ctrl+drag)
+        if self._rb_start and self._rb_end:
+            pen = QPen(QColor("#00aa44"), 2, Qt.PenStyle.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(QBrush(QColor(0, 200, 80, 30)))
+            painter.drawRect(
+                QRectF(self._rb_start, self._rb_end).normalized())
+
         painter.end()
 
     # ── Mouse events ──────────────────────────────────────────────────────
 
     def mousePressEvent(self, ev) -> None:
         if ev.button() == Qt.MouseButton.LeftButton:
-            fdef = self._field_at(ev.position())
-            if fdef is not None:
-                # Click on an existing field → select it, don't start a drag
-                self.field_clicked.emit(fdef)
+            if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                # Ctrl+drag: start rubber-band zoom selection
+                self._rb_start = QPointF(ev.position())
+                self._rb_end   = None
             else:
-                self._drag_start = QPointF(ev.position())
-                self._drag_end   = None
+                fdef = self._field_at(ev.position())
+                if fdef is not None:
+                    # Click on an existing field → select it, don't start a drag
+                    self.field_clicked.emit(fdef)
+                else:
+                    self._drag_start = QPointF(ev.position())
+                    self._drag_end   = None
         elif ev.button() == Qt.MouseButton.RightButton:
             self._right_click(ev.position())
 
     def mouseMoveEvent(self, ev) -> None:
-        if self._drag_start:
+        if self._rb_start:
+            self._rb_end = QPointF(ev.position())
+            self.update()
+        elif self._drag_start:
             self._drag_end = QPointF(ev.position())
             self.update()
         else:
@@ -344,7 +367,21 @@ class PDFViewWidget(QWidget):
             )
 
     def mouseReleaseEvent(self, ev) -> None:
-        if ev.button() != Qt.MouseButton.LeftButton or not self._drag_start:
+        if ev.button() != Qt.MouseButton.LeftButton:
+            return
+
+        # Rubber-band zoom release
+        if self._rb_start:
+            end   = QPointF(ev.position())
+            start = self._rb_start
+            self._rb_start = self._rb_end = None
+            self.update()
+            rect = QRectF(start, end).normalized()
+            if rect.width() >= 20 and rect.height() >= 10:
+                self.zoom_rect_requested.emit(rect)
+            return
+
+        if not self._drag_start:
             return
         end = QPointF(ev.position())
         x0, y0 = self._drag_start.x(), self._drag_start.y()

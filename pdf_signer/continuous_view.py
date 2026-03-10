@@ -117,7 +117,7 @@ from typing import Optional
 
 import fitz
 
-from PyQt6.QtCore import pyqtSignal, Qt, QPoint
+from PyQt6.QtCore import pyqtSignal, Qt, QPoint, QRectF
 from PyQt6.QtGui import QColor, QPainter
 from PyQt6.QtWidgets import QScrollArea, QWidget
 
@@ -466,6 +466,8 @@ class ContinuousView(QScrollArea):
         pv.field_clicked.connect(self.field_clicked)
         pv.zoom_requested.connect(
             lambda delta, pos, _pv=pv: self._on_pv_zoom_requested(delta, pos, _pv))
+        pv.zoom_rect_requested.connect(
+            lambda rect, _pv=pv: self._on_pv_zoom_rect(rect, _pv))
         pv.hscroll_requested.connect(self._on_pv_hscroll)
         pv.setParent(self._container)
         pv.move(x, y)
@@ -519,6 +521,58 @@ class ContinuousView(QScrollArea):
         cursor_vp  = pv.mapTo(self.viewport(),
                                cursor_widget.toPoint())
         self.set_zoom(new_zoom, cursor_vp)
+
+    def _on_pv_zoom_rect(self, rect: QRectF, pv: PDFViewWidget) -> None:
+        """Ctrl+drag rubber-band zoom from a rendered page slot.
+
+        The rect centre is kept at the viewport centre after zoom.
+
+        Strategy: look up the page index so we can read the page's new
+        container position from ``_slots[page_idx]`` *after* ``set_zoom``
+        has rebuilt the layout.  The in-page mouse offset is the only value
+        taken from the PDFViewWidget; the page's container position is always
+        read from the slot so there is a single source of truth.
+        """
+        if rect.width() < 1 or rect.height() < 1:
+            return
+
+        vp    = self.viewport()
+        vp_w  = vp.width()
+        vp_h  = vp.height()
+        zoom_ratio = min(vp_w / rect.width(), vp_h / rect.height())
+        new_zoom   = max(0.10, min(10.0, self._zoom * zoom_ratio))
+        if abs(new_zoom - self._zoom) < 0.001:
+            return
+        actual_ratio = new_zoom / self._zoom
+
+        # In-page offset of the rect centre (page-local screen pixels).
+        rcx = rect.center().x()
+        rcy = rect.center().y()
+
+        # Find which slot this PDFViewWidget belongs to.
+        page_idx = next((i for i, s in enumerate(self._slots) if s is pv), None)
+        if page_idx is None:
+            return
+
+        # Rebuild the layout at the new zoom level.
+        # After this call _slots[page_idx] is a fresh _PagePlaceholder whose
+        # .x()/.y() reflect the new container positions (single source of truth).
+        self.set_zoom(new_zoom)
+
+        if page_idx >= len(self._slots):
+            return
+        slot = self._slots[page_idx]
+
+        # New container position of the rect centre.
+        new_cx = slot.x() + rcx * actual_ratio
+        new_cy = slot.y() + rcy * actual_ratio
+
+        # Scroll so rect centre lands at viewport centre.
+        cx_off = max(0, (vp_w - self._container.width()) // 2)
+        hbar   = self.horizontalScrollBar()
+        vbar   = self.verticalScrollBar()
+        hbar.setValue(max(0, min(int(new_cx + cx_off - vp_w / 2), hbar.maximum())))
+        vbar.setValue(max(0, min(int(new_cy          - vp_h / 2), vbar.maximum())))
 
     def _on_pv_hscroll(self, delta: int) -> None:
         """Shift+wheel from a rendered page: horizontal scroll."""

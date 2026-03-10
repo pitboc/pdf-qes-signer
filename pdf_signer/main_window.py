@@ -57,7 +57,7 @@ from typing import Optional
 
 import fitz  # PyMuPDF
 
-from PyQt6.QtCore import Qt, QPoint, QTimer
+from PyQt6.QtCore import Qt, QPoint, QRectF, QTimer
 from PyQt6.QtGui import QAction, QFont, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication, QFileDialog, QFormLayout, QGroupBox,
@@ -271,6 +271,7 @@ class PDFSignerApp(QMainWindow):
         self._pdf_view.field_deleted.connect(self._on_field_deleted)
         self._pdf_view.field_clicked.connect(self._on_field_clicked_in_view)
         self._pdf_view.zoom_requested.connect(self._on_zoom_wheel)
+        self._pdf_view.zoom_rect_requested.connect(self._on_zoom_rect_single)
         self._pdf_view.hscroll_requested.connect(self._on_hscroll_single)
         self._outer_layout.addWidget(self._pdf_view)
         self._scroll_area.setWidget(self._outer_container)
@@ -558,6 +559,38 @@ class PDFSignerApp(QMainWindow):
         )
         self._set_zoom(new_zoom, cursor_vp)
 
+    def _on_zoom_rect_single(self, rect: QRectF) -> None:
+        """Ctrl+drag rubber-band zoom in single-page mode."""
+        if rect.width() < 1 or rect.height() < 1:
+            return
+        vp   = self._scroll_area.viewport()
+        vp_w = vp.width()
+        vp_h = vp.height()
+        zoom_ratio   = min(vp_w / rect.width(), vp_h / rect.height())
+        new_zoom     = max(0.10, min(10.0, self._zoom_factor * zoom_ratio))
+        if abs(new_zoom - self._zoom_factor) < 0.001:
+            return
+        actual_ratio      = new_zoom / self._zoom_factor
+        self._zoom_factor = new_zoom
+        self._zoom_edit.setText(f"{round(new_zoom * 100)}%")
+        cx = rect.center().x()   # rect centre in current widget coords
+        cy = rect.center().y()
+        self._render_current_page()
+        new_w    = self._pdf_view.width()
+        new_h    = self._pdf_view.height()
+        cx_new   = max(0, (vp_w - new_w) // 2)
+        cy_new   = max(0, (vp_h - new_h) // 2)
+        hbar_max = max(0, new_w - vp_w)
+        vbar_max = max(0, new_h - vp_h)
+        hbar = self._scroll_area.horizontalScrollBar()
+        vbar = self._scroll_area.verticalScrollBar()
+        if hbar_max > 0:
+            hbar.setRange(0, hbar_max)
+        if vbar_max > 0:
+            vbar.setRange(0, vbar_max)
+        hbar.setValue(max(0, min(int(cx * actual_ratio + cx_new - vp_w / 2), hbar_max)))
+        vbar.setValue(max(0, min(int(cy * actual_ratio + cy_new - vp_h / 2), vbar_max)))
+
     def _on_cv_zoom_changed(self, factor: float) -> None:
         """ContinuousView reports an internal zoom change (e.g. Ctrl+wheel)."""
         self._zoom_factor = factor
@@ -591,6 +624,11 @@ class PDFSignerApp(QMainWindow):
         page_w = self.pdf_doc[self.current_page].rect.width
         vp_w   = self._scroll_area.viewport().width()
         self._set_zoom(vp_w / page_w)
+        if self._continuous_mode:
+            hbar    = self._cv.horizontalScrollBar()
+            cw      = self._cv.widget().width() if self._cv.widget() else 0
+            vp_w_cv = self._cv.viewport().width()
+            hbar.setValue(max(0, (cw - vp_w_cv) // 2))
 
     def _on_zoom_fit_height(self) -> None:
         """Zoom so die aktuelle Seite genau die Viewport-Höhe ausfüllt.
