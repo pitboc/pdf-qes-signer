@@ -17,8 +17,8 @@ TRANSLATIONS: dict[str, str] = {
     "menu_help_license": "License…",
     # Toolbar
     "tb_open": "Open PDF",
-    "tb_prev": "◀",
-    "tb_next": "▶",
+    "tb_prev": "Previous page",
+    "tb_next": "Next page",
     "tb_zoom_out":   "Zoom Out  (Ctrl+wheel)",
     "tb_zoom_in":    "Zoom In  (Ctrl+wheel)",
     "tb_fit_width":  "Fit Page Width",
@@ -209,8 +209,10 @@ TRANSLATIONS: dict[str, str] = {
         "License: GNU General Public License v3 or later (GPL-3.0-or-later)\n\n"
         "Required packages:\n"
         "  pip install pymupdf pyhanko python-pkcs11 Pillow PyQt6 cryptography\n\n"
-        "Left-click + drag   →  draw signature field\n"
-        "Right-click on field →  options / delete"
+        "Left-click + drag    →  draw signature field\n"
+        "Right-click on field →  options / delete\n"
+        "Ctrl + drag          →  zoom into selection\n"
+        "Middle-drag          →  pan the view"
     ),
     "license_title": "License Information",
     "license_msg": (

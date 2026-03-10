@@ -58,6 +58,13 @@ from typing import Optional
 import fitz  # PyMuPDF
 
 from PyQt6.QtCore import Qt, QPoint, QRectF, QTimer
+from pdf_signer.icons import (
+    svg_to_icon,
+    ICON_CHEVRON_UP, ICON_CHEVRON_DOWN,
+    ICON_SINGLE_PAGE, ICON_MULTI_PAGE,
+    ICON_ZOOM_IN, ICON_ZOOM_OUT,
+    ICON_PAGE_WIDTH, ICON_PAGE_HEIGHT,
+)
 from PyQt6.QtGui import QAction, QFont, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication, QFileDialog, QFormLayout, QGroupBox,
@@ -200,6 +207,7 @@ class PDFSignerApp(QMainWindow):
         tb.addSeparator()
         # Seitennavigation: vorherige/nächste Seite
         self._tb_prev = QAction(self)
+        self._tb_prev.setIcon(svg_to_icon(ICON_CHEVRON_UP))
         self._tb_prev.triggered.connect(self.prev_page)
         tb.addAction(self._tb_prev)
         # Seitennummer (editierbar) und Gesamtanzahl zwischen den Navigationspfeilen
@@ -212,10 +220,12 @@ class PDFSignerApp(QMainWindow):
         self._page_total_lbl.setMinimumWidth(32)
         tb.addWidget(self._page_total_lbl)
         self._tb_next = QAction(self)
+        self._tb_next.setIcon(svg_to_icon(ICON_CHEVRON_DOWN))
         self._tb_next.triggered.connect(self.next_page)
         tb.addAction(self._tb_next)
         # Umschalter Einzelseite ↔ Fortlaufende Ansicht
-        self._tb_view_toggle = QAction("☰", self)
+        self._tb_view_toggle = QAction(self)
+        self._tb_view_toggle.setIcon(svg_to_icon(ICON_MULTI_PAGE))
         self._tb_view_toggle.setCheckable(True)
         self._tb_view_toggle.setChecked(False)
         self._tb_view_toggle.setToolTip("Fortlaufende Seitenansicht")
@@ -223,7 +233,8 @@ class PDFSignerApp(QMainWindow):
         tb.addAction(self._tb_view_toggle)
         tb.addSeparator()
         # Zoom-Steuerung: Verkleinern / Zoom-Eingabe / Vergrößern
-        self._tb_zoom_out = QAction("−", self)
+        self._tb_zoom_out = QAction(self)
+        self._tb_zoom_out.setIcon(svg_to_icon(ICON_ZOOM_OUT))
         self._tb_zoom_out.triggered.connect(self._on_zoom_out)
         tb.addAction(self._tb_zoom_out)
         self._zoom_edit = QLineEdit("150%")
@@ -231,13 +242,16 @@ class PDFSignerApp(QMainWindow):
         self._zoom_edit.setFixedWidth(52)
         self._zoom_edit.returnPressed.connect(self._on_zoom_enter)
         tb.addWidget(self._zoom_edit)
-        self._tb_zoom_in = QAction("+", self)
+        self._tb_zoom_in = QAction(self)
+        self._tb_zoom_in.setIcon(svg_to_icon(ICON_ZOOM_IN))
         self._tb_zoom_in.triggered.connect(self._on_zoom_in)
         tb.addAction(self._tb_zoom_in)
-        self._tb_fit_width = QAction("↔", self)
+        self._tb_fit_width = QAction(self)
+        self._tb_fit_width.setIcon(svg_to_icon(ICON_PAGE_WIDTH))
         self._tb_fit_width.triggered.connect(self._on_zoom_fit_width)
         tb.addAction(self._tb_fit_width)
-        self._tb_fit_height = QAction("↕", self)
+        self._tb_fit_height = QAction(self)
+        self._tb_fit_height.setIcon(svg_to_icon(ICON_PAGE_HEIGHT))
         self._tb_fit_height.triggered.connect(self._on_zoom_fit_height)
         tb.addAction(self._tb_fit_height)
         tb.addSeparator()
@@ -406,8 +420,8 @@ class PDFSignerApp(QMainWindow):
         self._act_about.setText(t("menu_help_about"))
         self._act_license.setText(t("menu_help_license"))
         self._tb_open.setText(t("tb_open"))
-        self._tb_prev.setText(t("tb_prev"))
-        self._tb_next.setText(t("tb_next"))
+        self._tb_prev.setToolTip(t("tb_prev"))
+        self._tb_next.setToolTip(t("tb_next"))
         self._tb_sign.setText(t("tb_sign"))
         self._tb_save_fields.setText(t("tb_save_fields"))
         self._tb_zoom_out.setToolTip(t("tb_zoom_out"))
@@ -781,6 +795,7 @@ class PDFSignerApp(QMainWindow):
             page      = self.current_page
             src_hbar  = self._scroll_area.horizontalScrollBar()
             src_cw    = self._scroll_area.widget().width() if self._scroll_area.widget() else 0
+            self._tb_view_toggle.setIcon(svg_to_icon(ICON_SINGLE_PAGE))
             self._tb_view_toggle.setToolTip("Einzelseitenansicht")
             self._stacked.setCurrentIndex(1)
             if self.pdf_doc:
@@ -807,6 +822,7 @@ class PDFSignerApp(QMainWindow):
                            if self.current_page < len(self._cv._page_y_offsets) else 0)
             src_hbar = self._cv.horizontalScrollBar()
             src_cw   = self._cv.widget().width() if self._cv.widget() else 0
+            self._tb_view_toggle.setIcon(svg_to_icon(ICON_MULTI_PAGE))
             self._tb_view_toggle.setToolTip("Fortlaufende Seitenansicht")
             self._stacked.setCurrentIndex(0)
             self._render_current_page()

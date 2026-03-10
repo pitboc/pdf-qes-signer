@@ -17,8 +17,8 @@ TRANSLATIONS: dict[str, str] = {
     "menu_help_license": "Lizenz…",
     # Toolbar
     "tb_open": "PDF öffnen",
-    "tb_prev": "◀",
-    "tb_next": "▶",
+    "tb_prev": "Vorherige Seite",
+    "tb_next": "Nächste Seite",
     "tb_zoom_out":    "Verkleinern  (Ctrl+Mausrad)",
     "tb_zoom_in":     "Vergrößern  (Ctrl+Mausrad)",
     "tb_fit_width":   "Seitenbreite anpassen",
@@ -210,7 +210,9 @@ TRANSLATIONS: dict[str, str] = {
         "Benötigte Pakete:\n"
         "  pip install pymupdf pyhanko python-pkcs11 Pillow PyQt6 cryptography\n\n"
         "Linksklick + Ziehen  →  Signaturfeld zeichnen\n"
-        "Rechtsklick auf Feld →  Optionen / Löschen"
+        "Rechtsklick auf Feld →  Optionen / Löschen\n"
+        "Strg + Ziehen        →  In Auswahl zoomen\n"
+        "Mittlere Maustaste   →  Ansicht verschieben"
     ),
     "license_title": "Lizenzinformationen",
     "license_msg": (
