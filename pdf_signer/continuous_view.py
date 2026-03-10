@@ -82,10 +82,21 @@ rendered widget.
 
 ### Zoom
 
-``set_zoom(factor: float)`` – recalculates all ``_page_y_offsets``, rebuilds
-placeholder/rendered widgets at new sizes, preserves the relative scroll
-position (the page at the centre of the viewport stays centred after zoom).
-*Zoom support is not yet implemented; this method is a planned extension point.*
+``set_zoom(factor: float, cursor_vp: QPoint | None = None)`` – recalculates
+all ``_page_y_offsets``, rebuilds placeholder/rendered widgets at new sizes,
+and preserves the scroll position anchored on *cursor_vp* (viewport
+coordinates).  If *cursor_vp* is ``None`` the viewport centre is used.
+
+All rendered ``PDFViewWidget`` slots are replaced with correctly-sized
+``_PagePlaceholder`` instances, then ``_update_visible()`` re-renders the
+currently visible ones.
+
+Horizontal centering: if the widest page is narrower than the viewport, the
+scroll area centres ``_container`` visually (``AlignHCenter``).  The zoom
+formula accounts for this by computing the centering offset before and after
+the zoom and adjusting both scrollbars accordingly.
+
+The ``zoom_changed(float)`` signal is emitted at the end of ``set_zoom``.
 
 ### Thread safety
 
@@ -106,7 +117,7 @@ from typing import Optional
 
 import fitz
 
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal, Qt, QPoint
 from PyQt6.QtGui import QColor, QPainter
 from PyQt6.QtWidgets import QScrollArea, QWidget
 
@@ -150,6 +161,7 @@ class ContinuousView(QScrollArea):
     field_clicked = pyqtSignal(object) # SignatureFieldDef
     field_added   = pyqtSignal(object) # SignatureFieldDef
     field_deleted = pyqtSignal(object) # SignatureFieldDef
+    zoom_changed  = pyqtSignal(float)  # new zoom factor after set_zoom()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -165,6 +177,8 @@ class ContinuousView(QScrollArea):
         self._container.setStyleSheet(
             f"#cvContainer {{ background: {BG_COLOR}; }}")
         self.setWidget(self._container)
+
+        self._zoom: float = PDFViewWidget.ZOOM   # current zoom factor
 
         # Per-slot state: one entry per page; each is either a
         # _PagePlaceholder or a rendered PDFViewWidget
@@ -211,7 +225,7 @@ class ContinuousView(QScrollArea):
         self._page_y_offsets = []
 
         # Calculate page sizes from MediaBox (no rendering yet)
-        zoom   = PDFViewWidget.ZOOM
+        zoom   = self._zoom
         y      = 0
         max_w  = 0
         sizes: list[tuple[int, int]] = []
@@ -326,8 +340,76 @@ class ContinuousView(QScrollArea):
         target = max(0, min(target, vbar.maximum()))
         vbar.setValue(target)
 
-    def set_zoom(self, factor: float) -> None:  # noqa: ARG002
-        """Planned extension point for variable zoom – not yet implemented."""
+    def set_zoom(self, factor: float,
+                 cursor_vp: QPoint | None = None) -> None:
+        """Rebuild the layout at *factor*.
+
+        The content under *cursor_vp* (viewport coordinates) stays at the
+        same screen position after the zoom.  Uses the viewport centre when
+        *cursor_vp* is ``None``.
+        """
+        if not self._slots or self._doc is None:
+            self._zoom = factor
+            return
+        if abs(factor - self._zoom) < 0.001:
+            return
+
+        zoom_ratio = factor / self._zoom
+        self._zoom = factor
+
+        vbar = self.verticalScrollBar()
+        hbar = self.horizontalScrollBar()
+        vp   = self.viewport()
+        vp_w = vp.width()
+        vp_h = vp.height()
+
+        if cursor_vp is None:
+            cursor_vp = QPoint(vp_w // 2, vp_h // 2)
+
+        # Content coordinates under cursor (accounts for horizontal centering)
+        cx_old = max(0, (vp_w - self._container.width()) // 2)
+        wx = hbar.value() + cursor_vp.x() - cx_old
+        wy = vbar.value() + cursor_vp.y()   # no vertical centering (doc > viewport)
+
+        # Recalculate page sizes and y-offsets
+        y = 0
+        new_sizes: list[tuple[int, int]] = []
+        new_offsets: list[int] = []
+        new_max_w = 0
+        for page_num in range(len(self._doc)):
+            page = self._doc[page_num]
+            w = int(page.rect.width  * self._zoom)
+            h = int(page.rect.height * self._zoom)
+            new_sizes.append((w, h))
+            new_offsets.append(y)
+            y += h + PAGE_GAP
+            new_max_w = max(new_max_w, w)
+
+        total_h = new_offsets[-1] + new_sizes[-1][1] if new_sizes else 0
+
+        # Replace every slot with a correctly-sized placeholder
+        for i, slot in enumerate(self._slots):
+            w, h  = new_sizes[i]
+            x     = (new_max_w - w) // 2
+            new_y = new_offsets[i]
+            slot.hide()
+            slot.deleteLater()
+            ph = _PagePlaceholder(w, h, self._container)
+            ph.move(x, new_y)
+            ph.show()
+            self._slots[i] = ph
+
+        self._page_y_offsets = new_offsets
+        self._max_w          = new_max_w
+        self._container.resize(new_max_w, total_h)
+
+        # Restore scroll position centred on cursor_vp
+        cx_new = max(0, (vp_w - new_max_w) // 2)
+        hbar.setValue(int(wx * zoom_ratio + cx_new - cursor_vp.x()))
+        vbar.setValue(int(wy * zoom_ratio         - cursor_vp.y()))
+
+        self._update_visible()
+        self.zoom_changed.emit(self._zoom)
 
     # ── Private: lazy rendering ───────────────────────────────────────────
 
@@ -372,6 +454,7 @@ class ContinuousView(QScrollArea):
         slot.deleteLater()
 
         pv = PDFViewWidget(self._appearance)
+        pv._zoom = self._zoom          # apply current zoom before rendering
         pv.set_page(
             self._doc[idx],
             self._sig_fields, idx,
@@ -381,6 +464,9 @@ class ContinuousView(QScrollArea):
         pv.field_added.connect(self.field_added)
         pv.field_deleted.connect(self.field_deleted)
         pv.field_clicked.connect(self.field_clicked)
+        pv.zoom_requested.connect(
+            lambda delta, pos, _pv=pv: self._on_pv_zoom_requested(delta, pos, _pv))
+        pv.hscroll_requested.connect(self._on_pv_hscroll)
         pv.setParent(self._container)
         pv.move(x, y)
         pv.show()
@@ -424,3 +510,18 @@ class ContinuousView(QScrollArea):
                 break
         self.page_changed.emit(current)
         self._update_visible()
+
+    def _on_pv_zoom_requested(self, delta: int, cursor_widget,
+                               pv: PDFViewWidget) -> None:
+        """Ctrl+wheel from a rendered page: zoom with cursor centering."""
+        factor     = 1.1 if delta > 0 else 1.0 / 1.1
+        new_zoom   = max(0.10, min(10.0, self._zoom * factor))
+        cursor_vp  = pv.mapTo(self.viewport(),
+                               cursor_widget.toPoint())
+        self.set_zoom(new_zoom, cursor_vp)
+
+    def _on_pv_hscroll(self, delta: int) -> None:
+        """Shift+wheel from a rendered page: horizontal scroll."""
+        hbar = self.horizontalScrollBar()
+        step = max(20, hbar.singleStep()) * 3
+        hbar.setValue(hbar.value() - delta * step // 120)

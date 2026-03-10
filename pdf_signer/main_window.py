@@ -57,7 +57,7 @@ from typing import Optional
 
 import fitz  # PyMuPDF
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QPoint, QTimer
 from PyQt6.QtGui import QAction, QFont, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication, QFileDialog, QFormLayout, QGroupBox,
@@ -115,6 +115,8 @@ class PDFSignerApp(QMainWindow):
         self._sign_worker = None
         # Fortlaufende Ansicht: Modus-Flag; Widget wird in _build_ui erstellt
         self._continuous_mode: bool = False
+        # Aktueller Zoom-Faktor (1.0 = 100 %, geteilt von Einzel- und Fortlaufend-Ansicht)
+        self._zoom_factor: float = 1.5
 
         self._build_ui()
         self._apply_language()
@@ -217,6 +219,25 @@ class PDFSignerApp(QMainWindow):
         self._tb_view_toggle.triggered.connect(self._toggle_view_mode)
         tb.addAction(self._tb_view_toggle)
         tb.addSeparator()
+        # Zoom-Steuerung: Verkleinern / Zoom-Eingabe / Vergrößern
+        self._tb_zoom_out = QAction("−", self)
+        self._tb_zoom_out.triggered.connect(self._on_zoom_out)
+        tb.addAction(self._tb_zoom_out)
+        self._zoom_edit = QLineEdit("150%")
+        self._zoom_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._zoom_edit.setFixedWidth(52)
+        self._zoom_edit.returnPressed.connect(self._on_zoom_enter)
+        tb.addWidget(self._zoom_edit)
+        self._tb_zoom_in = QAction("+", self)
+        self._tb_zoom_in.triggered.connect(self._on_zoom_in)
+        tb.addAction(self._tb_zoom_in)
+        self._tb_fit_width = QAction("↔", self)
+        self._tb_fit_width.triggered.connect(self._on_zoom_fit_width)
+        tb.addAction(self._tb_fit_width)
+        self._tb_fit_height = QAction("↕", self)
+        self._tb_fit_height.triggered.connect(self._on_zoom_fit_height)
+        tb.addAction(self._tb_fit_height)
+        tb.addSeparator()
         # Signieren und Felder speichern als Toolbar-Schnellzugriff
         self._tb_sign = QAction(self)
         self._tb_sign.triggered.connect(self.sign_document)
@@ -249,6 +270,8 @@ class PDFSignerApp(QMainWindow):
         self._pdf_view.field_added.connect(self._on_field_added)
         self._pdf_view.field_deleted.connect(self._on_field_deleted)
         self._pdf_view.field_clicked.connect(self._on_field_clicked_in_view)
+        self._pdf_view.zoom_requested.connect(self._on_zoom_wheel)
+        self._pdf_view.hscroll_requested.connect(self._on_hscroll_single)
         self._outer_layout.addWidget(self._pdf_view)
         self._scroll_area.setWidget(self._outer_container)
         self._scroll_area.setWidgetResizable(False)
@@ -259,6 +282,7 @@ class PDFSignerApp(QMainWindow):
         self._cv.field_clicked.connect(self._on_field_clicked_in_view)
         self._cv.field_added.connect(self._on_field_added)
         self._cv.field_deleted.connect(self._on_field_deleted)
+        self._cv.zoom_changed.connect(self._on_cv_zoom_changed)
 
         # QStackedWidget schaltet zwischen den beiden Ansichten um
         self._stacked = QStackedWidget()
@@ -380,6 +404,10 @@ class PDFSignerApp(QMainWindow):
         self._tb_next.setText(t("tb_next"))
         self._tb_sign.setText(t("tb_sign"))
         self._tb_save_fields.setText(t("tb_save_fields"))
+        self._tb_zoom_out.setToolTip(t("tb_zoom_out"))
+        self._tb_zoom_in.setToolTip(t("tb_zoom_in"))
+        self._tb_fit_width.setToolTip(t("tb_fit_width"))
+        self._tb_fit_height.setToolTip(t("tb_fit_height"))
         self._fields_group.setTitle(t("panel_fields"))
         self._btn_delete.setText(t("btn_delete_field"))
         self._btn_save.setText(t("btn_save_fields"))
@@ -452,14 +480,19 @@ class PDFSignerApp(QMainWindow):
             return
         if self._continuous_mode:
             if not self._cv.is_open_for(self.pdf_doc):
+                self._cv._zoom = self._zoom_factor   # apply current zoom on first open
                 self._cv.open(self.pdf_doc, self.appearance,
                               self.sig_fields, self.locked_fields, self.signed_fields)
                 self._cv.scroll_to_page(self.current_page)
             else:
                 self._cv.update_fields(self.sig_fields, self.locked_fields, self.signed_fields)
+                # Sync zoom if it was changed while we were in single-page mode
+                if abs(self._cv._zoom - self._zoom_factor) > 0.001:
+                    self._cv.set_zoom(self._zoom_factor)
             self._page_edit.setText(str(self.current_page + 1))
             self._page_total_lbl.setText(f"/ {len(self.pdf_doc)}")
             return
+        self._pdf_view._zoom = self._zoom_factor     # apply current zoom before rendering
         page = self.pdf_doc[self.current_page]
         self._pdf_view.set_page(
             page, self.sig_fields, self.current_page,
@@ -467,6 +500,118 @@ class PDFSignerApp(QMainWindow):
         self._outer_container.adjustSize()
         self._page_edit.setText(str(self.current_page + 1))
         self._page_total_lbl.setText(f"/ {len(self.pdf_doc)}")
+
+    # ── Zoom ──────────────────────────────────────────────────────────────
+
+    def _set_zoom(self, new_zoom: float,
+                  cursor_vp: "QPoint | None" = None) -> None:
+        """Apply *new_zoom* to the active view.
+
+        In continuous mode delegates to ``ContinuousView.set_zoom``.
+        In single-page mode re-renders the current page and adjusts the
+        scroll bars so that the content under *cursor_vp* (viewport
+        coordinates) stays at the same screen position.
+        """
+        new_zoom = max(0.10, min(10.0, new_zoom))
+        if abs(new_zoom - self._zoom_factor) < 0.001:
+            return
+        zoom_ratio       = new_zoom / self._zoom_factor
+        self._zoom_factor = new_zoom
+        self._zoom_edit.setText(f"{round(new_zoom * 100)}%")
+
+        if self._continuous_mode:
+            self._cv.set_zoom(new_zoom)   # ContinuousView handles its own centering
+            return
+
+        # ── Single-page mode ──────────────────────────────────────────────
+        hbar = self._scroll_area.horizontalScrollBar()
+        vbar = self._scroll_area.verticalScrollBar()
+        vp   = self._scroll_area.viewport()
+
+        if cursor_vp is not None:
+            # Content coordinates under cursor before zoom.
+            # cursor_vp.x() = centering_offset - hbar + wx  →  wx = hbar + cursor_vp - centering
+            old_w  = self._pdf_view.width()
+            old_h  = self._pdf_view.height()
+            cx_old = max(0, (vp.width()  - old_w) // 2)
+            cy_old = max(0, (vp.height() - old_h) // 2)
+            wx = hbar.value() + cursor_vp.x() - cx_old
+            wy = vbar.value() + cursor_vp.y() - cy_old
+
+        self._render_current_page()
+
+        if cursor_vp is not None:
+            new_w  = self._pdf_view.width()
+            new_h  = self._pdf_view.height()
+            cx_new = max(0, (vp.width()  - new_w) // 2)
+            cy_new = max(0, (vp.height() - new_h) // 2)
+            hbar.setValue(int(wx * zoom_ratio + cx_new - cursor_vp.x()))
+            vbar.setValue(int(wy * zoom_ratio + cy_new - cursor_vp.y()))
+
+    def _on_zoom_wheel(self, delta: int, cursor_widget_pos) -> None:
+        """Ctrl+wheel from single-page PDFViewWidget: zoom centred on cursor."""
+        factor   = 1.1 if delta > 0 else 1.0 / 1.1
+        new_zoom = max(0.10, min(10.0, self._zoom_factor * factor))
+        cursor_vp = self._pdf_view.mapTo(
+            self._scroll_area.viewport(),
+            QPoint(int(cursor_widget_pos.x()), int(cursor_widget_pos.y())),
+        )
+        self._set_zoom(new_zoom, cursor_vp)
+
+    def _on_cv_zoom_changed(self, factor: float) -> None:
+        """ContinuousView reports an internal zoom change (e.g. Ctrl+wheel)."""
+        self._zoom_factor = factor
+        self._zoom_edit.setText(f"{round(factor * 100)}%")
+
+    def _on_hscroll_single(self, delta: int) -> None:
+        """Shift+wheel from single-page PDFViewWidget: horizontal scroll."""
+        hbar = self._scroll_area.horizontalScrollBar()
+        step = max(20, hbar.singleStep()) * 3
+        hbar.setValue(hbar.value() - delta * step // 120)
+
+    def _on_zoom_in(self) -> None:
+        self._set_zoom(self._zoom_factor * 1.25)
+
+    def _on_zoom_out(self) -> None:
+        self._set_zoom(self._zoom_factor / 1.25)
+
+    def _on_zoom_enter(self) -> None:
+        """Parse the zoom-level text field and apply the new zoom."""
+        text = self._zoom_edit.text().strip().rstrip('%')
+        try:
+            pct = float(text)
+            self._set_zoom(pct / 100.0)
+        except ValueError:
+            self._zoom_edit.setText(f"{round(self._zoom_factor * 100)}%")
+
+    def _on_zoom_fit_width(self) -> None:
+        """Zoom so die aktuelle Seite genau die Viewport-Breite ausfüllt."""
+        if not self.pdf_doc:
+            return
+        page_w = self.pdf_doc[self.current_page].rect.width
+        vp_w   = self._scroll_area.viewport().width()
+        self._set_zoom(vp_w / page_w)
+
+    def _on_zoom_fit_height(self) -> None:
+        """Zoom so die aktuelle Seite genau die Viewport-Höhe ausfüllt.
+
+        Seitenoberkante und Seitenunterkante fallen mit Viewport-Top und
+        Viewport-Bottom zusammen.  In der Einzelseitenansicht genügt vbar=0,
+        da die Seite allein im Scroll-Bereich liegt.  In der fortlaufenden
+        Ansicht wird zusätzlich zum Seitenanfang gescrollt.
+        """
+        if not self.pdf_doc:
+            return
+        page_h = self.pdf_doc[self.current_page].rect.height
+        vp_h   = self._scroll_area.viewport().height()
+        self._set_zoom(vp_h / page_h)
+        # Scroll so Seitenanfang = Viewport-Top
+        if self._continuous_mode:
+            if self.current_page < len(self._cv._page_y_offsets):
+                self._cv.verticalScrollBar().setValue(
+                    self._cv._page_y_offsets[self.current_page])
+        else:
+            self._scroll_area.verticalScrollBar().setValue(0)
 
     # ── Field list selection ──────────────────────────────────────────────
 
@@ -554,95 +699,88 @@ class PDFSignerApp(QMainWindow):
     # ── Continuous / single-page view toggle ──────────────────────────────
 
     @staticmethod
-    def _transfer_hscroll(src: QScrollArea, dst: QScrollArea) -> None:
-        """Transfer the horizontal scroll side from *src* to *dst*.
+    def _apply_hscroll(src_hbar, src_cw: int,
+                       dst_hbar, dst_cw: int, dst_vp_w: int) -> None:
+        """Transfer the horizontal scroll position when switching view modes.
 
-        Determines whether the user was left-of-centre, centred, or
-        right-of-centre in *src*, then applies the same side to *dst*:
-        - left  → dst hbar = 0
-        - right → dst hbar = maximum
-        - centre (or no scrollbar in src) → dst hbar = centre
-
-        This preserves the user's horizontal focus when switching between
-        single-page and continuous view without snapping to an unexpected edge.
+        Rules:
+        - No scrollbar in source (src_cw <= viewport): centre destination.
+          hbar_new = (dst_cw - dst_vp_w) / 2
+        - Scrollbar in source: preserve offset from centre.
+          hbar_new = (dst_cw - src_cw) / 2 + hbar_old
+        Both results are clamped to [0, dst_cw - dst_vp_w].
         """
-        src_hbar  = src.horizontalScrollBar()
-        dst_hbar  = dst.horizontalScrollBar()
-        src_vp_w  = src.viewport().width()
-        src_cw    = src.widget().width() if src.widget() else 0
-        dst_cw    = dst.widget().width() if dst.widget() else 0
-        dst_vp_w  = dst.viewport().width()
-
-        # Determine side in source
-        if src_cw <= src_vp_w:
-            # No scrollbar in source – content was centred
-            side = 0  # centre
+        dst_max = max(0, dst_cw - dst_vp_w)
+        if dst_max > 0:
+            dst_hbar.setRange(0, dst_max)
+        if src_hbar.maximum() > 0:
+            hval = (dst_cw - src_cw) // 2 + src_hbar.value()
         else:
-            centre_pos = (src_cw - src_vp_w) / 2
-            val = src_hbar.value()
-            if val < centre_pos - 2:
-                side = -1  # left
-            elif val > centre_pos + 2:
-                side = 1   # right
-            else:
-                side = 0   # centre
-
-        # Apply side to destination
-        if side == -1 or dst_cw <= dst_vp_w:
-            dst_hbar.setValue(0)
-        elif side == 1:
-            dst_hbar.setValue(dst_hbar.maximum())
-        else:
-            dst_hbar.setValue(max(0, min((dst_cw - dst_vp_w) // 2,
-                                        dst_hbar.maximum())))
+            hval = dst_max // 2
+        dst_hbar.setValue(max(0, min(hval, dst_max)))
 
     def _toggle_view_mode(self) -> None:
         """Switch between single-page and continuous scroll view."""
         self._continuous_mode = self._tb_view_toggle.isChecked()
         if self._continuous_mode:
             # single-page → continuous
-            # Capture within-page offset before switching
             sp_offset = self._scroll_area.verticalScrollBar().value()
             page      = self.current_page
-            src       = self._scroll_area
+            src_hbar  = self._scroll_area.horizontalScrollBar()
+            src_cw    = self._scroll_area.widget().width() if self._scroll_area.widget() else 0
             self._tb_view_toggle.setToolTip("Einzelseitenansicht")
             self._stacked.setCurrentIndex(1)
             if self.pdf_doc:
                 self._render_current_page()
-            self._transfer_hscroll(src, self._cv)
-            # Defer scroll so Qt can finalise the scrollbar range first,
-            # then restore the same within-page offset
-            def _apply_vscroll():
+                dst_cw   = self._cv.widget().width() if self._cv.widget() else 0
+                dst_vp_w = self._cv.viewport().width()
+                self._apply_hscroll(src_hbar, src_cw,
+                                    self._cv.horizontalScrollBar(),
+                                    dst_cw, dst_vp_w)
                 if page < len(self._cv._page_y_offsets):
-                    target = self._cv._page_y_offsets[page] + sp_offset
-                    vbar   = self._cv.verticalScrollBar()
-                    vbar.setValue(max(0, min(target, vbar.maximum())))
-            QTimer.singleShot(0, _apply_vscroll)
+                    target    = self._cv._page_y_offsets[page] + sp_offset
+                    vbar      = self._cv.verticalScrollBar()
+                    container = self._cv.widget()
+                    vbar_max  = max(0, (container.height() if container else 0)
+                                   - self._cv.viewport().height())
+                    if vbar_max > 0:
+                        vbar.setRange(0, vbar_max)
+                    vbar.setValue(max(0, min(target, vbar_max)))
         else:
             # continuous → single-page
-            # Capture what part of the current page is visible before switching
             top_vis, bot_vis = self._cv.page_edge_visibility(self.current_page)
-            src = self._cv
+            cv_vbar_val = self._cv.verticalScrollBar().value()
+            page_top    = (self._cv._page_y_offsets[self.current_page]
+                           if self.current_page < len(self._cv._page_y_offsets) else 0)
+            src_hbar = self._cv.horizontalScrollBar()
+            src_cw   = self._cv.widget().width() if self._cv.widget() else 0
             self._tb_view_toggle.setToolTip("Fortlaufende Seitenansicht")
             self._stacked.setCurrentIndex(0)
             self._render_current_page()
-            self._transfer_hscroll(src, self._scroll_area)
-            # Apply vertical position based on page-edge visibility in continuous mode
-            vbar = self._scroll_area.verticalScrollBar()
+            dst_cw   = self._scroll_area.widget().width() if self._scroll_area.widget() else 0
+            dst_vp_w = self._scroll_area.viewport().width()
+            self._apply_hscroll(src_hbar, src_cw,
+                                self._scroll_area.horizontalScrollBar(),
+                                dst_cw, dst_vp_w)
+            vbar      = self._scroll_area.verticalScrollBar()
+            container = self._scroll_area.widget()
+            vbar_max  = max(0, (container.height() if container else 0)
+                           - self._scroll_area.viewport().height())
+            if vbar_max > 0:
+                vbar.setRange(0, vbar_max)
             if top_vis and bot_vis:
                 # Whole page was visible → centre vertically
-                vbar.setValue(max(0, vbar.maximum() // 2))
+                vbar.setValue(max(0, vbar_max // 2))
             elif top_vis:
                 # Only top visible → show page top
                 vbar.setValue(0)
             elif bot_vis:
                 # Only bottom visible → show page bottom
-                vbar.setValue(vbar.maximum())
+                vbar.setValue(vbar_max)
             else:
-                # Page filled viewport entirely → transfer the within-page offset
-                page_top = self._cv._page_y_offsets[self.current_page]
-                offset   = self._cv.verticalScrollBar().value() - page_top
-                vbar.setValue(max(0, min(offset, vbar.maximum())))
+                # Page filled viewport entirely → transfer within-page offset
+                offset = cv_vbar_val - page_top
+                vbar.setValue(max(0, min(offset, vbar_max)))
 
     def _on_cv_page_changed(self, page: int) -> None:
         """Update toolbar page indicator when ContinuousView reports a scroll."""
@@ -710,16 +848,79 @@ class PDFSignerApp(QMainWindow):
             # Bestehende Signaturfelder klassifizieren und _working_bytes setzen
             self._load_existing_fields(doc)
             self._update_field_list()
+            # Beim Öffnen immer das letzte unsigned freie Feld selektieren
+            # (unabhängig von der Auswahl im vorherigen Dokument).
+            # Priorität: sig_fields → locked_fields → Zeile 0 (unsichtbar)
+            n_sig    = len(self.sig_fields)
+            n_locked = len(self.locked_fields)
+            if n_sig > 0:
+                self._field_list.setCurrentRow(n_sig)          # letztes sig_field
+            elif n_locked > 0:
+                self._field_list.setCurrentRow(n_sig + n_locked)  # letztes locked_field
+            else:
+                self._field_list.setCurrentRow(0)              # unsichtbar / keine Felder
             self._render_current_page()
             self.setWindowTitle(f"PDF QES Signer – {os.path.basename(path)}")
             self._set_status(t("status_opened", path=path, pages=len(doc)))
             # Letztes geöffnetes Verzeichnis speichern
             self.config.set("paths", "last_open_dir", str(Path(path).parent))
             self.config.save()
+            # Zoom auf Seitenbreite und zum ersten relevanten Feld springen.
+            # Verzögert, damit Qt den Layout-Pass abschließt und
+            # viewport().width() die finale Breite liefert.
+            QTimer.singleShot(0, self._fit_and_jump_after_open)
         except Exception as exc:
             QMessageBox.critical(
                 self, t("dlg_open_error_title"),
                 t("dlg_open_error_msg", error=str(exc)))
+
+    def _fit_and_jump_after_open(self) -> None:
+        """Nach dem Öffnen eines PDFs: Zoom auf Seitenbreite setzen und
+        zum aktuell selektierten Signaturfeld springen.
+
+        Das selektierte Feld ergibt sich aus der aktuellen Zeile in
+        _field_list (wird von _update_field_list gesetzt).  Zeile 0
+        (unsichtbare Signatur) und leere Auswahl gelten als „kein Feld" –
+        dann wird der Dokumentanfang angezeigt.
+        """
+        if not self.pdf_doc:
+            return
+
+        # Selektiertes Feld aus der Listenzeile ableiten (gleiche Abbildung
+        # wie in _on_field_selection_changed)
+        row      = self._field_list.currentRow()
+        n_sig    = len(self.sig_fields)
+        n_locked = len(self.locked_fields)
+        if 1 <= row <= n_sig:
+            target = self.sig_fields[row - 1]
+        elif n_sig + 1 <= row <= n_sig + n_locked:
+            target = self.locked_fields[row - n_sig - 1]
+        elif n_sig + n_locked + 1 <= row:
+            idx = row - n_sig - n_locked - 1
+            target = self.signed_fields[idx] if idx < len(self.signed_fields) else None
+        else:
+            target = None   # Zeile 0 (unsichtbar) oder keine Auswahl
+
+        target_page = target.page if target is not None else 0
+
+        # In Einzelseitenansicht gleich auf Zielseite wechseln, damit
+        # _set_zoom nur einmal rendert (statt erst Seite 0, dann Zielseite)
+        if not self._continuous_mode:
+            self.current_page = target_page
+
+        # Zoom auf Breite der Zielseite anpassen
+        page_w   = self.pdf_doc[target_page].rect.width
+        vp_w     = self._scroll_area.viewport().width()
+        new_zoom = max(0.10, min(10.0, vp_w / page_w))
+        self._set_zoom(new_zoom)
+
+        # Zum Zielfeld scrollen oder Dokumentanfang anzeigen
+        if target is not None:
+            self._scroll_to_field(target)
+        elif self._continuous_mode:
+            self._cv.verticalScrollBar().setValue(0)
+        else:
+            self._scroll_area.verticalScrollBar().setValue(0)
 
     def _load_existing_fields(self, doc: fitz.Document) -> None:
         """Scan all pages for existing signature widgets and classify them.

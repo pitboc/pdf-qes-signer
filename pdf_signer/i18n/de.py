@@ -19,6 +19,10 @@ TRANSLATIONS: dict[str, str] = {
     "tb_open": "PDF öffnen",
     "tb_prev": "◀",
     "tb_next": "▶",
+    "tb_zoom_out":    "Verkleinern  (Ctrl+Mausrad)",
+    "tb_zoom_in":     "Vergrößern  (Ctrl+Mausrad)",
+    "tb_fit_width":   "Seitenbreite anpassen",
+    "tb_fit_height":  "Seitenhöhe anpassen",
     "tb_sign": "✍ Signieren (QES)",
     "tb_save_fields": "💾 Felder speichern",
     # Right panel – Fields

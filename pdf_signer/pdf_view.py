@@ -33,12 +33,20 @@ Conversion pipeline for `_pdf_to_w`:
 
 ## Zoom and DPI
 
-`PDFViewWidget.ZOOM = 1.5` – the page is rendered at 1.5× PDF points, giving
-108 effective DPI on screen.  The canvas widget size is therefore
-`page_width_pt × ZOOM` by `page_height_pt × ZOOM` pixels.
+`PDFViewWidget.ZOOM = 1.5` is the default zoom factor; each instance stores
+`_zoom` (initially `PDFViewWidget.ZOOM`), so zoom can be changed at runtime
+without affecting other instances.  The canvas widget size is therefore
+`page_width_pt × _zoom` by `page_height_pt × _zoom` pixels.
 
 `DPI_SCALE = 96/72 ≈ 1.333` is used by the *preview panel* on the right side
 of the main window, which renders appearance thumbnails at 96 screen DPI.
+
+## Mouse wheel events
+
+- No modifier       : passes through to the parent scroll area (vertical scroll).
+- `Shift` + wheel   : emits `hscroll_requested(int)` – horizontal scroll.
+- `Ctrl`  + wheel   : emits `zoom_requested(int, QPointF)` – zoom in/out
+                      centred on the cursor position in widget coordinates.
 
 ## Visual differentiation of field types
 
@@ -116,17 +124,20 @@ class PDFViewWidget(QWidget):
         field_deleted(SignatureFieldDef): emitted after a field is deleted.
     """
 
-    # Canvas zoom factor: PDF points × ZOOM = rendered pixels.
+    # Default zoom factor (class constant – instances shadow it via _zoom).
     ZOOM: float = 1.5
 
     from PyQt6.QtCore import pyqtSignal
-    field_added   = pyqtSignal(object)
-    field_deleted = pyqtSignal(object)
-    field_clicked = pyqtSignal(object)  # emitted when user clicks an existing field
+    field_added       = pyqtSignal(object)
+    field_deleted     = pyqtSignal(object)
+    field_clicked     = pyqtSignal(object)    # click on existing field
+    zoom_requested    = pyqtSignal(int, QPointF)  # Ctrl+wheel: (angleDelta.y, cursor_in_widget)
+    hscroll_requested = pyqtSignal(int)           # Shift+wheel: angleDelta.y
 
     def __init__(self, appearance: SigAppearance, parent=None) -> None:
         super().__init__(parent)
         self.appearance = appearance
+        self._zoom: float = PDFViewWidget.ZOOM  # instance zoom, may differ from class default
         self.setCursor(Qt.CursorShape.CrossCursor)
         self.setMouseTracking(True)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -151,8 +162,8 @@ class PDFViewWidget(QWidget):
                  current_page: int,
                  locked_fields: list[SignatureFieldDef] | None = None,
                  signed_fields: list[SignatureFieldDef] | None = None) -> None:
-        """Render *page* at ZOOM and store the field lists for painting."""
-        mat = fitz.Matrix(self.ZOOM, self.ZOOM)
+        """Render *page* at ``_zoom`` and store the field lists for painting."""
+        mat = fitz.Matrix(self._zoom, self._zoom)
         pix = page.get_pixmap(matrix=mat, alpha=False)
         img = QImage(pix.samples, pix.width, pix.height,
                      pix.stride, QImage.Format.Format_RGB888)
@@ -241,7 +252,7 @@ class PDFViewWidget(QWidget):
             if is_selected and w > 4 and h > 4:
                 # Full appearance preview only for the selected field
                 px = self.appearance.render_preview(
-                    w, h, pixels_per_point=self.ZOOM)
+                    w, h, pixels_per_point=self._zoom)
                 painter.drawPixmap(rect.toRect(), px)
                 # Bold highlight border around the selected field
                 pen = QPen(QColor("#1a73e8"), 3, Qt.PenStyle.SolidLine)
@@ -380,6 +391,17 @@ class PDFViewWidget(QWidget):
         self._sig_fields.append(fdef)
         self.update()
         self.field_added.emit(fdef)
+
+    def wheelEvent(self, event) -> None:
+        mods = event.modifiers()
+        if mods & Qt.KeyboardModifier.ControlModifier:
+            self.zoom_requested.emit(event.angleDelta().y(), event.position())
+            event.accept()
+        elif mods & Qt.KeyboardModifier.ShiftModifier:
+            self.hscroll_requested.emit(event.angleDelta().y())
+            event.accept()
+        else:
+            event.ignore()  # propagate to parent QScrollArea → vertical scroll
 
     def _right_click(self, pos: QPointF) -> None:
         """Delete a free signature field, or inform the user about locked ones."""
