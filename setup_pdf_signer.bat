@@ -2,7 +2,7 @@
 REM PDF QES Signer - Windows Setup Script
 REM Run this script once to create the virtual environment and install dependencies.
 
-setlocal
+setlocal enabledelayedexpansion
 
 echo.
 echo ============================================================
@@ -21,11 +21,11 @@ if errorlevel 1 (
 )
 
 for /f "tokens=2 delims= " %%v in ('python --version') do set PYVER=%%v
-echo Python found: %PYVER%
+echo [OK] Python found: %PYVER%
 
 REM Create virtual environment
 if exist .venv (
-    echo Virtual environment already exists, skipping creation.
+    echo [!]  Virtual environment already exists, skipping creation.
 ) else (
     echo Creating virtual environment...
     python -m venv .venv
@@ -34,28 +34,65 @@ if exist .venv (
         pause
         exit /b 1
     )
+    echo [OK] Virtual environment created.
 )
 
-REM Activate and install dependencies
-echo Installing dependencies...
+REM Activate venv
 call .venv\Scripts\activate.bat
-python -m pip install --upgrade pip --quiet
-pip install pymupdf pyhanko pyhanko-certvalidator python-pkcs11 Pillow PyQt6 cryptography
 
-if errorlevel 1 (
+REM Upgrade pip
+echo Upgrading pip...
+python -m pip install --upgrade pip --quiet
+echo [OK] pip upgraded.
+
+echo.
+echo Installing packages:
+
+REM Required packages - abort if any fails
+for %%P in (pymupdf Pillow PyQt6 cryptography pyhanko pyhanko-certvalidator) do (
+    echo   ^* %%P ...
+    pip install %%P
+    if errorlevel 1 (
+        echo.
+        echo ERROR: Could not install required package %%P.
+        echo        Please check your internet connection and try again.
+        pause
+        exit /b 1
+    )
+    echo [OK] %%P installed.
     echo.
-    echo ERROR: Dependency installation failed.
-    pause
-    exit /b 1
+)
+
+REM python-pkcs11 is optional on Windows (may require a C compiler / CFFI)
+echo   ^* python-pkcs11 (optional) ...
+pip install python-pkcs11
+if errorlevel 1 (
+    echo [!]  python-pkcs11 could not be installed - PKCS#11 token support unavailable.
+    echo      To enable it later, install Visual Studio Build Tools and run:
+    echo        .venv\Scripts\pip install python-pkcs11
+) else (
+    echo [OK] python-pkcs11 installed.
+)
+echo.
+
+REM Install the package itself so importlib.metadata finds the version
+echo   ^* pdf-qes-signer (package metadata) ...
+pip install -e . --quiet
+if errorlevel 1 (
+    echo [!]  Package self-install failed - version will show as 0.0.0+dev.
+) else (
+    echo [OK] Package installed.
 )
 
 REM Create launcher
+echo.
 echo Creating start_signer.bat...
 (
     echo @echo off
-    echo call "%~dp0.venv\Scripts\activate.bat"
+    echo call "%%~dp0.venv\Scripts\activate.bat"
     echo python -m pdf_signer %%*
 ) > start_signer.bat
+echo [OK] Launcher created: start_signer.bat
 
 echo.
 echo ============================================================
