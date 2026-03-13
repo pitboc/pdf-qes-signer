@@ -2,6 +2,33 @@
 """English UI translations for PDF QES Signer."""
 
 TRANSLATIONS: dict[str, str] = {
+    # Profile menu
+    "menu_profile":        "Profiles…",
+    "dlg_profile_mgr_title":   "Manage Profiles",
+    "dlg_profile_new_short":   "New",
+    # Profile dialogs
+    "dlg_profile_select_title":      "Select Profile",
+    "dlg_profile_active":            "(active)",
+    "dlg_profile_activate":          "Activate",
+    "dlg_profile_new_title":         "New Profile",
+    "dlg_profile_new_label":         "Profile name:",
+    "dlg_profile_new_btn":           "Create",
+    "dlg_profile_exists_title":      "Profile already exists",
+    "dlg_profile_exists_msg":        "A profile named '{name}' already exists.\nDo you want to overwrite it?",
+    "dlg_profile_rename_title":      "Rename Profile",
+    "dlg_profile_rename_label":      "New name:",
+    "dlg_profile_rename_btn":        "Rename",
+    "dlg_profile_delete_title":      "Delete Profile",
+    "dlg_profile_delete_btn":        "Delete",
+    "dlg_profile_delete_active_msg": "'{name}' is the active profile.\nAfter deletion, '{next}' will become active.\nReally delete?",
+    "dlg_profile_delete_confirm_msg":"Really delete profile '{name}'?",
+    "dlg_profile_last_title":        "Last Profile",
+    "dlg_profile_last_msg":          "At least one profile must exist.\n\nWould you like to reset the parameters to their defaults?",
+    "dlg_profile_reset_btn":         "Reset to defaults",
+    "dlg_profile_invalid_name":      "Invalid profile name. Please use only letters, digits, spaces, hyphens and underscores.",
+    "dlg_profile_empty_name":        "Please enter a profile name.",
+    "dlg_profile_name_exists":       "A profile with this name already exists.",
+    "status_profile":                "Profile",
     # Menu
     "menu_file": "File",
     "menu_file_open": "Open PDF…",

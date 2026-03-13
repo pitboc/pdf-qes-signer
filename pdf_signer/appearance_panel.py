@@ -448,6 +448,10 @@ class AppearancePanel(QWidget):
 
     # ── Public API ─────────────────────────────────────────────────────────
 
+    def reload_from_config(self) -> None:
+        """Reload all UI controls from the current config (e.g. after a profile switch)."""
+        self._load_appearance_panel()
+
     def retranslate(self, tr: Callable) -> None:
         """Retranslate all widget texts to the current language.
 

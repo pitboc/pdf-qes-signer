@@ -5,19 +5,26 @@
 [pkcs11]
 # Full path to your PKCS#11 library
 lib_path = /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so
-# Key label as shown by the token test dialog (leave empty to auto-detect)
-key_label =
+# Hex CKA_ID of the private key (filled automatically by the token test dialog)
+key_id =
+# Certificate subject CN (filled automatically by the token test dialog)
+cert_cn =
 
 [paths]
 # Directories remembered between sessions (filled automatically)
 last_open_dir = ~
-last_save_dir = ~
 last_lib_dir  = /usr/lib
 last_img_dir  = ~
 
 [app]
 # UI language: de | en
 language = de
+
+[tsa]
+# Enable RFC 3161 timestamp (1 = enabled, 0 = disabled)
+enabled = 0
+# TSA service URL (leave empty for default: BaltStamp)
+url = http://tsa.baltstamp.lt
 
 [appearance]
 # Absolute path to a PNG image shown in the signature field (optional)

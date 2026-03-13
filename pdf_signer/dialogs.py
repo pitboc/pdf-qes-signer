@@ -6,6 +6,10 @@ Provides:
   - TokenInfoDialog       – displays token contents; lets user select a key label
   - Pkcs11ConfigDialog    – configure PKCS#11 library path and key label
   - AppearanceConfigDialog – standalone dialog for signature appearance settings
+  - ProfileSelectDialog   – choose and activate a profile
+  - NewProfileDialog      – create a new profile (copy of current)
+  - RenameProfileDialog   – rename any profile
+  - DeleteProfileDialog   – delete a profile with special-case handling
 """
 
 from __future__ import annotations
@@ -15,11 +19,13 @@ import traceback
 from pathlib import Path
 from typing import Optional
 
+import re
+
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
-    QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+    QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox,
     QPushButton, QSizePolicy, QSlider, QSpinBox, QTabWidget,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QCheckBox, QComboBox,
     QAbstractItemView, QGridLayout,
@@ -1103,3 +1109,451 @@ class AppearanceConfigDialog(QDialog):
         # Alle Werte dauerhaft speichern und Dialog schließen
         self._apply_to_config(save=True)
         self.accept()
+
+
+# ── Profile management dialogs ────────────────────────────────────────────────
+
+_PROFILE_NAME_RE = re.compile(r'^[A-Za-z0-9äöüÄÖÜß _\-]+$')
+
+
+def _validate_profile_name(name: str) -> str | None:
+    """Return None if *name* is valid, else an i18n error key."""
+    if not name:
+        return "dlg_profile_empty_name"
+    if not _PROFILE_NAME_RE.match(name):
+        return "dlg_profile_invalid_name"
+    return None
+
+
+class ProfileManagerDialog(QDialog):
+    """Combined profile management dialog: New, Rename, Delete, Close.
+
+    Double-clicking a profile entry activates it and closes the dialog.
+    After the dialog closes, check ``changes_made`` and ``switch_to``.
+    """
+
+    def __init__(self, config: AppConfig, parent=None) -> None:
+        super().__init__(parent)
+        self.config = config
+        self.changes_made = False
+        self.switch_to: str | None = None
+        self.setWindowTitle(t("dlg_profile_mgr_title"))
+        self.resize(340, 280)
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        lay = QVBoxLayout(self)
+        self._list = QListWidget()
+        self._refresh_list()
+        self._list.itemDoubleClicked.connect(self._on_item_double_clicked)
+        lay.addWidget(self._list)
+
+        btn_row = QHBoxLayout()
+        self._btn_new    = QPushButton(t("dlg_profile_new_short"))
+        self._btn_rename = QPushButton(t("dlg_profile_rename_btn"))
+        self._btn_delete = QPushButton(t("dlg_profile_delete_btn"))
+        btn_close        = QPushButton(t("dlg_token_close"))
+        self._btn_new.clicked.connect(self._on_new)
+        self._btn_rename.clicked.connect(self._on_rename)
+        self._btn_delete.clicked.connect(self._on_delete)
+        btn_close.clicked.connect(self.accept)
+        btn_row.addStretch()
+        btn_row.addWidget(self._btn_new)
+        btn_row.addWidget(self._btn_rename)
+        btn_row.addWidget(self._btn_delete)
+        btn_row.addSpacing(12)
+        btn_row.addWidget(btn_close)
+        btn_row.addStretch()
+        lay.addLayout(btn_row)
+
+    def _refresh_list(self) -> None:
+        self._list.clear()
+        active = self.config.active_profile
+        for name in self.config.list_profiles():
+            label = f"{name}  {t('dlg_profile_active')}" if name == active else name
+            self._list.addItem(label)
+        if self._list.count() > 0:
+            self._list.setCurrentRow(0)
+
+    def _current_name(self) -> str | None:
+        row = self._list.currentRow()
+        if row < 0:
+            return None
+        profiles = self.config.list_profiles()
+        return profiles[row] if row < len(profiles) else None
+
+    def _on_item_double_clicked(self, _item) -> None:
+        name = self._current_name()
+        if name is None:
+            return
+        if name != self.config.active_profile:
+            self.config.switch_profile(name)
+            self.config.save()
+            self.changes_made = True
+            self.switch_to = name
+        self.accept()
+
+    def _on_new(self) -> None:
+        from PyQt6.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(
+            self, t("dlg_profile_new_title"), t("dlg_profile_new_label"))
+        if not ok:
+            return
+        name = name.strip()
+        err = _validate_profile_name(name)
+        if err:
+            QMessageBox.warning(self, t("dlg_profile_new_title"), t(err))
+            return
+        if name in self.config.list_profiles():
+            answer = QMessageBox.question(
+                self, t("dlg_profile_exists_title"),
+                t("dlg_profile_exists_msg", name=name))
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        self.config.new_profile_from_current(name)
+        self.config.save()
+        self.changes_made = True
+        self.switch_to = name
+        self._refresh_list()
+
+    def _on_rename(self) -> None:
+        from PyQt6.QtWidgets import QInputDialog
+        old = self._current_name()
+        if old is None:
+            return
+        new, ok = QInputDialog.getText(
+            self, t("dlg_profile_rename_title"),
+            t("dlg_profile_rename_label"), text=old)
+        if not ok:
+            return
+        new = new.strip()
+        if new == old:
+            return
+        err = _validate_profile_name(new)
+        if err:
+            QMessageBox.warning(self, t("dlg_profile_rename_title"), t(err))
+            return
+        if new in self.config.list_profiles():
+            QMessageBox.warning(self, t("dlg_profile_rename_title"),
+                                t("dlg_profile_name_exists"))
+            return
+        self.config.rename_profile(old, new)
+        self.config.save()
+        self.changes_made = True
+        if self.config.active_profile == new:
+            self.switch_to = new
+        self._refresh_list()
+
+    def _on_delete(self) -> None:
+        name = self._current_name()
+        if name is None:
+            return
+        profiles = self.config.list_profiles()
+
+        # Last profile – offer reset instead
+        if len(profiles) == 1:
+            msg = QMessageBox(self)
+            msg.setWindowTitle(t("dlg_profile_last_title"))
+            msg.setText(t("dlg_profile_last_msg"))
+            btn_reset = msg.addButton(t("dlg_profile_reset_btn"),
+                                      QMessageBox.ButtonRole.AcceptRole)
+            msg.addButton(t("cfg_cancel_btn"), QMessageBox.ButtonRole.RejectRole)
+            msg.exec()
+            if msg.clickedButton() is btn_reset:
+                self.config.reset_profile(name)
+                self.config.save()
+                self.changes_made = True
+                self.switch_to = name
+                self._refresh_list()
+            return
+
+        # Active profile
+        if name == self.config.active_profile:
+            remaining = [p for p in profiles if p != name]
+            next_profile = remaining[0]
+            answer = QMessageBox.question(
+                self, t("dlg_profile_delete_title"),
+                t("dlg_profile_delete_active_msg", name=name, next=next_profile))
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            self.config.delete_profile(name)
+            self.config.switch_profile(next_profile)
+            self.config.save()
+            self.switch_to = next_profile
+        else:
+            answer = QMessageBox.question(
+                self, t("dlg_profile_delete_title"),
+                t("dlg_profile_delete_confirm_msg", name=name))
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            self.config.delete_profile(name)
+            self.config.save()
+
+        self.changes_made = True
+        self._refresh_list()
+
+
+class ProfileSelectDialog(QDialog):
+    """List all profiles; clicking an entry activates it immediately."""
+
+    def __init__(self, config: AppConfig, parent=None) -> None:
+        super().__init__(parent)
+        self.config = config
+        self.selected_profile: str | None = None
+        self.setWindowTitle(t("dlg_profile_select_title"))
+        self.resize(320, 260)
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        lay = QVBoxLayout(self)
+        self._list = QListWidget()
+        active = self.config.active_profile
+        for name in self.config.list_profiles():
+            label = f"{name}  {t('dlg_profile_active')}" if name == active else name
+            self._list.addItem(label)
+            if name == active:
+                self._list.setCurrentRow(self._list.count() - 1)
+        # Single click on a non-active profile activates and closes
+        self._list.itemClicked.connect(self._on_item_clicked)
+        lay.addWidget(self._list)
+
+        btn_row = QHBoxLayout()
+        btn_cancel = QPushButton(t("cfg_cancel_btn"))
+        btn_cancel.clicked.connect(self.reject)
+        btn_row.addStretch()
+        btn_row.addWidget(btn_cancel)
+        btn_row.addStretch()
+        lay.addLayout(btn_row)
+
+    def _current_name(self) -> str | None:
+        row = self._list.currentRow()
+        if row < 0:
+            return None
+        profiles = self.config.list_profiles()
+        return profiles[row] if row < len(profiles) else None
+
+    def _on_item_clicked(self, _item) -> None:
+        name = self._current_name()
+        if name is None:
+            return
+        if name != self.config.active_profile:
+            self.selected_profile = name
+        self.accept()
+
+
+class NewProfileDialog(QDialog):
+    """Enter a name for a new profile (copy of current settings)."""
+
+    def __init__(self, config: AppConfig, parent=None) -> None:
+        super().__init__(parent)
+        self.config = config
+        self.profile_name: str | None = None
+        self.setWindowTitle(t("dlg_profile_new_title"))
+        self.resize(340, 120)
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        lay = QVBoxLayout(self)
+        form = QFormLayout()
+        self._name_edit = QLineEdit()
+        self._name_edit.returnPressed.connect(self._accept)
+        form.addRow(t("dlg_profile_new_label"), self._name_edit)
+        lay.addLayout(form)
+
+        btn_row = QHBoxLayout()
+        self._btn_create = QPushButton(t("dlg_profile_new_btn"))
+        self._btn_create.clicked.connect(self._accept)
+        btn_cancel = QPushButton(t("cfg_cancel_btn"))
+        btn_cancel.clicked.connect(self.reject)
+        btn_row.addStretch()
+        btn_row.addWidget(btn_cancel)
+        btn_row.addWidget(self._btn_create)
+        btn_row.addStretch()
+        lay.addLayout(btn_row)
+
+    def _accept(self) -> None:
+        name = self._name_edit.text().strip()
+        err = _validate_profile_name(name)
+        if err:
+            QMessageBox.warning(self, t("dlg_profile_new_title"), t(err))
+            return
+        if name in self.config.list_profiles():
+            answer = QMessageBox.question(
+                self, t("dlg_profile_exists_title"),
+                t("dlg_profile_exists_msg", name=name))
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        self.profile_name = name
+        self.accept()
+
+
+class RenameProfileDialog(QDialog):
+    """Select a profile from a list and give it a new name."""
+
+    def __init__(self, config: AppConfig, parent=None) -> None:
+        super().__init__(parent)
+        self.config = config
+        self.old_name: str | None = None
+        self.new_name: str | None = None
+        self.setWindowTitle(t("dlg_profile_rename_title"))
+        self.resize(340, 300)
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        lay = QVBoxLayout(self)
+        self._list = QListWidget()
+        active = self.config.active_profile
+        for name in self.config.list_profiles():
+            label = f"{name}  {t('dlg_profile_active')}" if name == active else name
+            self._list.addItem(label)
+            if name == active:
+                self._list.setCurrentRow(self._list.count() - 1)
+        self._list.itemSelectionChanged.connect(self._on_selection)
+        lay.addWidget(self._list)
+
+        form = QFormLayout()
+        self._name_edit = QLineEdit()
+        self._name_edit.returnPressed.connect(self._accept)
+        form.addRow(t("dlg_profile_rename_label"), self._name_edit)
+        lay.addLayout(form)
+
+        btn_row = QHBoxLayout()
+        self._btn_rename = QPushButton(t("dlg_profile_rename_btn"))
+        self._btn_rename.clicked.connect(self._accept)
+        btn_cancel = QPushButton(t("cfg_cancel_btn"))
+        btn_cancel.clicked.connect(self.reject)
+        btn_row.addStretch()
+        btn_row.addWidget(btn_cancel)
+        btn_row.addWidget(self._btn_rename)
+        btn_row.addStretch()
+        lay.addLayout(btn_row)
+        self._on_selection()
+
+    def _current_name(self) -> str | None:
+        row = self._list.currentRow()
+        if row < 0:
+            return None
+        profiles = self.config.list_profiles()
+        return profiles[row] if row < len(profiles) else None
+
+    def _on_selection(self) -> None:
+        self._name_edit.setText(self._current_name() or "")
+
+    def _accept(self) -> None:
+        old = self._current_name()
+        if old is None:
+            return
+        new = self._name_edit.text().strip()
+        err = _validate_profile_name(new)
+        if err:
+            QMessageBox.warning(self, t("dlg_profile_rename_title"), t(err))
+            return
+        if new == old:
+            self.reject()
+            return
+        if new in self.config.list_profiles():
+            QMessageBox.warning(self, t("dlg_profile_rename_title"),
+                                t("dlg_profile_name_exists"))
+            return
+        self.old_name = old
+        self.new_name = new
+        self.accept()
+
+
+class DeleteProfileDialog(QDialog):
+    """Select a profile to delete; dialog stays open for further deletions.
+
+    After closing, check ``changes_made`` and ``switch_to`` in the caller.
+    The dialog performs deletions and profile switches directly on *config*.
+    """
+
+    def __init__(self, config: AppConfig, parent=None) -> None:
+        super().__init__(parent)
+        self.config = config
+        self.changes_made = False   # True if at least one deletion/reset occurred
+        self.switch_to: str | None = None  # last switch target (for UI refresh)
+        self.setWindowTitle(t("dlg_profile_delete_title"))
+        self.resize(320, 260)
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        lay = QVBoxLayout(self)
+        self._list = QListWidget()
+        self._refresh_list()
+        lay.addWidget(self._list)
+
+        btn_row = QHBoxLayout()
+        self._btn_delete = QPushButton(t("dlg_profile_delete_btn"))
+        self._btn_delete.clicked.connect(self._on_delete)
+        btn_cancel = QPushButton(t("cfg_cancel_btn"))
+        btn_cancel.clicked.connect(self.reject)
+        btn_row.addStretch()
+        btn_row.addWidget(btn_cancel)
+        btn_row.addWidget(self._btn_delete)
+        btn_row.addStretch()
+        lay.addLayout(btn_row)
+
+    def _refresh_list(self) -> None:
+        """Rebuild the list from current profile state."""
+        self._list.clear()
+        active = self.config.active_profile
+        for name in self.config.list_profiles():
+            label = f"{name}  {t('dlg_profile_active')}" if name == active else name
+            self._list.addItem(label)
+        if self._list.count() > 0:
+            self._list.setCurrentRow(0)
+
+    def _current_name(self) -> str | None:
+        row = self._list.currentRow()
+        if row < 0:
+            return None
+        profiles = self.config.list_profiles()
+        return profiles[row] if row < len(profiles) else None
+
+    def _on_delete(self) -> None:
+        name = self._current_name()
+        if name is None:
+            return
+        profiles = self.config.list_profiles()
+
+        # Last profile – offer reset instead
+        if len(profiles) == 1:
+            msg = QMessageBox(self)
+            msg.setWindowTitle(t("dlg_profile_last_title"))
+            msg.setText(t("dlg_profile_last_msg"))
+            btn_reset = msg.addButton(t("dlg_profile_reset_btn"),
+                                      QMessageBox.ButtonRole.AcceptRole)
+            msg.addButton(t("cfg_cancel_btn"), QMessageBox.ButtonRole.RejectRole)
+            msg.exec()
+            if msg.clickedButton() is btn_reset:
+                self.config.reset_profile(name)
+                self.config.save()
+                self.changes_made = True
+                self.switch_to = name
+                self._refresh_list()
+            return
+
+        # Active profile – warn and confirm
+        if name == self.config.active_profile:
+            remaining = [p for p in profiles if p != name]
+            next_profile = remaining[0]
+            answer = QMessageBox.question(
+                self, t("dlg_profile_delete_title"),
+                t("dlg_profile_delete_active_msg", name=name, next=next_profile))
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            self.config.delete_profile(name)
+            self.config.switch_profile(next_profile)
+            self.config.save()
+            self.switch_to = next_profile
+        else:
+            answer = QMessageBox.question(
+                self, t("dlg_profile_delete_title"),
+                t("dlg_profile_delete_confirm_msg", name=name))
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            self.config.delete_profile(name)
+            self.config.save()
+
+        self.changes_made = True
+        self._refresh_list()

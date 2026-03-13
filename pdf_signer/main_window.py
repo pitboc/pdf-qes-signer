@@ -80,7 +80,7 @@ from .signer import (
     _pyhanko_available, _pkcs11_available,
 )
 from .pdf_view import PDFViewWidget, SignatureFieldDef
-from .dialogs import Pkcs11ConfigDialog
+from .dialogs import Pkcs11ConfigDialog, ProfileManagerDialog, ProfileSelectDialog
 from .i18n import t, i18n, AVAILABLE_LANGUAGES
 from .appearance_panel import AppearancePanel
 from .continuous_view import ContinuousView
@@ -131,6 +131,7 @@ class PDFSignerApp(QMainWindow):
         self._build_ui()
         self._apply_language()
         self.statusBar().showMessage(t("status_ready"))
+        self._update_profile_label()
         # Fehlende Abhängigkeiten (pyhanko, python-pkcs11) beim Start prüfen
         self._check_dependencies()
 
@@ -173,6 +174,18 @@ class PDFSignerApp(QMainWindow):
         # Öffnet den PKCS#11-Konfigurationsdialog (Bibliothek, Schlüssel-ID, TSA)
         self._act_pkcs11.triggered.connect(self.open_pkcs11_config)
         self._menu_settings.addAction(self._act_pkcs11)
+
+        # Profile action (single entry → combined manager dialog)
+        self._act_profile = QAction(self)
+        self._act_profile.triggered.connect(self._profile_manage)
+        self._menu_settings.addAction(self._act_profile)
+
+        # Profile label in status bar (permanent, right-aligned)
+        self._profile_lbl = QPushButton()
+        self._profile_lbl.setFlat(True)
+        self._profile_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._profile_lbl.clicked.connect(self._profile_select)
+        self.statusBar().addPermanentWidget(self._profile_lbl)
 
         # Language sub-menu
         # Sprachauswahl-Untermenü: für jede verfügbare Sprache eine umschaltbare Aktion
@@ -412,6 +425,7 @@ class PDFSignerApp(QMainWindow):
         self._act_sign.setText(t("menu_sign_document"))
         self._menu_settings.setTitle(t("menu_settings"))
         self._act_pkcs11.setText(t("menu_settings_pkcs11"))
+        self._act_profile.setText(t("menu_profile"))
         self._menu_lang.setTitle(t("menu_settings_language"))
         self._menu_help.setTitle(t("menu_help"))
         self._act_about.setText(t("menu_help_about"))
@@ -1267,6 +1281,33 @@ class PDFSignerApp(QMainWindow):
         # Refresh name placeholder in case cert_cn changed
         # Namen-Anzeige aktualisieren falls cert_cn im Dialog geändert wurde
         self._ap_panel.on_checks()
+
+    # ── Profile management ────────────────────────────────────────────────
+
+    def _update_profile_label(self) -> None:
+        self._profile_lbl.setText(
+            f"  {t('status_profile')}: {self.config.active_profile}  ")
+
+    def _apply_profile_to_ui(self) -> None:
+        """Refresh all UI elements that depend on the active profile's settings."""
+        self._tsa_chk.setChecked(self.config.getbool("tsa", "enabled"))
+        self._ap_panel.reload_from_config()
+        self._update_profile_label()
+        if self.pdf_doc:
+            self._render_current_page()
+
+    def _profile_select(self) -> None:
+        dlg = ProfileSelectDialog(self.config, self)
+        if dlg.exec() and dlg.selected_profile:
+            self.config.switch_profile(dlg.selected_profile)
+            self.config.save()
+            self._apply_profile_to_ui()
+
+    def _profile_manage(self) -> None:
+        dlg = ProfileManagerDialog(self.config, self)
+        dlg.exec()
+        if dlg.changes_made:
+            self._apply_profile_to_ui()
 
     def _on_tsa_toggled(self, enabled: bool) -> None:
         # TSA-Aktivierungszustand sofort in der Konfig speichern

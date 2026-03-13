@@ -2,6 +2,33 @@
 """German UI translations for PDF QES Signer."""
 
 TRANSLATIONS: dict[str, str] = {
+    # Profile menu
+    "menu_profile":        "Profile…",
+    "dlg_profile_mgr_title":   "Profile verwalten",
+    "dlg_profile_new_short":   "Neu",
+    # Profile dialogs
+    "dlg_profile_select_title":      "Profil auswählen",
+    "dlg_profile_active":            "(aktiv)",
+    "dlg_profile_activate":          "Aktivieren",
+    "dlg_profile_new_title":         "Neues Profil",
+    "dlg_profile_new_label":         "Profilname:",
+    "dlg_profile_new_btn":           "Erstellen",
+    "dlg_profile_exists_title":      "Profil existiert bereits",
+    "dlg_profile_exists_msg":        "Ein Profil mit dem Namen '{name}' existiert bereits.\nSoll es überschrieben werden?",
+    "dlg_profile_rename_title":      "Profil umbenennen",
+    "dlg_profile_rename_label":      "Neuer Name:",
+    "dlg_profile_rename_btn":        "Umbenennen",
+    "dlg_profile_delete_title":      "Profil löschen",
+    "dlg_profile_delete_btn":        "Löschen",
+    "dlg_profile_delete_active_msg": "'{name}' ist das aktive Profil.\nNach dem Löschen wird auf '{next}' umgeschaltet.\nWirklich löschen?",
+    "dlg_profile_delete_confirm_msg":"Profil '{name}' wirklich löschen?",
+    "dlg_profile_last_title":        "Letztes Profil",
+    "dlg_profile_last_msg":          "Mindestens ein Profil muss vorhanden sein.\n\nMöchten Sie die Parameter auf die Voreinstellungen zurücksetzen?",
+    "dlg_profile_reset_btn":         "Voreinstellungen setzen",
+    "dlg_profile_invalid_name":      "Ungültiger Profilname. Bitte nur Buchstaben, Ziffern, Leerzeichen, Bindestrich und Unterstrich verwenden.",
+    "dlg_profile_empty_name":        "Bitte einen Profilnamen eingeben.",
+    "dlg_profile_name_exists":       "Ein Profil mit diesem Namen existiert bereits.",
+    "status_profile":                "Profil",
     # Menu
     "menu_file": "Datei",
     "menu_file_open": "PDF öffnen…",
