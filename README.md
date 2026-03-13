@@ -73,6 +73,28 @@ pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
 
 ## Installation
 
+> **Note:** The current development version (master branch) contains the latest
+> features and fixes and is generally preferred over the tagged releases.
+
+### Option A – Download archive (recommended for end users)
+
+**Linux / macOS** – download and extract the `.tar.gz` archive:
+
+```bash
+wget https://codeberg.org/pitbo/pdf-qes-signer/archive/master.tar.gz
+tar xf master.tar.gz
+cd pdf-qes-signer
+./setup_pdf_signer.sh
+```
+
+**Windows** – download the `.zip` archive:
+
+1. Download [master.zip](https://codeberg.org/pitbo/pdf-qes-signer/archive/master.zip)
+2. Extract the archive (right-click → *Extract All…*)
+3. Open the extracted folder and double-click `setup_pdf_signer.bat`
+
+### Option B – Clone with Git
+
 ```bash
 # Primary (Codeberg)
 git clone https://codeberg.org/pitbo/pdf-qes-signer.git
