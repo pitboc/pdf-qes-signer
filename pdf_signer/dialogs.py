@@ -224,6 +224,7 @@ class TokenInfoDialog(QDialog):
         self.setWindowTitle(t("dlg_token_info_title"))
         self.resize(680, 520)
         self._build_ui()
+        self._select_first_object()
 
     def _build_ui(self) -> None:
         lay = QVBoxLayout(self)
@@ -336,18 +337,31 @@ class TokenInfoDialog(QDialog):
         btn_row.addWidget(b_close)
         lay.addLayout(btn_row)
 
+    def _select_first_object(self) -> None:
+        """Select the first selectable object item in the tree."""
+        for i in range(self.tree.topLevelItemCount()):
+            header = self.tree.topLevelItem(i)
+            if header.childCount() > 0:
+                self.tree.setCurrentItem(header.child(0))
+                return
+
     def _selected_item(self):
-        """Return the selected object item (any class), or None for headers/attributes."""
+        """Return the selected object item (any class), or None for section headers.
+
+        If an attribute child is selected, navigate up to the parent object item
+        so the user can click any row within an object to activate "Übernehmen".
+        """
         items = self.tree.selectedItems()
         if not items:
             return None
         item = items[0]
         parent = item.parent()
-        # Must be a direct child of a section header (grandparent is None)
-        # Abschnitts-Header haben keinen Parent, Attribute-Kinder haben einen Großeltern-Knoten.
-        # Nur direkte Kinder der Header (=Objekt-Zeilen) sind gültige Auswahlen.
-        if parent is None or parent.parent() is not None:
+        if parent is None:
+            # Section header – not a selectable object
             return None
+        if parent.parent() is not None:
+            # Attribute child → use the parent object item instead
+            item = parent
         return item if item.data(0, Qt.ItemDataRole.UserRole) is not None else None
 
     def _on_selection_changed(self) -> None:

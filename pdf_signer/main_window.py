@@ -332,14 +332,11 @@ class PDFSignerApp(QMainWindow):
         self._field_list.currentRowChanged.connect(self._on_field_selection_changed)
         fl.addWidget(self._field_list)
         btn_row = QHBoxLayout()
-        # "Löschen"-Schaltfläche: nur für sig_fields-Felder aktiv
+        # "Löschen"-Schaltfläche: nur für sig_fields-Felder aktiv; initial deaktiviert
         self._btn_delete = QPushButton()
+        self._btn_delete.setEnabled(False)
         self._btn_delete.clicked.connect(self.delete_selected_field)
-        # "Speichern"-Schaltfläche: speichert PDF mit Signaturfeld-Annotationen
-        self._btn_save = QPushButton()
-        self._btn_save.clicked.connect(self.save_with_fields)
         btn_row.addWidget(self._btn_delete)
-        btn_row.addWidget(self._btn_save)
         fl.addLayout(btn_row)
         rl.addWidget(self._fields_group)
 
@@ -430,7 +427,6 @@ class PDFSignerApp(QMainWindow):
         self._tb_fit_height.setToolTip(t("tb_fit_height"))
         self._fields_group.setTitle(t("panel_fields"))
         self._btn_delete.setText(t("btn_delete_field"))
-        self._btn_save.setText(t("btn_save_fields"))
         self._token_group.setTitle(t("panel_token"))
         self._pin_lbl_widget.setText(t("pin_label"))
         self._pin_hint_lbl.setText(t("pin_hint"))
@@ -687,6 +683,8 @@ class PDFSignerApp(QMainWindow):
         n_sig    = len(self.sig_fields)
         n_locked = len(self.locked_fields)
         n_signed = len(self.signed_fields)
+        # Löschen nur für freie unsigned Felder (sig_fields) erlauben
+        self._btn_delete.setEnabled(1 <= row <= n_sig)
         # Auswahl in der Feldliste auf das entsprechende PDFViewWidget-Feld abbilden.
         # Row 0 = unsichtbar → kein Feld hervorheben
         selected_for_scroll: Optional[SignatureFieldDef] = None
@@ -883,9 +881,11 @@ class PDFSignerApp(QMainWindow):
 
     def _on_field_added(self, fdef: SignatureFieldDef) -> None:
         # Feld wurde im Canvas gezeichnet → Feldliste aktualisieren und
-        # das neue Feld als aktive Auswahl setzen
+        # das neue Feld als aktive Auswahl setzen.
+        # Das neue Feld ist immer das letzte in sig_fields → Zeile len(sig_fields).
+        # (Nicht count()-1, da locked/signed-Felder danach in der Liste stehen.)
         self._update_field_list()
-        self._field_list.setCurrentRow(self._field_list.count() - 1)
+        self._field_list.setCurrentRow(len(self.sig_fields))
         # currentRowChanged fires above and calls _on_field_selection_changed
         self._set_status(
             t("status_field_added", name=fdef.name, page=fdef.page + 1))

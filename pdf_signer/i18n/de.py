@@ -24,7 +24,7 @@ TRANSLATIONS: dict[str, str] = {
     "tb_fit_width":   "Seitenbreite anpassen",
     "tb_fit_height":  "Seitenhöhe anpassen",
     "tb_sign": "✍ Signieren (QES)",
-    "tb_save_fields": "💾 Felder speichern",
+    "tb_save_fields": "💾 PDF speichern",
     # Right panel – Fields
     "panel_fields": "Signaturfelder",
     "btn_delete_field": "🗑 Löschen",
