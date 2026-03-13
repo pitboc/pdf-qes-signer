@@ -64,12 +64,20 @@ pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
 ## Requirements
 
 - Python ≥ 3.9
-- [pymupdf](https://pymupdf.readthedocs.io/) (`fitz`)
+- [pymupdf](https://pymupdf.readthedocs.io/) (`fitz` / `pymupdf`)
 - [Pillow](https://pillow.readthedocs.io/)
 - [PyQt6](https://pypi.org/project/PyQt6/)
 - [pyhanko](https://pyhanko.readthedocs.io/) + pyhanko-certvalidator
 - [python-pkcs11](https://python-pkcs11.readthedocs.io/)
 - [cryptography](https://cryptography.io/)
+
+### Windows: additional prerequisites
+
+- **Python 3.9+** – install from [python.org](https://www.python.org/downloads/);
+  check *"Add python.exe to PATH"* during installation
+- **Microsoft Visual C++ Redistributable 2015–2022 (x64)** – required by PyMuPDF;
+  download from Microsoft:
+  [vc_redist.x64.exe](https://aka.ms/vs/17/release/vc_redist.x64.exe)
 
 ## Installation
 

@@ -63,6 +63,23 @@ for %%P in (pymupdf Pillow PyQt6 cryptography pyhanko pyhanko-certvalidator) do 
     echo.
 )
 
+REM Verify pymupdf actually imports (DLL check - requires VC++ Redistributable)
+echo   ^* Verifying pymupdf import ...
+python -c "import pymupdf" >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo ERROR: PyMuPDF was installed but cannot be imported.
+    echo        This usually means the Microsoft Visual C++ Redistributable is missing.
+    echo.
+    echo        Please download and install it, then re-run this setup:
+    echo        https://aka.ms/vs/17/release/vc_redist.x64.exe
+    echo.
+    pause
+    exit /b 1
+)
+echo [OK] pymupdf import verified.
+echo.
+
 REM python-pkcs11 is optional on Windows (may require a C compiler / CFFI)
 echo   ^* python-pkcs11 (optional) ...
 pip install python-pkcs11
