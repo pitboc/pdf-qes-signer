@@ -80,7 +80,8 @@ from .signer import (
     _pyhanko_available, _pkcs11_available,
 )
 from .pdf_view import PDFViewWidget, SignatureFieldDef
-from .dialogs import Pkcs11ConfigDialog, ProfileManagerDialog, ProfileSelectDialog
+from .dialogs import (Pkcs11ConfigDialog, ProfileManagerDialog,
+                       ProfileSelectDialog, _pfx_load_cert_info)
 from .i18n import t, i18n, AVAILABLE_LANGUAGES
 from .appearance_panel import AppearancePanel
 from .continuous_view import ContinuousView
@@ -441,9 +442,7 @@ class PDFSignerApp(QMainWindow):
         self._tb_fit_height.setToolTip(t("tb_fit_height"))
         self._fields_group.setTitle(t("panel_fields"))
         self._btn_delete.setText(t("btn_delete_field"))
-        self._token_group.setTitle(t("panel_token"))
-        self._pin_lbl_widget.setText(t("pin_label"))
-        self._pin_hint_lbl.setText(t("pin_hint"))
+        self._update_token_panel_for_mode()
         self._app_group.setTitle(t("panel_appearance"))
         self._tsa_chk.setText(t("tsa_enabled_label"))
         # Appearance panel – retranslate all inline widgets via AppearancePanel
@@ -490,11 +489,13 @@ class PDFSignerApp(QMainWindow):
 
     def _check_dependencies(self) -> None:
         # Prüfen ob optionale Bibliotheken vorhanden sind;
-        # bei fehlenden Paketen einen Warn-Dialog mit Installationshinweis zeigen
+        # bei fehlenden Paketen einen Warn-Dialog mit Installationshinweis zeigen.
+        # python-pkcs11 wird nur im PKCS#11-Modus benötigt.
         missing = []
         if not _pyhanko_available:
             missing.append("pyhanko  (pip install pyhanko)")
-        if not _pkcs11_available:
+        if (not _pkcs11_available
+                and self.config.get("pkcs11", "signer_mode") != "pfx"):
             missing.append("python-pkcs11  (pip install python-pkcs11)")
         if missing:
             QMessageBox.warning(
@@ -1273,13 +1274,12 @@ class PDFSignerApp(QMainWindow):
     # ── Config dialogs ────────────────────────────────────────────────────
 
     def open_pkcs11_config(self) -> None:
-        # PKCS#11-Konfigurationsdialog modal öffnen
+        # Signatur/Token-Konfigurationsdialog modal öffnen
         Pkcs11ConfigDialog(self, self.config).exec()
         # Sync TSA checkbox in case the user changed the URL in the dialog
-        # TSA-Checkbox synchronisieren falls der Benutzer die URL im Dialog geändert hat
         self._tsa_chk.setChecked(self.config.getbool("tsa", "enabled"))
-        # Refresh name placeholder in case cert_cn changed
-        # Namen-Anzeige aktualisieren falls cert_cn im Dialog geändert wurde
+        # Modus-abhängige Panel-Beschriftung und Appearance-Platzhalter aktualisieren
+        self._update_token_panel_for_mode()
         self._ap_panel.on_checks()
 
     # ── Profile management ────────────────────────────────────────────────
@@ -1293,8 +1293,21 @@ class PDFSignerApp(QMainWindow):
         self._tsa_chk.setChecked(self.config.getbool("tsa", "enabled"))
         self._ap_panel.reload_from_config()
         self._update_profile_label()
+        self._update_token_panel_for_mode()
         if self.pdf_doc:
             self._render_current_page()
+
+    def _update_token_panel_for_mode(self) -> None:
+        """Set token/PIN panel title and labels based on the current signer_mode."""
+        mode = self.config.get("pkcs11", "signer_mode")
+        if mode == "pfx":
+            self._token_group.setTitle(t("panel_token_pfx"))
+            self._pin_lbl_widget.setText(t("pin_label_pfx"))
+            self._pin_hint_lbl.setText(t("pin_hint_pfx"))
+        else:
+            self._token_group.setTitle(t("panel_token"))
+            self._pin_lbl_widget.setText(t("pin_label"))
+            self._pin_hint_lbl.setText(t("pin_hint"))
 
     def _profile_select(self) -> None:
         dlg = ProfileSelectDialog(self.config, self)
@@ -1355,11 +1368,45 @@ class PDFSignerApp(QMainWindow):
         if not out:
             return
 
-        # PIN, PKCS#11-Bibliothek, Schlüssel-ID und Zertifikats-CN aus der Konfig holen
-        pin     = self._pin_edit.text().strip()
-        lib     = self.config.get("pkcs11", "lib_path")
-        key_id  = self.config.get("pkcs11", "key_id")
-        cert_cn = self.config.get("pkcs11", "cert_cn")
+        # Signaturmodus und zugehörige Parameter aus der Konfig holen
+        mode     = self.config.get("pkcs11", "signer_mode")
+        pin      = self._pin_edit.text().strip()
+        lib      = self.config.get("pkcs11", "lib_path")
+        key_id   = self.config.get("pkcs11", "key_id")
+        cert_cn  = self.config.get("pkcs11", "cert_cn")
+        pfx_path = self.config.get("pkcs11", "pfx_path")
+
+        # PFX-Modus: Passwort vor dem Start des Workers validieren.
+        # Bei leerem Feld oder falschem Passwort wird das Popup wiederholt bis
+        # das Passwort korrekt ist oder der User abbricht.
+        # Datei-Fehler (nicht gefunden etc.) werden dem SignWorker überlassen.
+        if mode == "pfx":
+            from PyQt6.QtWidgets import QInputDialog, QLineEdit
+            passphrase: bytes | None = pin.encode() if pin else None
+            first = True
+            while True:
+                try:
+                    _pfx_load_cert_info(pfx_path, passphrase)
+                    pin = passphrase.decode() if passphrase else ""
+                    break  # Passwort korrekt
+                except Exception as exc:
+                    err = str(exc).lower()
+                    if "password" in err or "pkcs12" in err or "mac" in err:
+                        prompt_key = ("cfg_pfx_password_prompt" if first
+                                      else "cfg_pfx_wrong_password_prompt")
+                        pw, ok = QInputDialog.getText(
+                            self,
+                            t("cfg_pfx_password_title"),
+                            t(prompt_key),
+                            QLineEdit.EchoMode.Password,
+                        )
+                        if not ok:
+                            return
+                        passphrase = pw.encode() if pw else b""
+                        pin = pw
+                        first = False
+                    else:
+                        break  # anderer Fehler – SignWorker meldet ihn
 
         self._set_status(t("status_signing"))
         # TSA-URL nur übergeben wenn TSA in der Konfig aktiviert ist
@@ -1386,7 +1433,7 @@ class PDFSignerApp(QMainWindow):
         self._sign_worker = SignWorker(
             self._working_bytes, out, fdef, lib, pin, key_id, cert_cn,
             self.appearance, all_fields=list(self.sig_fields), tsa_url=tsa_url,
-            field_name=invis_name)
+            field_name=invis_name, mode=mode, pfx_path=pfx_path)
         # finished-Signal: signiertes PDF als neues Arbeitsdokument laden
         self._sign_worker.finished.connect(self._on_sign_done)
         self._sign_worker.error.connect(self._on_sign_error)
@@ -1417,11 +1464,13 @@ class PDFSignerApp(QMainWindow):
             pass  # Non-critical – UI stays in previous state
 
     def _on_sign_error(self, msg: str) -> None:
-        # Fehlermeldung bei Signaturfehlern (z.B. falsche PIN, Token nicht vorhanden)
+        # Fehlermeldung bei Signaturfehlern; Text je nach Signaturmodus
         self._set_status(t("status_sign_failed"))
+        mode = self.config.get("pkcs11", "signer_mode")
+        err_key = "dlg_sign_error_msg_pfx" if mode == "pfx" else "dlg_sign_error_msg"
         QMessageBox.critical(
             self, t("dlg_sign_error_title"),
-            t("dlg_sign_error_msg", error=msg))
+            t(err_key, error=msg))
 
     def _show_about(self) -> None:
         # "Über"-Dialog mit Versionsnummer und Git-Commit-Hash anzeigen

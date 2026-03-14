@@ -35,9 +35,9 @@ TRANSLATIONS: dict[str, str] = {
     "menu_file_save_fields": "Save with fields (copy)…",
     "menu_file_quit": "Quit",
     "menu_sign": "Sign",
-    "menu_sign_document": "Sign document (QES)…",
+    "menu_sign_document": "Sign document…",
     "menu_settings": "Settings",
-    "menu_settings_pkcs11": "Configure PKCS#11 / Token & TSA…",
+    "menu_settings_pkcs11": "Configure Signing / Token…",
     "menu_settings_language": "Language / Sprache",
     "menu_help": "Help",
     "menu_help_about": "About…",
@@ -50,16 +50,19 @@ TRANSLATIONS: dict[str, str] = {
     "tb_zoom_in":    "Zoom In  (Ctrl+wheel)",
     "tb_fit_width":  "Fit Page Width",
     "tb_fit_height": "Fit Page Height",
-    "tb_sign": "✍ Sign (QES)",
+    "tb_sign": "✍ Sign",
     "tb_save_fields": "💾 Save PDF",
     # Right panel – Fields
     "panel_fields": "Signature Fields",
     "btn_delete_field": "🗑 Delete",
     "btn_save_fields": "💾 Save as PDF",
     # Right panel – Token / PIN
-    "panel_token": "Token / PIN",
-    "pin_label": "PIN:",
-    "pin_hint": "leave empty for PIN pad",
+    "panel_token":     "Token / PIN",
+    "panel_token_pfx": "P12/PFX File / Password",
+    "pin_label":       "PIN:",
+    "pin_hint":        "leave empty for PIN pad",
+    "pin_label_pfx":   "Password:",
+    "pin_hint_pfx":    "leave empty if not password protected",
     # Right panel – Signature appearance
     "panel_appearance": "Signature Appearance",
     "app_layout_label": "Layout:",
@@ -119,7 +122,7 @@ TRANSLATIONS: dict[str, str] = {
     "dlg_no_field_sel_msg": "Please select a field in the list.",
     "dlg_missing_deps": "Missing Dependencies",
     "dlg_missing_deps_msg": (
-        "The following packages are missing for QES signing:\n\n{packages}\n\n"
+        "The following packages are missing for signing:\n\n{packages}\n\n"
         "Placing signature fields is still possible."
     ),
     "dlg_open_pdf_title": "Open PDF",
@@ -136,7 +139,7 @@ TRANSLATIONS: dict[str, str] = {
     "dlg_save_success_title": "Success",
     "dlg_save_success_msg": "PDF with signature fields saved:\n{path}",
     "dlg_sign_success_title": "Signing successful ✓",
-    "dlg_sign_success_msg": "QES signature successfully applied.\n\nFile: {path}",
+    "dlg_sign_success_msg": "Signature successfully applied.\n\nFile: {path}",
     "dlg_sign_error_title": "Signing Error",
     "dlg_sign_error_msg": (
         "Error during QES signing:\n\n{error}\n\n"
@@ -146,6 +149,14 @@ TRANSLATIONS: dict[str, str] = {
         "• Wrong library path\n"
         "• Key label mismatch\n"
         "• No certificate on token\n\n"
+        "Full traceback in console (stderr)."
+    ),
+    "dlg_sign_error_msg_pfx": (
+        "Error during signing:\n\n{error}\n\n"
+        "Common causes:\n"
+        "• Wrong password (or leave empty if not protected)\n"
+        "• P12/PFX file not found or corrupt\n"
+        "• No private key found in the file\n\n"
         "Full traceback in console (stderr)."
     ),
     "dlg_field_already_signed": "This field is already signed and cannot be used again.",
@@ -160,10 +171,28 @@ TRANSLATIONS: dict[str, str] = {
     "dlg_choose_field_label": "Sign with which field?",
     "dlg_invisible_field": "✦ Signature without field (invisible)",
     "tsa_enabled_label": "🕐 Enable Timestamp (TSA)",
-    # PKCS#11 dialog
-    "cfg_title": "Configure PKCS#11 / Token & TSA",
-    "cfg_tab_pkcs11": "PKCS#11 / Token",
-    "cfg_tab_tsa": "Timestamp (TSA)",
+    # Signing configuration dialog
+    "cfg_title":       "Configure Signing / Token",
+    "cfg_tab_pkcs11":  "Signing Method",
+    "cfg_tab_tsa":     "Timestamp (TSA)",
+    "cfg_mode_label":  "Method:",
+    "cfg_mode_pkcs11": "Hardware Token (PKCS#11)",
+    "cfg_mode_pfx":    "Key & Certificate (P12/PFX)",
+    "cfg_pfx_path_label":    "P12/PFX file:",
+    "cfg_pfx_browse_title":  "Choose P12/PFX file",
+    "cfg_pfx_filter":        "P12/PFX Files (*.p12 *.pfx);;All Files (*)",
+    "cfg_pfx_show_cert_btn": "Show Certificate",
+    "cfg_pfx_encrypted_yes": "Password protected",
+    "cfg_pfx_encrypted_no":  "Not password protected",
+    "cfg_pfx_no_file":        "No P12/PFX file selected.",
+    "cfg_pfx_password_title": "Password required",
+    "cfg_pfx_password_prompt": (
+        "The P12/PFX file is password protected.\n"
+        "Enter password (will not be stored):"
+    ),
+    "cfg_pfx_wrong_password_prompt": (
+        "Wrong password. Please try again:"
+    ),
     "cfg_tsa_url": "TSA URL:",
     "cfg_tsa_hint": "RFC 3161 timestamp service. Leave empty for default (BaltStamp).",
     "cfg_lib_label": "Library path (.so / .dll):",
@@ -197,7 +226,21 @@ TRANSLATIONS: dict[str, str] = {
     "dlg_token_class_certificate":         "Certificates",
     "dlg_token_class_public_key":          "Public Keys",
     "dlg_token_use_key": "Use ID",
-    "dlg_token_close": "Close",
+    "dlg_token_close":   "Close",
+    # PFX info dialog
+    "dlg_pfx_info_title":       "Certificate Information",
+    "dlg_pfx_private_key":      "Private Key",
+    "dlg_pfx_signing_cert":     "Signing Certificate",
+    "dlg_pfx_subject":          "Subject:",
+    "dlg_pfx_issuer":           "Issuer:",
+    "dlg_pfx_valid_from":       "Valid from:",
+    "dlg_pfx_valid_to":         "Valid to:",
+    "dlg_pfx_serial":           "Serial number:",
+    "dlg_pfx_self_signed":      "(self-signed)",
+    "dlg_pfx_chain_header":     "Certificate Chain ({n} certificate(s))",
+    "dlg_pfx_use_cn":           "Use CN",
+    "dlg_pfx_load_error_title": "Error",
+    "dlg_pfx_load_error":       "Could not load P12/PFX file:\n{error}",
     "dlg_token_no_key_title": "No Private Key Found",
     "dlg_token_no_key_msg": (
         "No private key found.\n\n"

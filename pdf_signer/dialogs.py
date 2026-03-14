@@ -413,39 +413,347 @@ class TokenInfoDialog(QDialog):
         self.accept()
 
 
+# ── PFX certificate info dialog ───────────────────────────────────────────────
+
+def _pfx_check_encrypted(pfx_path: str) -> bool:
+    """Return True if the PFX file at *pfx_path* requires a non-empty passphrase.
+
+    Attempts to load the file with password=None and password=b"" in sequence.
+    Returns True only when both attempts fail, indicating a real passphrase is
+    required.  IOErrors (file not found, permission denied) propagate to the
+    caller.
+    """
+    from cryptography.hazmat.primitives.serialization.pkcs12 import (
+        load_pkcs12 as _load_pfx,
+    )
+    with open(pfx_path, "rb") as fh:
+        data = fh.read()
+    for pw in (None, b""):
+        try:
+            _load_pfx(data, pw)
+            return False
+        except Exception:
+            pass
+    return True
+
+
+def _pfx_load_cert_info(pfx_path: str, passphrase: bytes | None = None) -> dict:
+    """Load PFX and return a dict with all displayable object details.
+
+    Top-level keys:
+      ``cn``          – Common Name of the signing certificate (for appearance)
+      ``key_type``    – e.g. "RSA" or "EC (ECC)" (empty if no key)
+      ``key_size``    – e.g. "2048 Bit" or curve name (empty if unknown)
+      ``subject``     – formatted DN of signing certificate
+      ``issuer``      – formatted DN of signing certificate issuer
+      ``valid_from``  – validity start (formatted date string)
+      ``valid_to``    – validity end (formatted date string)
+      ``serial``      – serial number as uppercase hex
+      ``self_signed`` – True when subject == issuer
+      ``chain``       – list of dicts, one per additional certificate, each with
+                        keys: ``cn``, ``subject``, ``issuer``, ``valid_from``,
+                        ``valid_to``, ``serial``, ``self_signed``
+
+    Raises on load failure (wrong passphrase, corrupt file, …).
+    """
+    from cryptography.hazmat.primitives.serialization.pkcs12 import (
+        load_pkcs12 as _load_pfx,
+    )
+    from cryptography import x509 as cx509
+    from cryptography.hazmat.primitives.asymmetric import rsa as _rsa, ec as _ec
+
+    with open(pfx_path, "rb") as fh:
+        data = fh.read()
+
+    pkcs12 = None
+    for pw in ([passphrase] if passphrase is not None else [None, b""]):
+        try:
+            pkcs12 = _load_pfx(data, pw)
+            break
+        except Exception:
+            pass
+    if pkcs12 is None:
+        _load_pfx(data, passphrase)  # re-raise with original passphrase
+
+    def fmt_dn(name) -> str:
+        parts = []
+        for attr in name:
+            lbl = _CERT_OID_NAMES.get(attr.oid.dotted_string, attr.oid.dotted_string)
+            parts.append(f"{lbl}={attr.value}")
+        return ", ".join(parts)
+
+    def cert_dict(cert) -> dict:
+        """Extract display fields from a cryptography x509.Certificate."""
+        attrs = cert.subject.get_attributes_for_oid(cx509.NameOID.COMMON_NAME)
+        return {
+            "cn":          attrs[0].value if attrs else "",
+            "subject":     fmt_dn(cert.subject),
+            "issuer":      fmt_dn(cert.issuer),
+            "valid_from":  cert.not_valid_before_utc.strftime("%d.%m.%Y"),
+            "valid_to":    cert.not_valid_after_utc.strftime("%d.%m.%Y"),
+            "serial":      f"{cert.serial_number:X}",
+            "self_signed": cert.subject == cert.issuer,
+        }
+
+    info: dict = {
+        "cn": "", "key_type": "", "key_size": "",
+        "subject": "", "issuer": "", "valid_from": "", "valid_to": "",
+        "serial": "", "self_signed": False, "chain": [],
+    }
+
+    # Schlüsseltyp und -größe aus dem privaten Schlüssel lesen.
+    # Der Schlüssel ist nur kurz im Speicher – kein Verweis wird gespeichert.
+    if pkcs12.key is not None:
+        k = pkcs12.key
+        if isinstance(k, _rsa.RSAPrivateKey):
+            info["key_type"] = "RSA"
+            info["key_size"] = f"{k.key_size} Bit"
+        elif isinstance(k, _ec.EllipticCurvePrivateKey):
+            info["key_type"] = "EC (ECC)"
+            info["key_size"] = k.curve.name
+        else:
+            info["key_type"] = type(k).__name__
+
+    if pkcs12.cert:
+        info.update(cert_dict(pkcs12.cert.certificate))
+
+    for extra in (pkcs12.additional_certs or []):
+        info["chain"].append(cert_dict(extra.certificate))
+
+    return info
+
+
+def _pfx_load_with_prompt(parent, pfx_path: str) -> tuple[dict, bytes | None] | None:
+    """Try to load PFX cert info, prompting for a password if necessary.
+
+    Returns ``(info_dict, passphrase)`` on success, or ``None`` if the user
+    cancelled the password dialog.  The passphrase is the resolved bytes value
+    (``None`` or ``b""`` for unprotected files, encoded bytes for protected ones)
+    so the caller can forward it to further operations like ``PfxInfoDialog``.
+
+    The private key is decrypted only briefly to parse the certificate; no
+    reference to the key object is retained after this function returns.
+    The passphrase itself is not stored anywhere by this function.
+    """
+    from PyQt6.QtWidgets import QInputDialog, QLineEdit
+
+    # First attempt: no password (covers unprotected and empty-password files)
+    try:
+        info = _pfx_load_cert_info(pfx_path)
+        return info, None
+    except Exception:
+        pass
+
+    # File requires a real passphrase – ask the user once
+    pw_str, ok = QInputDialog.getText(
+        parent,
+        t("cfg_pfx_password_title"),
+        t("cfg_pfx_password_prompt"),
+        QLineEdit.EchoMode.Password,
+    )
+    if not ok:
+        return None  # user cancelled
+
+    passphrase = pw_str.encode() if pw_str else b""
+    try:
+        info = _pfx_load_cert_info(pfx_path, passphrase)
+        return info, passphrase
+    except Exception as exc:
+        QMessageBox.critical(
+            parent,
+            t("dlg_pfx_load_error_title"),
+            t("dlg_pfx_load_error", error=str(exc)),
+        )
+        return None
+
+
+class PfxInfoDialog(QDialog):
+    """Display all objects from a PFX/PKCS#12 file in a grouped tree.
+
+    Three sections mirror the PKCS#11 TokenInfoDialog layout:
+      - Private Key   – key type and size
+      - Signaturzertifikat – subject, issuer, validity, serial
+      - Zertifikatskette   – one entry per additional (CA) certificate
+
+    The "CN übernehmen" button emits ``cn_selected(str)`` with the Common Name
+    of the signing certificate so the caller can populate the cert_cn field.
+    """
+
+    cn_selected = pyqtSignal(str)
+
+    def __init__(self, parent, pfx_path: str = "",
+                 passphrase: bytes | None = None,
+                 info: dict | None = None) -> None:
+        """Show PFX object tree.
+
+        Pass a pre-loaded *info* dict (from ``_pfx_load_cert_info``) to avoid
+        reading and decrypting the file a second time.  If *info* is None the
+        file is loaded from *pfx_path* using *passphrase*.
+        """
+        super().__init__(parent)
+        self.setWindowTitle(t("dlg_pfx_info_title"))
+        self.resize(680, 480)
+        self._cn = ""
+        if info is None:
+            try:
+                info = _pfx_load_cert_info(pfx_path, passphrase)
+            except Exception as exc:
+                traceback.print_exc()
+                QMessageBox.critical(parent, t("dlg_pfx_load_error_title"),
+                                     t("dlg_pfx_load_error", error=str(exc)))
+                self._build_error_ui(str(exc))
+                return
+        self._cn = info.get("cn", "")
+        self._build_ui(info)
+
+    def _build_error_ui(self, msg: str) -> None:
+        lay = QVBoxLayout(self)
+        lay.addWidget(QLabel(msg))
+        btn = QPushButton(t("dlg_token_close"))
+        btn.clicked.connect(self.accept)
+        lay.addWidget(btn)
+
+    @staticmethod
+    def _add_section(tree, title: str, alt_brush) -> "QTreeWidgetItem":
+        """Add a bold, shaded, non-selectable section header to *tree*."""
+        from PyQt6.QtWidgets import QTreeWidgetItem
+        hdr = QTreeWidgetItem([title, ""])
+        hdr.setFlags(Qt.ItemFlag.ItemIsEnabled)
+        font = hdr.font(0); font.setBold(True); hdr.setFont(0, font)
+        hdr.setBackground(0, alt_brush); hdr.setBackground(1, alt_brush)
+        tree.addTopLevelItem(hdr)
+        return hdr
+
+    @staticmethod
+    def _add_object(parent_item, label: str, attrs: list[tuple[str, str]]):
+        """Add an object item with attribute children under *parent_item*."""
+        from PyQt6.QtWidgets import QTreeWidgetItem
+        obj = QTreeWidgetItem(parent_item, [label, ""])
+        for attr_lbl, attr_val in attrs:
+            if attr_val:
+                child = QTreeWidgetItem(obj, [attr_lbl, attr_val])
+                child.setFlags(Qt.ItemFlag.ItemIsEnabled)
+        return obj
+
+    def _build_ui(self, info: dict) -> None:
+        lay = QVBoxLayout(self)
+
+        tree = QTreeWidget()
+        tree.setHeaderHidden(True)
+        tree.setColumnCount(2)
+        tree.header().setStretchLastSection(True)
+        tree.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        alt_brush = self.palette().alternateBase()
+
+        # ── Privater Schlüssel ────────────────────────────────────────────
+        if info.get("key_type"):
+            hdr = self._add_section(tree, t("dlg_pfx_private_key"), alt_brush)
+            self._add_object(hdr, info["key_type"], [
+                ("Schlüsseltyp",   info["key_type"]),
+                ("Schlüssellänge", info.get("key_size", "")),
+            ])
+
+        # ── Signaturzertifikat ────────────────────────────────────────────
+        if info.get("subject"):
+            hdr = self._add_section(tree, t("dlg_pfx_signing_cert"), alt_brush)
+            issuer = (f"{info['issuer']}  {t('dlg_pfx_self_signed')}"
+                      if info["self_signed"] else info["issuer"])
+            self._add_object(hdr, info["cn"] or info["subject"], [
+                ("Inhaber",        info["subject"]),
+                ("Aussteller",     issuer),
+                ("Gültig ab",      info["valid_from"]),
+                ("Gültig bis",     info["valid_to"]),
+                ("Seriennummer",   info["serial"]),
+            ])
+
+        # ── Zertifikatskette ──────────────────────────────────────────────
+        if info["chain"]:
+            hdr = self._add_section(
+                tree, t("dlg_pfx_chain_header", n=len(info["chain"])), alt_brush)
+            for c in info["chain"]:
+                issuer = (f"{c['issuer']}  {t('dlg_pfx_self_signed')}"
+                          if c["self_signed"] else c["issuer"])
+                self._add_object(hdr, c["cn"] or c["subject"], [
+                    ("Inhaber",      c["subject"]),
+                    ("Aussteller",   issuer),
+                    ("Gültig ab",    c["valid_from"]),
+                    ("Gültig bis",   c["valid_to"]),
+                    ("Seriennummer", c["serial"]),
+                ])
+
+        tree.expandAll()
+        tree.resizeColumnToContents(0)
+        lay.addWidget(tree)
+
+        # ── Buttons ───────────────────────────────────────────────────────
+        btn_row = QHBoxLayout()
+        if self._cn:
+            btn_use = QPushButton(t("dlg_pfx_use_cn"))
+            btn_use.clicked.connect(self._use_cn)
+            btn_row.addWidget(btn_use)
+        btn_row.addStretch()
+        btn_close = QPushButton(t("dlg_token_close"))
+        btn_close.clicked.connect(self.accept)
+        btn_row.addWidget(btn_close)
+        lay.addLayout(btn_row)
+
+    def _use_cn(self) -> None:
+        self.cn_selected.emit(self._cn)
+        self.accept()
+
+
 # ── PKCS#11 configuration dialog ──────────────────────────────────────────────
 
 class Pkcs11ConfigDialog(QDialog):
-    """Configure the PKCS#11 library path and key label.
+    """Configure the signing method (PKCS#11 token or PFX file) and TSA.
 
-    PIN entry is intentionally absent here – the PIN is entered in the main
-    window's Token/PIN panel so that it is available before the token test.
+    Tab 1 – Signing method:
+      A QComboBox selects the signing source (currently PFX/PKCS#12 or
+      PKCS#11 hardware token; designed to be extensible for future sources).
+      The relevant form rows are shown or hidden based on the selection.
+      The shared cert_cn field is read-only in both modes; it is filled from
+      the token dialog (PKCS#11) or from the certificate inside the PFX file.
+
+    Tab 2 – TSA: unchanged.
+
+    PIN entry is intentionally absent here – the PIN / passphrase is entered
+    in the main window's Token/PIN panel so that it is available immediately
+    before signing.
     """
 
     def __init__(self, parent, config: AppConfig) -> None:
         super().__init__(parent)
-        # config: AppConfig-Instanz, aus der Werte gelesen und in die
-        # gespeichert werden (persistiert als INI-Datei auf Disk)
         self.config = config
         self.setWindowTitle(t("cfg_title"))
         self.setMinimumWidth(520)
+        # Cache für geladene PFX-Metadaten; wird bei Dateiauswahl gefüllt und
+        # bei Pfadänderung geleert. Nur Metadaten – kein Passwort, kein Schlüssel.
+        self._pfx_info: dict | None = None
         self._build_ui()
         self._load_values()
 
     def _build_ui(self) -> None:
         lay  = QVBoxLayout(self)
-
-        # Dialog ist in zwei Tabs aufgeteilt: PKCS#11-Einstellungen und TSA-URL
         tabs = QTabWidget()
 
-        # ── Tab 1: PKCS#11 ────────────────────────────────────────────────
-        pkcs11_tab = QWidget()
-        ptab_lay   = QVBoxLayout(pkcs11_tab)
+        # ── Tab 1: Signatur-Methode ────────────────────────────────────────
+        sig_tab  = QWidget()
+        stab_lay = QVBoxLayout(sig_tab)
+
+        # Modus-Auswahl: QComboBox (erweiterbar für künftige Signaturquellen)
+        mode_row = QHBoxLayout()
+        self._mode_combo = QComboBox()
+        self._mode_combo.addItem(t("cfg_mode_pfx"),    "pfx")
+        self._mode_combo.addItem(t("cfg_mode_pkcs11"), "pkcs11")
+        mode_row.addWidget(QLabel(t("cfg_mode_label")))
+        mode_row.addWidget(self._mode_combo, 1)
+        stab_lay.addLayout(mode_row)
+
+        # Gemeinsames Formular; einzelne Zeilen werden je nach Modus ein-/ausgeblendet
         form = QFormLayout()
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
-        # Eingabezeile für den Pfad zur PKCS#11-Bibliothek (.so/.dll)
-        # Platzhaltertext zeigt plattformspezifische Beispiele
+        # ── PKCS#11-spezifische Felder ─────────────────────────────────────
         lib_row = QHBoxLayout()
         self.lib_edit = QLineEdit()
         self.lib_edit.setPlaceholderText(
@@ -453,62 +761,93 @@ class Pkcs11ConfigDialog(QDialog):
             if sys.platform == "win32"
             else "/usr/lib/.../opensc-pkcs11.so"
         )
-        # "…"-Schaltfläche öffnet Dateiauswahl-Dialog
         bb = QPushButton(t("cfg_lib_browse"))
         bb.setFixedWidth(36)
         bb.clicked.connect(self._browse_lib)
         lib_row.addWidget(self.lib_edit)
         lib_row.addWidget(bb)
-        form.addRow(t("cfg_lib_label"), lib_row)
+        self._lib_lbl   = QLabel(t("cfg_lib_label"))
+        self._lib_widget = QWidget()
+        self._lib_widget.setLayout(lib_row)
+        form.addRow(self._lib_lbl, self._lib_widget)
 
-        # Eingabefeld für die CKA_ID des privaten Schlüssels (Hex-String).
-        # Wird aus dem Token-Info-Dialog übernommen oder manuell eingegeben.
         self.key_id_edit = QLineEdit()
         self.key_id_edit.setPlaceholderText(t("cfg_key_id_placeholder"))
-        key_id_hint = QLabel(t("cfg_key_id_hint"))
-        key_id_hint.setStyleSheet("color: gray; font-size: 10px;")
-        form.addRow(t("cfg_key_id_label"), self.key_id_edit)
-        form.addRow("", key_id_hint)
+        self._key_id_lbl  = QLabel(t("cfg_key_id_label"))
+        self._key_id_hint = QLabel(t("cfg_key_id_hint"))
+        self._key_id_hint.setStyleSheet("color: gray; font-size: 10px;")
+        form.addRow(self._key_id_lbl, self.key_id_edit)
+        form.addRow("", self._key_id_hint)
 
-        # Anzeige des CN aus dem Zertifikat – read-only, wird aus dem
-        # Token-Info-Dialog übernommen und dient als Anzeigename in der Signatur
-        self.cert_cn_edit = QLineEdit()
-        self.cert_cn_edit.setReadOnly(True)
-        self.cert_cn_edit.setStyleSheet("color: gray;")
-        form.addRow(t("cfg_cert_cn_label"), self.cert_cn_edit)
-
-        # PIN-Eingabe für den Test-Modus mit PIN.
-        # Im Hauptfenster wird die PIN gesondert eingegeben (vor dem Signieren).
         self.pin_edit = QLineEdit()
         self.pin_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self.pin_edit.setPlaceholderText(t("cfg_pin_placeholder"))
-        pin_hint = QLabel(t("cfg_pin_hint"))
-        pin_hint.setStyleSheet("color: gray; font-size: 10px;")
-        form.addRow(t("cfg_pin_label"), self.pin_edit)
-        form.addRow("", pin_hint)
-        ptab_lay.addLayout(form)
+        self._pin_lbl  = QLabel(t("cfg_pin_label"))
+        self._pin_hint = QLabel(t("cfg_pin_hint"))
+        self._pin_hint.setStyleSheet("color: gray; font-size: 10px;")
+        form.addRow(self._pin_lbl, self.pin_edit)
+        form.addRow("", self._pin_hint)
 
-        # Zwei Test-Schaltflächen: ohne PIN (liest öffentliche Objekte)
-        # und mit PIN (authentifiziert und zeigt auch private Schlüssel)
-        test_row = QHBoxLayout()
+        # ── PFX-spezifische Felder ─────────────────────────────────────────
+        pfx_row = QHBoxLayout()
+        self.pfx_edit = QLineEdit()
+        self.pfx_edit.setPlaceholderText(t("cfg_pfx_path_label"))
+        self.pfx_edit.textChanged.connect(self._on_pfx_path_changed)
+        pfx_bb = QPushButton(t("cfg_lib_browse"))
+        pfx_bb.setFixedWidth(36)
+        pfx_bb.clicked.connect(self._browse_pfx)
+        pfx_row.addWidget(self.pfx_edit)
+        pfx_row.addWidget(pfx_bb)
+        self._pfx_lbl    = QLabel(t("cfg_pfx_path_label"))
+        self._pfx_widget = QWidget()
+        self._pfx_widget.setLayout(pfx_row)
+        self._pfx_hint = QLabel("")
+        self._pfx_hint.setStyleSheet("color: gray; font-size: 10px;")
+        form.addRow(self._pfx_lbl, self._pfx_widget)
+        form.addRow("", self._pfx_hint)
+
+        # ── Gemeinsames Feld: CN ───────────────────────────────────────────
+        # Zeigt in beiden Modi den CN aus dem Zertifikat (read-only)
+        self.cert_cn_edit = QLineEdit()
+        self.cert_cn_edit.setReadOnly(True)
+        self.cert_cn_edit.setStyleSheet("color: gray;")
+        self._cert_cn_lbl = QLabel(t("cfg_cert_cn_label"))
+        form.addRow(self._cert_cn_lbl, self.cert_cn_edit)
+
+        stab_lay.addLayout(form)
+
+        # ── PKCS#11-Aktionen ───────────────────────────────────────────────
+        self._pkcs11_test_widget = QWidget()
+        test_row = QHBoxLayout(self._pkcs11_test_widget)
+        test_row.setContentsMargins(0, 0, 0, 0)
         test_no_pin = QPushButton(t("cfg_test_btn_no_pin"))
         test_no_pin.clicked.connect(lambda: self._test_token(with_pin=False))
         test_with_pin = QPushButton(t("cfg_test_btn_with_pin"))
         test_with_pin.clicked.connect(lambda: self._test_token(with_pin=True))
         test_row.addWidget(test_no_pin)
         test_row.addWidget(test_with_pin)
-        ptab_lay.addLayout(test_row)
+        stab_lay.addWidget(self._pkcs11_test_widget)
 
-        # Status-Label zeigt Ergebnis des Token-Tests oder Fehlermeldungen
+        # ── PFX-Aktionen ───────────────────────────────────────────────────
+        self._pfx_action_widget = QWidget()
+        pfx_action_row = QHBoxLayout(self._pfx_action_widget)
+        pfx_action_row.setContentsMargins(0, 0, 0, 0)
+        self._pfx_show_cert_btn = QPushButton(t("cfg_pfx_show_cert_btn"))
+        self._pfx_show_cert_btn.clicked.connect(self._show_pfx_cert)
+        pfx_action_row.addWidget(self._pfx_show_cert_btn)
+        pfx_action_row.addStretch()
+        stab_lay.addWidget(self._pfx_action_widget)
+
+        # Status-Label (beide Modi)
         self.status_lbl = QLabel("")
         self.status_lbl.setWordWrap(True)
-        ptab_lay.addWidget(self.status_lbl)
-        ptab_lay.addStretch()
-        tabs.addTab(pkcs11_tab, t("cfg_tab_pkcs11"))
+        stab_lay.addWidget(self.status_lbl)
+        stab_lay.addStretch()
+
+        tabs.addTab(sig_tab, t("cfg_tab_pkcs11"))
 
         # ── Tab 2: TSA ────────────────────────────────────────────────────
-        # TSA (Time Stamp Authority) – optionaler RFC-3161-Zeitstempel für die Signatur
-        tsa_tab = QWidget()
+        tsa_tab  = QWidget()
         tsa_form = QFormLayout(tsa_tab)
         tsa_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         self.tsa_url_edit = QLineEdit()
@@ -522,29 +861,60 @@ class Pkcs11ConfigDialog(QDialog):
 
         lay.addWidget(tabs)
 
-        # Speichern/Abbrechen-Schaltflächen am unteren Rand
         bb2 = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save |
             QDialogButtonBox.StandardButton.Cancel)
         bb2.button(QDialogButtonBox.StandardButton.Save).setText(t("cfg_save_btn"))
         bb2.button(QDialogButtonBox.StandardButton.Cancel).setText(t("cfg_cancel_btn"))
-        # "Speichern" schreibt Werte in AppConfig und schließt den Dialog
         bb2.accepted.connect(self._save_and_close)
         bb2.rejected.connect(self.reject)
         lay.addWidget(bb2)
 
+        # Modus-Wechsel verbinden (nach Widget-Erstellung)
+        self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+
+    def _on_mode_changed(self, _index: int = -1) -> None:
+        """Show/hide form rows based on selected signing mode."""
+        pkcs11 = (self._mode_combo.currentData() == "pkcs11")
+        # PKCS#11-spezifische Widgets
+        for w in (self._lib_lbl, self._lib_widget,
+                  self._key_id_lbl, self.key_id_edit, self._key_id_hint,
+                  self._pin_lbl, self.pin_edit, self._pin_hint,
+                  self._pkcs11_test_widget):
+            w.setVisible(pkcs11)
+        # PFX-spezifische Widgets
+        for w in (self._pfx_lbl, self._pfx_widget, self._pfx_hint,
+                  self._pfx_action_widget):
+            w.setVisible(not pkcs11)
+        self.status_lbl.setText("")
+
     def _load_values(self) -> None:
-        # Alle Felder aus der gespeicherten Konfiguration füllen
+        mode = self.config.get("pkcs11", "signer_mode")
+        # Combobox: Index 0 = pfx, Index 1 = pkcs11
+        idx = 1 if mode == "pkcs11" else 0
+        self._mode_combo.blockSignals(True)
+        self._mode_combo.setCurrentIndex(idx)
+        self._mode_combo.blockSignals(False)
         self.lib_edit.setText(self.config.get("pkcs11", "lib_path"))
         self.key_id_edit.setText(self.config.get("pkcs11", "key_id"))
         self.cert_cn_edit.setText(self.config.get("pkcs11", "cert_cn"))
+        # pfx_edit setzen ohne _on_pfx_path_changed auszulösen (kein Cache-Reset)
+        self.pfx_edit.blockSignals(True)
+        self.pfx_edit.setText(self.config.get("pkcs11", "pfx_path"))
+        self.pfx_edit.blockSignals(False)
         self.tsa_url_edit.setText(self.config.get("tsa", "url"))
+        self._on_mode_changed()
+        self._update_pfx_hint()
+        # Infos für bereits gespeicherten Pfad vorladen (ohne Passwort-Prompt)
+        pfx_path = self.pfx_edit.text().strip()
+        if pfx_path and mode == "pfx":
+            try:
+                self._pfx_info = _pfx_load_cert_info(pfx_path)
+            except Exception:
+                pass  # Passwortgeschützt – Cache bleibt leer bis User öffnet
 
     def _browse_lib(self) -> None:
-        # Dateiauswahl-Dialog für die PKCS#11-Bibliothek öffnen.
-        # Startverzeichnis: zuletzt genutztes Lib-Verzeichnis aus der Konfig.
         start = self.config.get("paths", "last_lib_dir")
-        # Dateifilter ist plattformspezifisch (DLL auf Windows, .so auf Linux/Mac)
         if sys.platform == "win32":
             lib_filter = "DLL (*.dll);;Shared Libraries (*.so *.so.*);;All Files (*)"
         else:
@@ -553,14 +923,81 @@ class Pkcs11ConfigDialog(QDialog):
             self, t("dlg_browse_lib"), start, lib_filter)
         if path:
             self.lib_edit.setText(path)
-            # Zuletzt genutztes Verzeichnis speichern für künftige Dateidialoge
             self.config.set("paths", "last_lib_dir", str(Path(path).parent))
 
+    def _browse_pfx(self) -> None:
+        """Open file dialog to select a PFX/PKCS#12 file.
+
+        After selection, certificate metadata is read immediately.  If the
+        file is password-protected a password dialog is shown once; only the
+        CN is stored in the config – the passphrase and the private key object
+        are discarded as soon as the metadata has been extracted.
+        """
+        start = self.config.get("paths", "last_open_dir")
+        path, _ = QFileDialog.getOpenFileName(
+            self, t("cfg_pfx_browse_title"), start, t("cfg_pfx_filter"))
+        if not path:
+            return
+        self.pfx_edit.setText(path)
+        self.config.set("paths", "last_open_dir", str(Path(path).parent))
+        # Metadaten lesen – bei passwortgeschützter Datei erscheint ein Popup.
+        # Passwort und privater Schlüssel werden nach dem Lesen verworfen.
+        result = _pfx_load_with_prompt(self, path)
+        if result is not None:
+            info, _ = result   # passphrase wird hier verworfen
+            self._pfx_info = info  # Metadaten cachen für "Zertifikat anzeigen"
+            if info.get("cn"):
+                self.cert_cn_edit.setText(info["cn"])
+
+    def _on_pfx_path_changed(self, _text: str) -> None:
+        """Clear cached info and update hint when the PFX path field changes."""
+        self._pfx_info = None
+        self._update_pfx_hint()
+
+    def _update_pfx_hint(self) -> None:
+        """Show whether the current PFX file is password-protected."""
+        path = self.pfx_edit.text().strip()
+        if not path or not Path(path).exists():
+            self._pfx_hint.setText("")
+            return
+        try:
+            encrypted = _pfx_check_encrypted(path)
+            if encrypted:
+                self._pfx_hint.setText(t("cfg_pfx_encrypted_yes"))
+                self._pfx_hint.setStyleSheet("color: #c07000; font-size: 10px;")
+            else:
+                self._pfx_hint.setText(t("cfg_pfx_encrypted_no"))
+                self._pfx_hint.setStyleSheet("color: gray; font-size: 10px;")
+        except Exception:
+            self._pfx_hint.setText("")
+
+    def _show_pfx_cert(self) -> None:
+        """Open PfxInfoDialog using cached metadata (no second password prompt).
+
+        If the cache is empty (e.g. dialog re-opened without re-selecting the
+        file) the file is loaded again, prompting for a password if needed.
+        """
+        path = self.pfx_edit.text().strip()
+        if not path:
+            self.status_lbl.setText(t("cfg_pfx_no_file"))
+            return
+        if self._pfx_info is None:
+            result = _pfx_load_with_prompt(self, path)
+            if result is None:
+                return
+            info, _ = result
+            self._pfx_info = info
+        dlg = PfxInfoDialog(self, info=self._pfx_info)
+        dlg.cn_selected.connect(self.cert_cn_edit.setText)
+        dlg.exec()
+
     def _save_and_close(self) -> None:
-        # Alle Eingabewerte in die AppConfig übertragen und persistent speichern
+        mode = self._mode_combo.currentData() or "pfx"
+        self.config.set("pkcs11", "signer_mode", mode)
         self.config.set("pkcs11", "lib_path", self.lib_edit.text().strip())
         self.config.set("pkcs11", "key_id",   self.key_id_edit.text().strip())
         self.config.set("pkcs11", "cert_cn",  self.cert_cn_edit.text().strip())
+        self.config.set("pkcs11", "pfx_path", self.pfx_edit.text().strip())
         self.config.set("tsa", "url", self.tsa_url_edit.text().strip())
         self.config.save()
         self.accept()

@@ -82,11 +82,13 @@ class AppConfig:
     # Profile settings – stored in profiles/<name>.ini
     PROFILE_DEFAULTS: dict[str, dict[str, str]] = {
         "pkcs11": {
+            "signer_mode":   "pfx",
             "lib_path": ("P11TCOSSigGx64.dll"
                          if sys.platform == "win32"
                          else "/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so"),
-            "key_id":   "",
-            "cert_cn":  "",
+            "key_id":        "",
+            "cert_cn":       "",
+            "pfx_path":      "",
         },
         "paths": {
             "last_open_dir": str(Path.home()),
