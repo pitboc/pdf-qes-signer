@@ -52,8 +52,16 @@ pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
   signer name, location, reason, and date
 - Apply a QES signature via any PKCS#11-compatible smartcard or USB token —
   specifically tested and developed for **Telesec TCOS 3.0 SigG** cards
+- Sign using a **PFX/PKCS#12 file** certificate as an alternative to a hardware token
 - PIN-pad support: leave the PIN field empty to use the hardware PIN pad;
   the PKCS#11 session is kept open so the PIN is requested only once
+- Optional **RFC 3161 timestamp (TSA)** embedded in the signature
+- Optional **long-term archival (PAdES-LTA)**: embeds OCSP revocation status
+  and an archival timestamp; requires a TSA URL and a CA-issued certificate
+  with OCSP service. Trust roots are sourced from the Mozilla CA bundle
+  (certifi) plus any CA certificates present on the token — no system CA
+  store required. If the OCSP fetch fails, signing proceeds normally with
+  a warning.
 - Chain multiple signatures: after signing, the signed PDF is reloaded
   automatically so further fields can be signed in sequence
 - Existing unsigned fields in already-signed PDFs are shown as locked (orange)
@@ -70,6 +78,8 @@ pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
 - [pyhanko](https://pyhanko.readthedocs.io/) + pyhanko-certvalidator
 - [python-pkcs11](https://python-pkcs11.readthedocs.io/)
 - [cryptography](https://cryptography.io/)
+- [certifi](https://github.com/certifi/python-certifi) (Mozilla CA bundle; installed
+  automatically as a transitive dependency – no manual installation required)
 
 ### Windows: additional prerequisites
 

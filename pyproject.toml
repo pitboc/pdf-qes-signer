@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pdf-qes-signer"
-version = "0.3.0.dev0"
+version = "0.3.0"
 description = "GUI tool for visually placing signature fields in PDFs and applying qualified electronic signatures (QES) via PKCS#11 / smartcard, specifically developed for Telesec TCOS 3.0 SigG cards"
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }
@@ -34,6 +34,7 @@ dependencies = [
     "PyQt6>=6.4",
     "pyhanko>=0.20",
     "pyhanko-certvalidator>=0.26",
+    "certifi",
     "python-pkcs11>=0.7",
     "cryptography>=41.0",
 ]

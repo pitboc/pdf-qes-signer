@@ -170,7 +170,24 @@ TRANSLATIONS: dict[str, str] = {
     "dlg_choose_field_title": "Signaturfeld wählen",
     "dlg_choose_field_label": "Mit welchem Feld signieren?",
     "dlg_invisible_field": "✦ Signatur ohne Feld (unsichtbar)",
-    "tsa_enabled_label": "🕐 Zeitstempel (TSA) aktivieren",
+    "tsa_enabled_label":   "🕐 Zeitstempel (TSA) aktivieren",
+    "cfg_ocsp_lta_label":  "Widerrufsstatus für Langzeitarchivierung einbetten (OCSP/PAdES-LTA)",
+    "cfg_ocsp_lta_hint": (
+        "Bettet den aktuellen Widerrufsstatus aller Zertifikate ein und fügt "
+        "einen Archivzeitstempel hinzu. Erfordert ein von einer "
+        "Zertifizierungsstelle ausgestelltes Zertifikat mit OCSP-Dienst."
+    ),
+    "cfg_ocsp_self_signed_hint": (
+        "Nicht verfügbar: Das gewählte Zertifikat ist selbstsigniert. "
+        "Für Langzeitarchivierung wird ein CA-ausgestelltes Zertifikat benötigt."
+    ),
+    "dlg_ocsp_warning_title": "Langzeitarchivierung nicht eingebettet",
+    "dlg_ocsp_warning_msg": (
+        "Der Widerrufsstatus konnte nicht abgerufen werden – "
+        "das Dokument wurde ohne Langzeitarchivierungsdaten signiert.\n\n"
+        "Zeitstempel und Signatur wurden erfolgreich eingefügt.\n\n"
+        "Technische Ursache: {error}"
+    ),
     # Signatur-Konfigurationsdialog
     "cfg_title":       "Signatur / Token konfigurieren",
     "cfg_tab_pkcs11":  "Signatur-Methode",

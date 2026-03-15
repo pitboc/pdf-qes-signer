@@ -96,8 +96,9 @@ class AppConfig:
             "last_img_dir":  str(Path.home()),
         },
         "tsa": {
-            "enabled": "0",
-            "url":     "http://tsa.baltstamp.lt",
+            "enabled":              "0",
+            "url":                  "http://tsa.baltstamp.lt",
+            "embed_validation_info": "0",
         },
         "appearance": {
             "image_path":    "",

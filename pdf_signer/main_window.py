@@ -1410,8 +1410,10 @@ class PDFSignerApp(QMainWindow):
 
         self._set_status(t("status_signing"))
         # TSA-URL nur übergeben wenn TSA in der Konfig aktiviert ist
-        tsa_url = (self.config.get("tsa", "url")
-                   if self.config.getbool("tsa", "enabled") else "")
+        tsa_on  = self.config.getbool("tsa", "enabled")
+        tsa_url = self.config.get("tsa", "url") if tsa_on else ""
+        # OCSP/LTA nur wenn TSA aktiv (use_pades_lta erfordert Timestamper)
+        embed_vi = tsa_on and self.config.getbool("tsa", "embed_validation_info")
 
         # Generate a unique name for invisible signatures
         # Für unsichtbare Signaturen: eindeutigen Feldnamen generieren
@@ -1433,10 +1435,12 @@ class PDFSignerApp(QMainWindow):
         self._sign_worker = SignWorker(
             self._working_bytes, out, fdef, lib, pin, key_id, cert_cn,
             self.appearance, all_fields=list(self.sig_fields), tsa_url=tsa_url,
-            field_name=invis_name, mode=mode, pfx_path=pfx_path)
+            field_name=invis_name, mode=mode, pfx_path=pfx_path,
+            embed_validation_info=embed_vi)
         # finished-Signal: signiertes PDF als neues Arbeitsdokument laden
         self._sign_worker.finished.connect(self._on_sign_done)
         self._sign_worker.error.connect(self._on_sign_error)
+        self._sign_worker.warning.connect(self._on_sign_warning)
         self._sign_worker.start()
 
     def _on_sign_done(self, path: str) -> None:
@@ -1471,6 +1475,12 @@ class PDFSignerApp(QMainWindow):
         QMessageBox.critical(
             self, t("dlg_sign_error_title"),
             t(err_key, error=msg))
+
+    def _on_sign_warning(self, msg: str) -> None:
+        # Hinweis: Signatur und Zeitstempel erfolgreich, aber OCSP-Einbettung fehlgeschlagen
+        QMessageBox.warning(
+            self, t("dlg_ocsp_warning_title"),
+            t("dlg_ocsp_warning_msg", error=msg))
 
     def _show_about(self) -> None:
         # "Über"-Dialog mit Versionsnummer und Git-Commit-Hash anzeigen

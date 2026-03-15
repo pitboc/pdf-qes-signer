@@ -857,6 +857,15 @@ class Pkcs11ConfigDialog(QDialog):
         tsa_hint.setWordWrap(True)
         tsa_form.addRow(t("cfg_tsa_url"), self.tsa_url_edit)
         tsa_form.addRow("", tsa_hint)
+
+        # OCSP/PAdES-LTA-Checkbox
+        self.ocsp_lta_chk = QCheckBox(t("cfg_ocsp_lta_label"))
+        self._ocsp_hint_lbl = QLabel()
+        self._ocsp_hint_lbl.setWordWrap(True)
+        self._ocsp_hint_lbl.setStyleSheet("color: gray; font-size: 10px;")
+        tsa_form.addRow("", self.ocsp_lta_chk)
+        tsa_form.addRow("", self._ocsp_hint_lbl)
+
         tabs.addTab(tsa_tab, t("cfg_tab_tsa"))
 
         lay.addWidget(tabs)
@@ -887,6 +896,7 @@ class Pkcs11ConfigDialog(QDialog):
                   self._pfx_action_widget):
             w.setVisible(not pkcs11)
         self.status_lbl.setText("")
+        self._update_ocsp_state()
 
     def _load_values(self) -> None:
         mode = self.config.get("pkcs11", "signer_mode")
@@ -903,6 +913,7 @@ class Pkcs11ConfigDialog(QDialog):
         self.pfx_edit.setText(self.config.get("pkcs11", "pfx_path"))
         self.pfx_edit.blockSignals(False)
         self.tsa_url_edit.setText(self.config.get("tsa", "url"))
+        self.ocsp_lta_chk.setChecked(self.config.getbool("tsa", "embed_validation_info"))
         self._on_mode_changed()
         self._update_pfx_hint()
         # Infos für bereits gespeicherten Pfad vorladen (ohne Passwort-Prompt)
@@ -912,6 +923,7 @@ class Pkcs11ConfigDialog(QDialog):
                 self._pfx_info = _pfx_load_cert_info(pfx_path)
             except Exception:
                 pass  # Passwortgeschützt – Cache bleibt leer bis User öffnet
+        self._update_ocsp_state()
 
     def _browse_lib(self) -> None:
         start = self.config.get("paths", "last_lib_dir")
@@ -948,11 +960,13 @@ class Pkcs11ConfigDialog(QDialog):
             self._pfx_info = info  # Metadaten cachen für "Zertifikat anzeigen"
             if info.get("cn"):
                 self.cert_cn_edit.setText(info["cn"])
+            self._update_ocsp_state()
 
     def _on_pfx_path_changed(self, _text: str) -> None:
         """Clear cached info and update hint when the PFX path field changes."""
         self._pfx_info = None
         self._update_pfx_hint()
+        self._update_ocsp_state()
 
     def _update_pfx_hint(self) -> None:
         """Show whether the current PFX file is password-protected."""
@@ -970,6 +984,33 @@ class Pkcs11ConfigDialog(QDialog):
                 self._pfx_hint.setStyleSheet("color: gray; font-size: 10px;")
         except Exception:
             self._pfx_hint.setText("")
+
+    def _update_ocsp_state(self) -> None:
+        """Enable/disable the OCSP checkbox based on cert type and signer mode.
+
+        OCSP requires a CA-issued certificate with an AIA/OCSP extension.
+        Self-signed certificates (detectable for PFX) cannot use OCSP.
+        PKCS#11 hardware tokens always carry CA-issued certificates.
+        """
+        mode = self._mode_combo.currentData() or "pfx"
+        if mode == "pfx":
+            self_signed = bool(
+                self._pfx_info and self._pfx_info.get("self_signed", False))
+            if self_signed:
+                self.ocsp_lta_chk.setEnabled(False)
+                self.ocsp_lta_chk.setChecked(False)
+                self._ocsp_hint_lbl.setText(t("cfg_ocsp_self_signed_hint"))
+                self._ocsp_hint_lbl.setStyleSheet(
+                    "color: #c07000; font-size: 10px;")
+            else:
+                self.ocsp_lta_chk.setEnabled(True)
+                self._ocsp_hint_lbl.setText(t("cfg_ocsp_lta_hint"))
+                self._ocsp_hint_lbl.setStyleSheet("color: gray; font-size: 10px;")
+        else:
+            # PKCS#11: immer CA-ausgestellt → immer verfügbar
+            self.ocsp_lta_chk.setEnabled(True)
+            self._ocsp_hint_lbl.setText(t("cfg_ocsp_lta_hint"))
+            self._ocsp_hint_lbl.setStyleSheet("color: gray; font-size: 10px;")
 
     def _show_pfx_cert(self) -> None:
         """Open PfxInfoDialog using cached metadata (no second password prompt).
@@ -999,6 +1040,8 @@ class Pkcs11ConfigDialog(QDialog):
         self.config.set("pkcs11", "cert_cn",  self.cert_cn_edit.text().strip())
         self.config.set("pkcs11", "pfx_path", self.pfx_edit.text().strip())
         self.config.set("tsa", "url", self.tsa_url_edit.text().strip())
+        self.config.setbool("tsa", "embed_validation_info",
+                            self.ocsp_lta_chk.isChecked())
         self.config.save()
         self.accept()
 

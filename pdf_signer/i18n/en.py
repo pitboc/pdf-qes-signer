@@ -170,7 +170,23 @@ TRANSLATIONS: dict[str, str] = {
     "dlg_choose_field_title": "Choose Signature Field",
     "dlg_choose_field_label": "Sign with which field?",
     "dlg_invisible_field": "✦ Signature without field (invisible)",
-    "tsa_enabled_label": "🕐 Enable Timestamp (TSA)",
+    "tsa_enabled_label":   "🕐 Enable Timestamp (TSA)",
+    "cfg_ocsp_lta_label":  "Embed revocation status for long-term archival (OCSP/PAdES-LTA)",
+    "cfg_ocsp_lta_hint": (
+        "Embeds the current revocation status of all certificates and adds an "
+        "archival timestamp. Requires a CA-issued certificate with OCSP service."
+    ),
+    "cfg_ocsp_self_signed_hint": (
+        "Not available: the selected certificate is self-signed. "
+        "A CA-issued certificate is required for long-term archival."
+    ),
+    "dlg_ocsp_warning_title": "Long-term archival not embedded",
+    "dlg_ocsp_warning_msg": (
+        "The revocation status could not be retrieved — "
+        "the document was signed without long-term archival data.\n\n"
+        "Timestamp and signature were added successfully.\n\n"
+        "Technical cause: {error}"
+    ),
     # Signing configuration dialog
     "cfg_title":       "Configure Signing / Token",
     "cfg_tab_pkcs11":  "Signing Method",

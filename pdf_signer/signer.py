@@ -87,6 +87,123 @@ except ImportError:
 
 # ── Helper functions ──────────────────────────────────────────────────────────
 
+_certifi_roots_cache: list | None = None
+
+
+def _fetch_aia_chain(signing_cert_der: bytes,
+                     timeout: int = 10) -> tuple[list[bytes], list]:
+    """Follow AIA caIssuers links from *signing_cert_der* up to the root.
+
+    Returns ``(other_certs, extra_roots)`` where:
+    - *other_certs*  – DER-Bytes aller Zwischenzertifikate (ohne Signing-Cert)
+    - *extra_roots*  – asn1crypto.x509.Certificate-Objekte für selbstsignierte
+                       Endpunkte der Kette (Root-CAs)
+
+    Hintergrund: qualifizierte Signaturkarten verwenden CA-Hierarchien
+    (z. B. TeleSec qualified Root CA 1), die weder im System-Trust-Store noch
+    in certifi vorhanden sind.  Das Zertifikat selbst enthält via AIA die URLs
+    zum Download der Kette.  Den Root als extra_trust_root zu setzen ist sicher,
+    da die URL im signierten Zertifikat steht – manipulierbar nur bei
+    kompromittiertem Aussteller-Zertifikat selbst.
+    """
+    import urllib.request
+    from asn1crypto import x509 as asn1_x509
+
+    other_certs: list[bytes] = []
+    extra_roots: list = []
+    visited: set[str] = set()
+    current_der = signing_cert_der
+
+    for _ in range(6):   # maximal 6 Ebenen
+        try:
+            # asn1crypto statt cryptography.x509 verwenden: asn1crypto ist
+            # tolerant gegenüber non-standard Encodings (z.B. NULL-Parameter
+            # im AlgorithmIdentifier von TeleSec-CA-Zertifikaten, die mit Java
+            # erstellt wurden). cryptography.x509 gibt dafür eine
+            # DeprecationWarning aus und wird solche Zertifikate künftig
+            # ablehnen – mit asn1crypto ist das kein Problem.
+            cert = asn1_x509.Certificate.load(current_der)
+            url: str | None = None
+            for ext in cert['tbs_certificate']['extensions']:
+                if ext['extn_id'].native == 'authority_information_access':
+                    for desc in ext['extn_value'].parsed:
+                        if desc['access_method'].native == 'ca_issuers':
+                            url = desc['access_location'].chosen.native
+                            break
+                    break
+            if not url or url in visited:
+                break
+            visited.add(url)
+            with urllib.request.urlopen(url, timeout=timeout) as resp:
+                issuer_der = resp.read()
+            issuer = asn1_x509.Certificate.load(issuer_der)
+            other_certs.append(issuer_der)
+            if issuer.subject == issuer.issuer:   # selbstsigniert = Root
+                extra_roots.append(issuer)
+                break
+            current_der = issuer_der
+        except Exception:
+            break
+
+    return other_certs, extra_roots
+
+
+def _fetch_tsa_cert_der(tsa_url: str, timeout: int = 15) -> bytes | None:
+    """Return DER bytes of the TSA signing certificate via a probe request.
+
+    Sends a minimal RFC 3161 timestamp request (SHA-256 of a dummy value) to
+    *tsa_url* and extracts the first certificate from the CMS SignedData in the
+    response.  This is the TSA's own signing certificate, which is needed to
+    build its CA chain for the LTA ValidationContext.
+
+    Returns ``None`` on any error (network, parse, …).
+    """
+    try:
+        import asyncio
+        import hashlib
+        from pyhanko.sign.timestamps import HTTPTimeStamper
+
+        timestamper = HTTPTimeStamper(tsa_url)
+        dummy_digest = hashlib.sha256(b"lta-tsa-cert-probe").digest()
+        token = asyncio.run(timestamper.async_timestamp(dummy_digest, "sha256"))
+        # token is an asn1crypto.cms.ContentInfo (SignedData wrapping TSTInfo)
+        certs = token["content"]["certificates"]
+        if certs:
+            return certs[0].chosen.dump()
+    except Exception:
+        pass
+    return None
+
+
+def _load_certifi_roots() -> list:
+    """Return Mozilla CA bundle (certifi) as list of asn1crypto.x509.Certificate.
+
+    certifi ist eine transitive Abhängigkeit (pyhanko → requests → certifi) und
+    enthält den Mozilla-CA-Bundle mit ~150 Root-CAs – darunter T-TeleSec
+    GlobalRoot Class 2/3 und D-Trust, die im Linux-System-Store oft fehlen.
+
+    Das Ergebnis wird gecacht; der erste Aufruf parst die PEM-Datei (~272 KB).
+    """
+    global _certifi_roots_cache
+    if _certifi_roots_cache is not None:
+        return _certifi_roots_cache
+    try:
+        import certifi
+        from asn1crypto import pem as asn1_pem, x509 as asn1_x509
+        roots: list = []
+        with open(certifi.where(), "rb") as fh:
+            ca_data = fh.read()
+        for _type, _headers, der in asn1_pem.unarmor(ca_data, multiple=True):
+            try:
+                roots.append(asn1_x509.Certificate.load(der))
+            except Exception:
+                pass
+        _certifi_roots_cache = roots
+    except Exception:
+        _certifi_roots_cache = []
+    return _certifi_roots_cache
+
+
 def _make_pdf_font(pdf_name: str, avg_width: float):
     """Return a SimpleFontEngineFactory for a PDF-14 standard font."""
     # pyhanko benötigt eine Font-Fabrik für die Textdarstellung im Stempel.
@@ -252,12 +369,16 @@ class SignWorker(QThread):
     finished = pyqtSignal(str)
     # error: Fehlermeldung im Fehlerfall (z.B. falsche PIN, Token nicht vorhanden)
     error    = pyqtSignal(str)
+    # warning: OCSP-Einbettung fehlgeschlagen; Signatur+Zeitstempel wurden trotzdem
+    # eingefügt. Wird vor finished emittiert damit das Popup vor dem Erfolgsdialog erscheint.
+    warning  = pyqtSignal(str)
 
     def __init__(self, pdf_bytes: bytes, out_path: str, fdef,
                  lib_path: str, pin: str, key_id: str, cert_cn: str = "",
                  appearance=None, all_fields: list | None = None,
                  tsa_url: str = "", field_name: str = "Signature",
-                 mode: str = "pkcs11", pfx_path: str = "") -> None:
+                 mode: str = "pkcs11", pfx_path: str = "",
+                 embed_validation_info: bool = False) -> None:
         super().__init__()
         # pdf_bytes: Arbeitskopie des PDFs (ohne freie Signaturfelder);
         # Workers re-embedden sig_fields vor dem Signieren
@@ -288,12 +409,27 @@ class SignWorker(QThread):
         self.mode       = mode
         # pfx_path: Pfad zur PFX/PKCS#12-Datei – nur im pfx-Modus
         self.pfx_path   = pfx_path
+        # embed_validation_info: OCSP-Response einbetten + PAdES-LTA-Archivzeitstempel;
+        # erfordert einen aktiven Timestamper (tsa_url) – nur setzen wenn TSA aktiv
+        self.embed_validation_info = embed_validation_info
 
     # ── Shared helpers ────────────────────────────────────────────────────────
 
-    def _build_sig_meta(self, field_name: str, cert_cn: str):
-        """Build PdfSignatureMetadata from appearance settings and cert CN."""
+    def _build_sig_meta(self, field_name: str, cert_cn: str, *,
+                        embed_lta: bool | None = None,
+                        chain_certs: list[bytes] | None = None,
+                        signing_cert_der: bytes | None = None):
+        """Build PdfSignatureMetadata from appearance settings and cert CN.
+
+        *embed_lta* overrides ``self.embed_validation_info`` when given.
+        Pass ``False`` explicitly for the fallback path (OCSP failed).
+
+        *chain_certs* – DER-codierte Zwischenzertifikate (CA-Kette) die dem
+        ValidationContext als ``other_certs`` übergeben werden, damit
+        pyhanko_certvalidator den vollständigen Pfad aufbauen kann.
+        """
         from pyhanko.sign.signers import PdfSignatureMetadata
+        from pyhanko.sign.fields import SigSeedSubFilter
         app = self.appearance
         # Name in der Signatur: bei "cert"-Modus der CN aus dem Zertifikat,
         # bei "custom"-Modus der benutzerdefinierte Text
@@ -302,11 +438,113 @@ class SignWorker(QThread):
                     else (app.name_custom if app and app.show_name else None))
         sig_location = app.location if app and app.show_location else None
         sig_reason   = app.reason   if app and app.show_reason   else None
+        # PAdES-LTA: OCSP-Response + Archivzeitstempel einbetten wenn aktiviert.
+        # embed_lta-Parameter überschreibt self.embed_validation_info (für Fallback).
+        # use_pades_lta=True erfordert embed_validation_info=True und einen
+        # aktiven Timestamper – beides ist durch den Aufrufer sichergestellt.
+        lta = self.embed_validation_info if embed_lta is None else embed_lta
+        # ValidationContext: Systm-CA-Store + OCSP/CRL-Abruf aktivieren.
+        # Ohne ValidationContext verweigert pyhanko das Einbetten von
+        # Widerrufsdaten; trust_roots=None lädt automatisch die OS-Systemzertifikate.
+        vc = None
+        if lta:
+            from pyhanko_certvalidator import ValidationContext
+            # Trust-Store-Strategie:
+            # Der Linux-System-Store enthält oft keine qualifizierten deutschen
+            # CA-Hierarchien (T-TeleSec, D-Trust usw.).  certifi bringt den
+            # Mozilla-CA-Bundle mit – derselbe den Firefox/Chrome verwenden –
+            # und enthält T-TeleSec GlobalRoot Class 2/3 und D-Trust.
+            # extra_trust_roots ergänzt den System-Store um diese CAs.
+            # other_certs: vom Token/PFX mitgelesene Zwischenzertifikate damit
+            # pyhanko_certvalidator den Pfad ohne Netz-Download aufbauen kann.
+            # allow_fetching=True lädt fehlende Zwischen-CAs über AIA nach und
+            # holt die OCSP-Response vom Responder des Ausstellers.
+            # extra_trust_roots = certifi (Mozilla-Bundle) + Kette vom Token/PFX.
+            #
+            # Warum beides?
+            # - certifi: enthält Standard-Roots (T-TeleSec GlobalRoot, D-Trust …)
+            # - chain_certs vom Token: enthält die CA-Hierarchie der Smartcard,
+            #   inklusive des selbstsignierten Root-CA-Zertifikats des Ausstellers.
+            #   Qualifizierte Signaturkarten speichern die vollständige Kette.
+            #   Dieses Root-CA wird als lokaler Vertrauensanker akzeptiert damit
+            #   pyhanko die Kette aufbauen und anschließend die OCSP-Response
+            #   extern vom Responder des Ausstellers (TeleSec etc.) holen kann.
+            # Das Root-CA selbst hat keine OCSP; nur Signing-Cert und Intermediate
+            # werden beim Responder abgefragt – das sind die externen Bestätigungen.
+            from asn1crypto import x509 as asn1_x509
+            chain_as_asn1: list[asn1_x509.Certificate] = []
+            for der in (chain_certs or []):
+                try:
+                    chain_as_asn1.append(asn1_x509.Certificate.load(der))
+                except Exception:
+                    pass
+            # Kette via AIA vorab holen wenn Signing-Cert bekannt.
+            # _fetch_aia_chain folgt den caIssuers-Links im Zertifikat bis zum
+            # Root und liefert Intermediate-DER + Root als asn1crypto-Objekte.
+            aia_other: list[bytes] = []
+            aia_roots: list = []
+            if signing_cert_der:
+                try:
+                    aia_other, aia_roots = _fetch_aia_chain(signing_cert_der)
+                except Exception:
+                    pass
+            # AIA-DER-Bytes ebenfalls in asn1crypto-Objekte umwandeln;
+            # ValidationContext.other_certs erwartet asn1crypto.x509.Certificate,
+            # keine rohen DER-Bytes
+            aia_as_asn1: list[asn1_x509.Certificate] = []
+            for der in aia_other:
+                try:
+                    aia_as_asn1.append(asn1_x509.Certificate.load(der))
+                except Exception:
+                    pass
+
+            # TSA-Kette holen: TSA-Cert per Probe-Request abrufen, dann dessen
+            # AIA-Kette verfolgen.  Der Root-CA des TSA-Anbieters (z.B.
+            # GLOBALTRUST 2015 für BalTstamp) ist oft nicht in certifi enthalten
+            # und muss als extra_trust_root hinzugefügt werden.
+            tsa_aia_as_asn1: list[asn1_x509.Certificate] = []
+            tsa_aia_roots:   list[asn1_x509.Certificate] = []
+            if self.tsa_url:
+                try:
+                    tsa_cert_der = _fetch_tsa_cert_der(self.tsa_url)
+                    if tsa_cert_der:
+                        tsa_other, tsa_roots = _fetch_aia_chain(tsa_cert_der)
+                        for der in [tsa_cert_der] + tsa_other:
+                            try:
+                                tsa_aia_as_asn1.append(
+                                    asn1_x509.Certificate.load(der))
+                            except Exception:
+                                pass
+                        tsa_aia_roots = tsa_roots
+                except Exception:
+                    pass
+
+            from datetime import timedelta
+            certifi_roots = _load_certifi_roots()
+            all_other   = chain_as_asn1 + aia_as_asn1 + tsa_aia_as_asn1
+            extra_roots = certifi_roots + chain_as_asn1 + aia_roots + tsa_aia_roots
+            vc = ValidationContext(
+                other_certs=all_other,
+                extra_trust_roots=extra_roots or None,
+                allow_fetching=True,
+                # Standard-Toleranz ist 1 Sekunde – zu eng für OCSP-Abfragen
+                # über das Netz (Laufzeit + mögliche Uhrabweichung des Responders).
+                # 5 Minuten entsprechen dem üblichen Praxiswert für TSA/OCSP.
+                time_tolerance=timedelta(minutes=5),
+            )
         return PdfSignatureMetadata(
             field_name=field_name,
             name=sig_name     or None,
             location=sig_location or None,
             reason=sig_reason   or None,
+            embed_validation_info=lta,
+            use_pades_lta=lta,
+            validation_context=vc,
+            # PAdES-LTA erfordert SubFilter ETSI.CAdES.detached.
+            # Der pyhanko-Standard ist adbe.pkcs7.detached (Adobe-Format),
+            # das kein DSS-Dictionary und kein LTA unterstützt.
+            # Nur bei aktivem LTA umschalten, sonst bleibt der Standard.
+            subfilter=SigSeedSubFilter.PADES if lta else None,
         )
 
     def _build_stamp_style(self, cert_cn: str):
@@ -434,6 +672,71 @@ class SignWorker(QThread):
             return HTTPTimeStamper(self.tsa_url)
         return None
 
+    def _do_sign(self, signer, field_name: str, cert_cn: str, stamp_style,
+                 chain_certs: list[bytes] | None = None,
+                 signing_cert_der: bytes | None = None) -> None:
+        """Core signing logic shared by PKCS#11 and PFX paths.
+
+        Writes the signed PDF to ``self.out_path``.  If ``embed_validation_info``
+        is set, LTA signing is attempted first (OCSP fetch + archival timestamp).
+        On failure the signing is retried without LTA so that the document is
+        always signed; a ``warning`` signal is emitted with the OCSP error text.
+
+        Uses an in-memory BytesIO buffer so that the output file is only written
+        after a successful operation – a failed LTA attempt leaves no partial file.
+
+        *chain_certs* – DER-Bytes der CA-Kettenzertifikate aus dem Token oder
+        der PFX-Datei; werden an _build_sig_meta weitergegeben damit
+        pyhanko_certvalidator den vollständigen Pfad aufbauen kann.
+        """
+        from pyhanko.sign.signers import PdfSigner
+        from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
+
+        timestamper = self._make_timestamper()
+        lta_warning: str | None = None
+
+        if self.embed_validation_info:
+            # ── Attempt 1: full PAdES-LTA ──────────────────────────────────
+            try:
+                buf    = io.BytesIO(self.pdf_bytes)
+                writer = IncrementalPdfFileWriter(buf, strict=False)
+                self._embed_fields(writer)
+                sig_meta = self._build_sig_meta(
+                    field_name, cert_cn, chain_certs=chain_certs,
+                    signing_cert_der=signing_cert_der)
+                pdf_signer = PdfSigner(
+                    signature_meta=sig_meta,
+                    signer=signer,
+                    stamp_style=stamp_style,
+                    timestamper=timestamper,
+                )
+                out_buf = io.BytesIO()
+                pdf_signer.sign_pdf(writer, output=out_buf)
+                with open(self.out_path, "wb") as outf:
+                    outf.write(out_buf.getvalue())
+                return   # success – no fallback needed
+            except Exception as lta_exc:
+                # Merken für warning; Signatur + Zeitstempel im Fallback
+                lta_warning = str(lta_exc)
+
+        # ── Attempt 2 (or first attempt when LTA disabled): plain signing ──
+        buf    = io.BytesIO(self.pdf_bytes)
+        writer = IncrementalPdfFileWriter(buf, strict=False)
+        self._embed_fields(writer)
+        sig_meta = self._build_sig_meta(field_name, cert_cn, embed_lta=False)
+        pdf_signer = PdfSigner(
+            signature_meta=sig_meta,
+            signer=signer,
+            stamp_style=stamp_style,
+            timestamper=timestamper,
+        )
+        with open(self.out_path, "wb") as outf:
+            pdf_signer.sign_pdf(writer, output=outf)
+
+        if lta_warning is not None:
+            # LTA ist fehlgeschlagen; Signatur+Zeitstempel wurden ohne LTA eingefügt
+            self.warning.emit(lta_warning)
+
     # ── Dispatch ──────────────────────────────────────────────────────────────
 
     def run(self) -> None:
@@ -448,8 +751,6 @@ class SignWorker(QThread):
         try:
             import pkcs11 as p11
             from pyhanko.sign.pkcs11 import open_pkcs11_session, PKCS11Signer, PROTECTED_AUTH
-            from pyhanko.sign.signers import PdfSigner
-            from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 
             # Leere PIN → PROTECTED_AUTH-Sentinel, der pyhanko anweist, die
             # PIN-Eingabe an das Hardware-PIN-Pad zu delegieren (CyberJack etc.)
@@ -500,26 +801,42 @@ class SignWorker(QThread):
                 other_certs_to_pull=(),
             )
 
-            field_name = self.fdef.name if self.fdef else self.field_name
-            sig_meta   = self._build_sig_meta(field_name, cert_cn)
+            # Alle Zertifikatobjekte außer dem Signing-Cert als Kettenzertifikate
+            # sammeln (DER-Bytes). Sie werden dem ValidationContext als other_certs
+            # übergeben, damit pyhanko_certvalidator den vollständigen Pfad
+            # zum Root-CA aufbauen kann.
+            chain_certs: list[bytes] = []
+            signing_cert_der: bytes | None = None
+            if self.embed_validation_info:
+                try:
+                    for c in session.get_objects(
+                            {p11.Attribute.CLASS: p11.ObjectClass.CERTIFICATE}):
+                        try:
+                            c_der = bytes(c[p11.Attribute.VALUE])
+                        except Exception:
+                            continue
+                        try:
+                            c_id = bytes(c[p11.Attribute.ID])
+                        except Exception:
+                            # CA-Zertifikate ohne zugehörigen Schlüssel haben
+                            # manchmal kein CKA_ID-Attribut → als Kettenzertifikat
+                            # behandeln (nie das Signing-Cert, da dieses eine ID hat)
+                            chain_certs.append(c_der)
+                            continue
+                        if target_id is not None and c_id == target_id:
+                            signing_cert_der = c_der
+                        else:
+                            chain_certs.append(c_der)
+                except Exception:
+                    pass
+
+            field_name  = self.fdef.name if self.fdef else self.field_name
             stamp_style = self._build_stamp_style(cert_cn)
 
-            # PDF-Bytes in BytesIO laden und als inkrementellen Writer öffnen
-            buf    = io.BytesIO(self.pdf_bytes)
-            writer = IncrementalPdfFileWriter(buf, strict=False)
-            self._embed_fields(writer)
-
-            # PdfSigner: kombiniert Signatur-Metadaten, PKCS#11-Signer,
-            # visuelles Erscheinungsbild und optionalen Zeitstempel
-            pdf_signer = PdfSigner(
-                signature_meta=sig_meta,
-                signer=signer,
-                stamp_style=stamp_style,  # None → no visual appearance
-                timestamper=self._make_timestamper(),
-            )
-            # Signatur in einem Schritt anwenden und Ergebnis direkt auf Disk schreiben
-            with open(self.out_path, "wb") as outf:
-                pdf_signer.sign_pdf(writer, output=outf)
+            # _do_sign übernimmt LTA-Versuch, Fallback und warning-Emission
+            self._do_sign(signer, field_name, cert_cn, stamp_style,
+                          chain_certs=chain_certs,
+                          signing_cert_der=signing_cert_der)
 
             # PKCS#11-Session explizit schließen (gibt das Session-Handle zurück)
             session.close()
@@ -549,8 +866,7 @@ class SignWorker(QThread):
                 load_pkcs12 as _load_pfx,
             )
             from cryptography import x509 as cx509
-            from pyhanko.sign.signers import SimpleSigner, PdfSigner
-            from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
+            from pyhanko.sign.signers import SimpleSigner
 
             passphrase: bytes | None = self.pin.encode() if self.pin else None
 
@@ -581,22 +897,33 @@ class SignWorker(QThread):
             # additional_certs (Zertifikatskette) werden automatisch eingebettet
             signer = SimpleSigner.load_pkcs12(self.pfx_path, passphrase=passphrase)
 
+            # Kettenzertifikate aus PFX für ValidationContext extrahieren.
+            # pkcs12.additional_certs enthält CA-Zertifikate die in der PFX-Datei
+            # eingebettet sind (Intermediate + Root); DER-Format für other_certs.
+            from cryptography.hazmat.primitives.serialization import Encoding
+            chain_certs: list[bytes] = []
+            if self.embed_validation_info and pkcs12.additional_certs:
+                for cert_container in pkcs12.additional_certs:
+                    try:
+                        chain_certs.append(
+                            cert_container.certificate.public_bytes(Encoding.DER))
+                    except Exception:
+                        pass
+            signing_cert_der: bytes | None = None
+            if self.embed_validation_info and pkcs12.cert:
+                try:
+                    signing_cert_der = pkcs12.cert.certificate.public_bytes(
+                        Encoding.DER)
+                except Exception:
+                    pass
+
             field_name  = self.fdef.name if self.fdef else self.field_name
-            sig_meta    = self._build_sig_meta(field_name, cert_cn)
             stamp_style = self._build_stamp_style(cert_cn)
 
-            buf    = io.BytesIO(self.pdf_bytes)
-            writer = IncrementalPdfFileWriter(buf, strict=False)
-            self._embed_fields(writer)
-
-            pdf_signer = PdfSigner(
-                signature_meta=sig_meta,
-                signer=signer,
-                stamp_style=stamp_style,
-                timestamper=self._make_timestamper(),
-            )
-            with open(self.out_path, "wb") as outf:
-                pdf_signer.sign_pdf(writer, output=outf)
+            # _do_sign übernimmt LTA-Versuch, Fallback und warning-Emission
+            self._do_sign(signer, field_name, cert_cn, stamp_style,
+                          chain_certs=chain_certs,
+                          signing_cert_der=signing_cert_der)
 
             self.finished.emit(self.out_path)
 
