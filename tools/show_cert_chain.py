@@ -28,7 +28,7 @@ def show_cert_chain(pdf_path: str) -> None:
         reader = PdfFileReader(fh)
 
         # ── Signaturen ─────────────────────────────────────────────────────────
-        sigs = reader.embedded_signatures
+        sigs = reader.embedded_regular_signatures
         if not sigs:
             print("Keine Signaturen gefunden.")
             return

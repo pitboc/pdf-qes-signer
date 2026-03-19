@@ -672,6 +672,52 @@ class SignWorker(QThread):
             return HTTPTimeStamper(self.tsa_url)
         return None
 
+    def _inject_chain_into_signer(self, signer,
+                                   chain_certs: list[bytes] | None,
+                                   signing_cert_der: bytes | None) -> None:
+        """Register intermediate CA certs in the signer so they are embedded
+        in the CMS ``certificates`` field of the signature.
+
+        Sources (in order):
+        1. *chain_certs* from the token or PFX file.
+        2. AIA caIssuers download for *signing_cert_der*.
+
+        The root CA is intentionally excluded (``embed_roots=False``) because
+        it is present in certifi / the LOTL trust store on the verifier's side
+        and does not need to travel with the document.
+        """
+        from asn1crypto import x509 as asn1_x509
+
+        intermediates: list = []
+
+        for der in (chain_certs or []):
+            try:
+                cert = asn1_x509.Certificate.load(der)
+                if cert.subject != cert.issuer:     # skip self-signed roots
+                    intermediates.append(cert)
+            except Exception:
+                pass
+
+        if signing_cert_der:
+            try:
+                aia_other, _ = _fetch_aia_chain(signing_cert_der)
+                for der in aia_other:
+                    try:
+                        cert = asn1_x509.Certificate.load(der)
+                        if cert.subject != cert.issuer:
+                            intermediates.append(cert)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        if intermediates:
+            try:
+                signer._cert_registry.register_multiple(intermediates)
+            except Exception:
+                pass
+        signer.embed_roots = False
+
     def _do_sign(self, signer, field_name: str, cert_cn: str, stamp_style,
                  chain_certs: list[bytes] | None = None,
                  signing_cert_der: bytes | None = None) -> None:
@@ -692,6 +738,7 @@ class SignWorker(QThread):
         from pyhanko.sign.signers import PdfSigner
         from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 
+        self._inject_chain_into_signer(signer, chain_certs, signing_cert_der)
         timestamper = self._make_timestamper()
         lta_warning: str | None = None
 
@@ -801,34 +848,32 @@ class SignWorker(QThread):
                 other_certs_to_pull=(),
             )
 
-            # Alle Zertifikatobjekte außer dem Signing-Cert als Kettenzertifikate
-            # sammeln (DER-Bytes). Sie werden dem ValidationContext als other_certs
-            # übergeben, damit pyhanko_certvalidator den vollständigen Pfad
-            # zum Root-CA aufbauen kann.
+            # Alle Zertifikatobjekte aus dem Token lesen.
+            # signing_cert_der: DER des Signing-Zertifikats – wird immer
+            #   benötigt (AIA-Download für Ketteneinbettung, ValidationContext).
+            # chain_certs: alle anderen Zertifikate (CA-Hierarchie).
             chain_certs: list[bytes] = []
             signing_cert_der: bytes | None = None
-            if self.embed_validation_info:
-                try:
-                    for c in session.get_objects(
-                            {p11.Attribute.CLASS: p11.ObjectClass.CERTIFICATE}):
-                        try:
-                            c_der = bytes(c[p11.Attribute.VALUE])
-                        except Exception:
-                            continue
-                        try:
-                            c_id = bytes(c[p11.Attribute.ID])
-                        except Exception:
-                            # CA-Zertifikate ohne zugehörigen Schlüssel haben
-                            # manchmal kein CKA_ID-Attribut → als Kettenzertifikat
-                            # behandeln (nie das Signing-Cert, da dieses eine ID hat)
-                            chain_certs.append(c_der)
-                            continue
-                        if target_id is not None and c_id == target_id:
-                            signing_cert_der = c_der
-                        else:
-                            chain_certs.append(c_der)
-                except Exception:
-                    pass
+            try:
+                for c in session.get_objects(
+                        {p11.Attribute.CLASS: p11.ObjectClass.CERTIFICATE}):
+                    try:
+                        c_der = bytes(c[p11.Attribute.VALUE])
+                    except Exception:
+                        continue
+                    try:
+                        c_id = bytes(c[p11.Attribute.ID])
+                    except Exception:
+                        # CA-Zertifikate ohne zugehörigen Schlüssel haben
+                        # manchmal kein CKA_ID-Attribut → als Kettenzertifikat
+                        chain_certs.append(c_der)
+                        continue
+                    if target_id is not None and c_id == target_id:
+                        signing_cert_der = c_der
+                    else:
+                        chain_certs.append(c_der)
+            except Exception:
+                pass
 
             field_name  = self.fdef.name if self.fdef else self.field_name
             stamp_style = self._build_stamp_style(cert_cn)
@@ -897,12 +942,12 @@ class SignWorker(QThread):
             # additional_certs (Zertifikatskette) werden automatisch eingebettet
             signer = SimpleSigner.load_pkcs12(self.pfx_path, passphrase=passphrase)
 
-            # Kettenzertifikate aus PFX für ValidationContext extrahieren.
-            # pkcs12.additional_certs enthält CA-Zertifikate die in der PFX-Datei
-            # eingebettet sind (Intermediate + Root); DER-Format für other_certs.
+            # Zertifikate aus PFX extrahieren – immer, nicht nur bei LTA.
+            # chain_certs und signing_cert_der werden für AIA-Download und
+            # Ketteneinbettung benötigt, unabhängig von embed_validation_info.
             from cryptography.hazmat.primitives.serialization import Encoding
             chain_certs: list[bytes] = []
-            if self.embed_validation_info and pkcs12.additional_certs:
+            if pkcs12.additional_certs:
                 for cert_container in pkcs12.additional_certs:
                     try:
                         chain_certs.append(
@@ -910,7 +955,7 @@ class SignWorker(QThread):
                     except Exception:
                         pass
             signing_cert_der: bytes | None = None
-            if self.embed_validation_info and pkcs12.cert:
+            if pkcs12.cert:
                 try:
                     signing_cert_der = pkcs12.cert.certificate.public_bytes(
                         Encoding.DER)

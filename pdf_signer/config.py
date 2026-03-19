@@ -77,6 +77,11 @@ class AppConfig:
             "language":       "de",
             "active_profile": "default",
         },
+        "validation": {
+            # "always" – fetch OCSP/AIA from network when not embedded
+            # "never"  – use only data already present in the PDF
+            "auto_fetch_revocation": "always",
+        },
     }
 
     # Profile settings – stored in profiles/<name>.ini

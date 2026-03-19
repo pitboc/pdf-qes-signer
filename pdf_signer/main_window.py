@@ -169,6 +169,9 @@ class PDFSignerApp(QMainWindow):
         # Startet den Signiervorgang für das ausgewählte Signaturfeld
         self._act_sign.triggered.connect(self.sign_document)
         self._menu_sign.addAction(self._act_sign)
+        self._act_check_sigs = QAction(self)
+        self._act_check_sigs.triggered.connect(self.check_signatures)
+        self._menu_sign.addAction(self._act_check_sigs)
 
         self._menu_settings  = self.menuBar().addMenu("")
         self._act_pkcs11     = QAction(self)
@@ -273,6 +276,9 @@ class PDFSignerApp(QMainWindow):
         self._tb_sign = QAction(self)
         self._tb_sign.triggered.connect(self.sign_document)
         tb.addAction(self._tb_sign)
+        self._tb_check_sigs = QAction(self)
+        self._tb_check_sigs.triggered.connect(self.check_signatures)
+        tb.addAction(self._tb_check_sigs)
         self._tb_save_fields = QAction(self)
         self._tb_save_fields.triggered.connect(self.save_with_fields)
         tb.addAction(self._tb_save_fields)
@@ -342,8 +348,12 @@ class PDFSignerApp(QMainWindow):
         # N+1…N+K = locked_fields (orange), Rest = signed_fields (grau)
         self._field_list = QListWidget()
         self._field_list.setFont(QFont("Courier", 9))
-        # Auswahl-Änderung: Vorschau im Canvas aktualisieren
+        # Auswahl-Änderung: Vorschau im Canvas aktualisieren.
+        # currentRowChanged: bei Wechsel via Klick oder Tastatur.
+        # itemClicked: auch bei erneutem Klick auf bereits selektierte Zeile.
         self._field_list.currentRowChanged.connect(self._on_field_selection_changed)
+        self._field_list.itemClicked.connect(
+            lambda _: self._on_field_selection_changed(self._field_list.currentRow()))
         fl.addWidget(self._field_list)
         btn_row = QHBoxLayout()
         # "Löschen"-Schaltfläche: nur für sig_fields-Felder aktiv; initial deaktiviert
@@ -424,6 +434,7 @@ class PDFSignerApp(QMainWindow):
         self._act_quit.setText(t("menu_file_quit"))
         self._menu_sign.setTitle(t("menu_sign"))
         self._act_sign.setText(t("menu_sign_document"))
+        self._act_check_sigs.setText(t("menu_check_sigs"))
         self._menu_settings.setTitle(t("menu_settings"))
         self._act_pkcs11.setText(t("menu_settings_pkcs11"))
         self._act_profile.setText(t("menu_profile"))
@@ -435,6 +446,7 @@ class PDFSignerApp(QMainWindow):
         self._tb_prev.setToolTip(t("tb_prev"))
         self._tb_next.setToolTip(t("tb_next"))
         self._tb_sign.setText(t("tb_sign"))
+        self._tb_check_sigs.setText(t("tb_check_sigs"))
         self._tb_save_fields.setText(t("tb_save_fields"))
         self._tb_zoom_out.setToolTip(t("tb_zoom_out"))
         self._tb_zoom_in.setToolTip(t("tb_zoom_in"))
@@ -1081,6 +1093,17 @@ class PDFSignerApp(QMainWindow):
                     already_signed = False
 
                 if already_signed:
+                    # Exclude LTA doc-timestamps (/SubFilter /ETSI.RFC3161) –
+                    # they are not user-visible signature fields.
+                    try:
+                        v_match = re.search(r'/V\s+(\d+)\s+\d+\s+R', obj)
+                        if v_match:
+                            v_obj = doc.xref_object(int(v_match.group(1)),
+                                                    compressed=False)
+                            if re.search(r'/SubFilter\s*/ETSI\.RFC3161', v_obj):
+                                continue
+                    except Exception:
+                        pass
                     self.signed_fields.append(fdef)
                 else:
                     all_unsigned.append((fdef, widget.xref))
@@ -1505,3 +1528,31 @@ class PDFSignerApp(QMainWindow):
         btn.clicked.connect(dlg.accept)
         vl.addWidget(btn)
         dlg.exec()
+
+    def check_signatures(self) -> None:
+        """Phase 1 + Dialog für Signaturprüfung."""
+        if not self.pdf_path:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(self, t("val_dlg_title"), t("val_no_pdf"))
+            return
+
+        # Use full file bytes (not _working_bytes which may be trimmed to the
+        # last regular signature and exclude later LTA timestamp revisions).
+        try:
+            with open(self.pdf_path, "rb") as fh:
+                full_bytes = fh.read()
+        except Exception as exc:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, t("val_dlg_title"), str(exc))
+            return
+
+        from .validation_extractor import extract
+        from .validation_dialog import ValidationDialog
+        doc = extract(full_bytes)
+
+        if not doc.revisions:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(self, t("val_dlg_title"), t("val_no_sigs"))
+            return
+
+        ValidationDialog(self, doc, full_bytes).exec()

@@ -1,0 +1,617 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Extracts PDF signature validation data into ``DocumentValidation`` objects.
+
+## Two-phase design
+
+**Phase 1 – offline, instant** (``extract``):
+  Reads all data already present in the PDF bytes.  No network access.
+  Status fields are set where the embedded data is sufficient:
+
+  - Crypto integrity is checked via pyhanko's byte-range verification.
+  - Embedded OCSP responses are read and their ``cert_status`` mapped to
+    ``ValidationStatus``.
+  - Certificate chains are reconstructed from the CMS container and the
+    DSS dictionary by following issuer/subject links.
+  - Missing chain steps and absent revocation data are left as
+    ``NOT_CHECKED`` so the UI can show them with a neutral icon.
+
+**Phase 2 – optional network** (``update_revocation``):
+  Called by a background ``QRunnable`` only when
+  ``config.validation.auto_fetch_revocation = always``.  Fetches missing
+  OCSP responses and AIA certificate chain links, then updates the status
+  fields in-place on the ``DocumentValidation`` returned by Phase 1.
+
+## Certificate pool
+
+During extraction all certificates found in the PDF (CMS ``certificates``
+set and DSS ``/Certs`` array) are collected into a pool keyed by
+``subject.hashable``.  Chain building iterates: start with the signing
+certificate, look up each issuer in the pool until a self-signed root or a
+missing step is reached.
+
+## OCSP matching
+
+Each OCSP response in ``/DSS/OCSPs`` identifies the subject certificate by
+``issuerNameHash`` + ``issuerKeyHash`` + ``serialNumber`` (RFC 6960 §4.1.1).
+For Phase 1 this module matches by serial number only; ambiguities at the
+same serial within one document are extremely unlikely in practice.
+"""
+
+from __future__ import annotations
+
+import io
+from datetime import datetime
+from typing import Optional
+
+from .validation_result import (
+    CertInfo, CertSource, CRLInfo, DocumentValidation, OCSPInfo,
+    RevisionInfo, SignatureInfo, TimestampInfo, ValidationStatus,
+)
+
+
+# ── Status helpers ────────────────────────────────────────────────────────────
+
+_STATUS_PRIORITY = {
+    ValidationStatus.INVALID:     0,
+    ValidationStatus.UNKNOWN:     1,
+    ValidationStatus.NOT_CHECKED: 2,
+    ValidationStatus.VALID:       3,
+}
+
+
+def _worst(*statuses: ValidationStatus) -> ValidationStatus:
+    """Return the most severe status (INVALID > UNKNOWN > NOT_CHECKED > VALID)."""
+    return min(statuses, key=lambda s: _STATUS_PRIORITY[s])
+
+
+def _ocsp_cert_status_to_vs(name: str) -> ValidationStatus:
+    if name == "good":
+        return ValidationStatus.VALID
+    if name == "revoked":
+        return ValidationStatus.INVALID
+    return ValidationStatus.UNKNOWN
+
+
+# ── Certificate helpers ───────────────────────────────────────────────────────
+
+def _subject_cn(cert) -> str:
+    """Return the Common Name from an asn1crypto X.509 certificate subject."""
+    try:
+        for rdn in cert.subject.chosen:
+            for attr in rdn:
+                if attr["type"].native == "common_name":
+                    return str(attr["value"].native)
+        return cert.subject.human_friendly
+    except Exception:
+        return "?"
+
+
+def _cert_to_info(cert,
+                  source: CertSource = CertSource.EMBEDDED,
+                  ocsp: Optional[OCSPInfo] = None,
+                  crl: Optional[CRLInfo] = None) -> CertInfo:
+    """Convert an asn1crypto Certificate into a ``CertInfo`` dataclass."""
+    try:
+        tbs = cert["tbs_certificate"]
+        not_before: datetime = tbs["validity"]["not_before"].native
+        not_after:  datetime = tbs["validity"]["not_after"].native
+        is_root = cert.subject == cert.issuer
+        try:
+            is_ca = bool(cert.ca)
+        except Exception:
+            is_ca = is_root
+        try:
+            subject_hashable = bytes(cert.subject.hashable)
+        except Exception:
+            subject_hashable = None
+        return CertInfo(
+            subject=cert.subject.human_friendly,
+            issuer=cert.issuer.human_friendly,
+            valid_from=not_before,
+            valid_until=not_after,
+            source=source,
+            status=ValidationStatus.NOT_CHECKED,
+            is_root=is_root,
+            is_ca=is_ca,
+            subject_hashable=subject_hashable,
+            ocsp=ocsp,
+            crl=crl,
+        )
+    except Exception:
+        return CertInfo(
+            subject="?",
+            issuer="?",
+            valid_from=datetime.min,
+            valid_until=datetime.max,
+            source=source,
+            status=ValidationStatus.NOT_CHECKED,
+        )
+
+
+def _build_chain(signer_cert,
+                 pool: list,
+                 ocsp_by_serial: dict[int, OCSPInfo],
+                 crl_info: Optional[CRLInfo]) -> list[CertInfo]:
+    """Return ordered chain [end-entity, …, root] using *pool* to fill gaps.
+
+    Args:
+        signer_cert:    asn1crypto Certificate of the end-entity signer.
+        pool:           All certificates available (CMS + DSS), as
+                        asn1crypto Certificate objects.
+        ocsp_by_serial: Mapping serial-number → OCSPInfo for quick lookup.
+        crl_info:       CRLInfo to attach to the signing cert (or None).
+    """
+    # Build issuer lookup: subject.hashable → cert
+    by_subject: dict = {}
+    for c in pool:
+        try:
+            by_subject[c.subject.hashable] = c
+        except Exception:
+            pass
+
+    chain: list[CertInfo] = []
+    current = signer_cert
+    seen: set = set()
+
+    for _ in range(10):  # guard against cycles
+        try:
+            subject_hash = current.subject.hashable
+        except Exception:
+            break
+        if subject_hash in seen:
+            break
+        seen.add(subject_hash)
+
+        # OCSP and CRL only attached to the end-entity (index 0)
+        is_first = len(chain) == 0
+        serial: int = -1
+        try:
+            serial = current["tbs_certificate"]["serial_number"].native
+        except Exception:
+            pass
+        ocsp = ocsp_by_serial.get(serial) if is_first else None
+        crl  = crl_info if is_first else None
+
+        chain.append(_cert_to_info(current, source=CertSource.EMBEDDED,
+                                   ocsp=ocsp, crl=crl))
+
+        try:
+            if current.subject == current.issuer:
+                break  # self-signed root reached
+        except Exception:
+            break
+
+        try:
+            issuer = by_subject.get(current.issuer.hashable)
+        except Exception:
+            issuer = None
+
+        if issuer is None:
+            # Chain incomplete: add a placeholder so the UI shows the gap
+            try:
+                issuer_name = current.issuer.human_friendly
+            except Exception:
+                issuer_name = "?"
+            try:
+                issuer_hashable = bytes(current.issuer.hashable)
+            except Exception:
+                issuer_hashable = None
+            chain.append(CertInfo(
+                subject=issuer_name,
+                issuer="?",
+                valid_from=datetime.min,
+                valid_until=datetime.max,
+                source=CertSource.NOT_FOUND,
+                status=ValidationStatus.NOT_CHECKED,
+                is_root=False,   # unknown – could be intermediate or root
+                is_ca=True,
+                subject_hashable=issuer_hashable,
+            ))
+            break
+        current = issuer
+
+    return chain
+
+
+# ── OCSP / DSS helpers ────────────────────────────────────────────────────────
+
+def _parse_ocsp_der(der: bytes) -> Optional[tuple[int, OCSPInfo]]:
+    """Parse one OCSP response DER blob.
+
+    Returns ``(serial, OCSPInfo)`` on success or ``None`` on any error.
+    The serial number identifies the subject certificate this response covers.
+    """
+    try:
+        from asn1crypto import ocsp as asn1_ocsp
+        resp = asn1_ocsp.OCSPResponse.load(der)
+        if resp["response_status"].native != "successful":
+            return None
+        basic = resp["response_bytes"]["response"].parsed
+        produced: datetime = basic["tbs_response_data"]["produced_at"].native
+        for r in basic["tbs_response_data"]["responses"]:
+            cs_name = r["cert_status"].name
+            serial: int = r["cert_id"]["serial_number"].native
+            return serial, OCSPInfo(
+                produced_at=produced,
+                cert_status=cs_name,
+                source=CertSource.EMBEDDED,
+                status=_ocsp_cert_status_to_vs(cs_name),
+            )
+    except Exception:
+        pass
+    return None
+
+
+def _extract_dss(reader) -> tuple[list, dict[int, OCSPInfo], Optional[CRLInfo]]:
+    """Read the PDF DSS dictionary and return its contents.
+
+    Returns:
+        ``(cert_pool, ocsp_by_serial, crl_info)`` where:
+        - *cert_pool*      – list of asn1crypto Certificates from ``/Certs``
+        - *ocsp_by_serial* – ``{serial: OCSPInfo}`` from ``/OCSPs``
+        - *crl_info*       – ``CRLInfo`` if ``/CRLs`` is present, else ``None``
+    """
+    from asn1crypto import x509 as asn1_x509
+
+    cert_pool: list = []
+    ocsp_by_serial: dict[int, OCSPInfo] = {}
+    crl_info: Optional[CRLInfo] = None
+
+    try:
+        root = reader.root
+        dss_ref = root.get("/DSS")
+        if dss_ref is None:
+            return cert_pool, ocsp_by_serial, crl_info
+        dss = dss_ref.get_object()
+
+        # DSS certificates
+        certs_ref = dss.get("/Certs")
+        if certs_ref is not None:
+            for ref in certs_ref.get_object():
+                try:
+                    der = ref.get_object().data
+                    cert_pool.append(asn1_x509.Certificate.load(der))
+                except Exception:
+                    pass
+
+        # OCSP responses
+        ocsps_ref = dss.get("/OCSPs")
+        if ocsps_ref is not None:
+            for ref in ocsps_ref.get_object():
+                try:
+                    der = ref.get_object().data
+                    result = _parse_ocsp_der(der)
+                    if result is not None:
+                        serial, info = result
+                        ocsp_by_serial[serial] = info
+                except Exception:
+                    pass
+
+        # CRLs – only note presence; detailed parsing deferred
+        crls_ref = dss.get("/CRLs")
+        if crls_ref is not None and len(crls_ref.get_object()) > 0:
+            crl_info = CRLInfo(
+                source=CertSource.EMBEDDED,
+                status=ValidationStatus.NOT_CHECKED,
+            )
+
+    except Exception:
+        pass
+
+    return cert_pool, ocsp_by_serial, crl_info
+
+
+# ── Timestamp helpers ─────────────────────────────────────────────────────────
+
+def _extract_tst_info(signed_data) -> tuple[Optional[datetime], str]:
+    """Return ``(gen_time, policy_oid)`` from a CMS SignedData wrapping TSTInfo."""
+    try:
+        from asn1crypto import tsp as asn1_tsp
+        raw = signed_data["encap_content_info"]["content"].contents
+        tst = asn1_tsp.TSTInfo.load(raw)
+        gen_time: datetime = tst["gen_time"].native
+        try:
+            policy = tst["policy"].dotted
+        except Exception:
+            policy = ""
+        return gen_time, policy
+    except Exception:
+        return None, ""
+
+
+def _embedded_tsa_token(sig) -> Optional[TimestampInfo]:
+    """Extract the RFC-3161 timestamp token embedded inside a regular signature.
+
+    This token lives in the ``id-aa-signatureTimeStampToken`` unsigned attribute
+    of the CMS ``SignerInfo``.  Returns ``None`` if no such token is present.
+    """
+    try:
+        from asn1crypto import cms as asn1_cms, x509 as asn1_x509
+
+        unsigned_attrs = sig.signed_data["signer_infos"][0]["unsigned_attrs"]
+        if not unsigned_attrs:
+            return None
+
+        TST_OID = "1.2.840.113549.1.9.16.2.14"
+        for attr in unsigned_attrs:
+            try:
+                if attr["type"].dotted != TST_OID:
+                    continue
+                # attr['values'] is a SET; the token is the first element (ContentInfo)
+                token_ci = attr["values"][0]
+                ts_sd = token_ci["content"]
+                gen_time, policy = _extract_tst_info(ts_sd)
+                if gen_time is None:
+                    continue
+                # TSA signing certificate
+                tsa_subject = "?"
+                tsa_chain: list[CertInfo] = []
+                try:
+                    tsa_certs = list(ts_sd["certificates"])
+                    if tsa_certs:
+                        tsa_cert = tsa_certs[0].chosen
+                        tsa_subject = _subject_cn(tsa_cert)
+                        all_tsa_certs = [c.chosen for c in tsa_certs]
+                        tsa_chain = _build_chain(tsa_cert, all_tsa_certs, {}, None)
+                except Exception:
+                    pass
+                return TimestampInfo(
+                    time=gen_time,
+                    tsa_subject=tsa_subject,
+                    policy_oid=policy,
+                    source=CertSource.EMBEDDED,
+                    status=ValidationStatus.NOT_CHECKED,
+                    cert_chain=tsa_chain,
+                )
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return None
+
+
+# ── Crypto integrity check ────────────────────────────────────────────────────
+
+def _check_crypto_integrity(sig, is_timestamp: bool = False) -> ValidationStatus:
+    """Verify the PDF byte-range digest and CMS signature math.
+
+    Uses ``validate_pdf_timestamp`` for document timestamps and
+    ``validate_pdf_signature`` for regular signatures.  No validation context
+    is passed so only the CMS structure (byte-range hash + signature math) is
+    checked; chain and revocation validation are skipped.
+
+    Returns ``NOT_CHECKED`` if pyhanko is unavailable or the call fails
+    unexpectedly.
+    """
+    import logging
+    _pyhanko_log = logging.getLogger("pyhanko")
+    _cv_log = logging.getLogger("pyhanko_certvalidator")
+    prev_pyhanko = _pyhanko_log.level
+    prev_cv = _cv_log.level
+    try:
+        _pyhanko_log.setLevel(logging.CRITICAL)
+        _cv_log.setLevel(logging.CRITICAL)
+        if is_timestamp:
+            from pyhanko.sign.validation import validate_pdf_timestamp
+            status = validate_pdf_timestamp(sig)
+        else:
+            from pyhanko.sign.validation import validate_pdf_signature
+            status = validate_pdf_signature(sig)
+        return ValidationStatus.VALID if status.valid else ValidationStatus.INVALID
+    except Exception:
+        return ValidationStatus.NOT_CHECKED
+    finally:
+        _pyhanko_log.setLevel(prev_pyhanko)
+        _cv_log.setLevel(prev_cv)
+
+
+# ── SignatureInfo builders ────────────────────────────────────────────────────
+
+def _build_sig_info(sig, dss_pool: list,
+                    ocsp_by_serial: dict[int, OCSPInfo],
+                    crl_info: Optional[CRLInfo]) -> SignatureInfo:
+    """Build a ``SignatureInfo`` for one regular (QES) embedded signature."""
+    field_name = sig.field_name or "?"
+    signing_time: Optional[datetime] = None
+    try:
+        signing_time = sig.self_reported_timestamp
+    except Exception:
+        pass
+
+    # Signer certificate
+    signer_cert = None
+    try:
+        signer_cert = sig.signer_cert
+    except Exception:
+        pass
+    try:
+        signer_subject = signer_cert.subject.human_friendly if signer_cert else field_name
+    except Exception:
+        signer_subject = _subject_cn(signer_cert) if signer_cert else field_name
+
+    # Collect all available certs: CMS container + DSS pool
+    cms_certs: list = []
+    try:
+        for c in sig.signed_data["certificates"]:
+            try:
+                cms_certs.append(c.chosen)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    all_certs = cms_certs + dss_pool
+    chain: list[CertInfo] = []
+    if signer_cert is not None:
+        chain = _build_chain(signer_cert, all_certs, ocsp_by_serial, crl_info)
+
+    # Embedded TSA timestamp token (optional, inside the signature)
+    tsa_ts = _embedded_tsa_token(sig)
+
+    # Crypto integrity (byte range hash)
+    crypto_status = _check_crypto_integrity(sig)
+
+    # Revocation: determined from embedded OCSP, otherwise NOT_CHECKED
+    rev_status = ValidationStatus.NOT_CHECKED
+    if chain and chain[0].ocsp is not None:
+        rev_status = chain[0].ocsp.status
+
+    overall = _worst(crypto_status, ValidationStatus.NOT_CHECKED, rev_status)
+
+    return SignatureInfo(
+        field_name=field_name,
+        sig_type="signature",
+        signer_subject=signer_subject,
+        signing_time=tsa_ts.time if tsa_ts else signing_time,
+        timestamp=tsa_ts,
+        cert_chain=chain,
+        crypto_status=crypto_status,
+        chain_status=ValidationStatus.NOT_CHECKED,   # requires trust anchor → Phase 2
+        revocation_status=rev_status,
+        status=overall,
+    )
+
+
+def _build_doc_ts_info(ts, dss_pool: list) -> SignatureInfo:
+    """Build a ``SignatureInfo`` for one LTA document timestamp."""
+    field_name = ts.field_name or "?"
+    gen_time: Optional[datetime] = None
+    policy = ""
+    try:
+        gen_time, policy = _extract_tst_info(ts.signed_data)
+    except Exception:
+        pass
+    if gen_time is None:
+        try:
+            gen_time = ts.self_reported_timestamp
+        except Exception:
+            pass
+
+    # TSA signer certificate
+    tsa_cert = None
+    try:
+        tsa_cert = ts.signer_cert
+    except Exception:
+        pass
+    try:
+        tsa_subject = tsa_cert.subject.human_friendly if tsa_cert else field_name
+    except Exception:
+        tsa_subject = _subject_cn(tsa_cert) if tsa_cert else field_name
+
+    # Certificate chain
+    tsa_cms_certs: list = []
+    try:
+        for c in ts.signed_data["certificates"]:
+            try:
+                tsa_cms_certs.append(c.chosen)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    all_certs = tsa_cms_certs + dss_pool
+    chain: list[CertInfo] = []
+    if tsa_cert is not None:
+        chain = _build_chain(tsa_cert, all_certs, {}, None)
+
+    ts_info = TimestampInfo(
+        time=gen_time or datetime.min,
+        tsa_subject=tsa_subject,
+        policy_oid=policy,
+        source=CertSource.EMBEDDED,
+        status=ValidationStatus.NOT_CHECKED,
+        cert_chain=chain,
+    )
+
+    crypto_status = _check_crypto_integrity(ts, is_timestamp=True)
+
+    return SignatureInfo(
+        field_name=field_name,
+        sig_type="doc_timestamp",
+        signer_subject=tsa_subject,
+        signing_time=gen_time,
+        timestamp=ts_info,
+        cert_chain=chain,
+        crypto_status=crypto_status,
+        chain_status=ValidationStatus.NOT_CHECKED,
+        revocation_status=ValidationStatus.NOT_CHECKED,
+        status=crypto_status,
+    )
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+def extract(pdf_bytes: bytes) -> DocumentValidation:
+    """Phase 1: extract all validation data from *pdf_bytes* without network access.
+
+    Opens the PDF in memory, reads all embedded signatures, document
+    timestamps, and the DSS dictionary, and returns a populated
+    ``DocumentValidation``.  Status fields that require network access
+    (trust chain, online OCSP) are left as ``NOT_CHECKED``.
+
+    Never raises; any unrecoverable error returns an empty
+    ``DocumentValidation`` with ``overall_status = NOT_CHECKED``.
+    """
+    try:
+        from pyhanko.pdf_utils.reader import PdfFileReader
+    except ImportError:
+        return DocumentValidation()
+
+    try:
+        reader = PdfFileReader(io.BytesIO(pdf_bytes), strict=False)
+    except Exception:
+        return DocumentValidation()
+
+    # DSS dictionary (LTA validation data embedded during signing)
+    dss_pool, ocsp_by_serial, crl_info = _extract_dss(reader)
+    has_dss = bool(dss_pool or ocsp_by_serial or crl_info)
+
+    # Collect all signatures sorted by PDF revision (oldest first)
+    entries: list[tuple[int, SignatureInfo]] = []
+
+    try:
+        for sig in reader.embedded_regular_signatures:
+            try:
+                si = _build_sig_info(sig, dss_pool, ocsp_by_serial,
+                                     crl_info)
+                entries.append((sig.signed_revision, si))
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    is_lta = False
+    try:
+        for ts in reader.embedded_timestamp_signatures:
+            try:
+                si = _build_doc_ts_info(ts, dss_pool)
+                entries.append((ts.signed_revision, si))
+                is_lta = True
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    entries.sort(key=lambda x: x[0])
+    total = len(entries)
+
+    revisions: list[RevisionInfo] = []
+    for display_idx, (_, sig_info) in enumerate(entries, start=1):
+        date = sig_info.signing_time
+        revisions.append(RevisionInfo(
+            revision_number=display_idx,
+            total_revisions=total,
+            description=sig_info.signer_subject,
+            date=date,
+            signed_by=sig_info,
+            status=sig_info.status,
+        ))
+
+    overall = (_worst(*[r.status for r in revisions])
+               if revisions else ValidationStatus.NOT_CHECKED)
+
+    return DocumentValidation(
+        revisions=revisions,
+        overall_status=overall,
+        has_dss=has_dss,
+        is_lta=is_lta,
+    )
