@@ -398,6 +398,15 @@ TRANSLATIONS: dict[str, str] = {
     "val_rev_type_metadata":    "Dokumentmetadaten (XMP)",
     "val_rev_type_unknown":     "Inkrementelles Update",
 
+    # Warnung: Änderungen nach letzter Signatur
+    "val_warn_post_sig_title":  "Dokument nach Signatur verändert",
+    "val_warn_post_sig_body":   "Folgende Änderungen wurden nach der letzten Signatur hinzugefügt"
+                                " und sind nicht durch sie abgedeckt: {types}\n"
+                                "Der aktuell angezeigte Inhalt stimmt möglicherweise nicht"
+                                " mit dem signierten Stand überein.",
+    "val_warn_post_sig_short":  "⚠  Dokument nach der letzten Signatur verändert ({types})."
+                                "  Bitte Signaturen prüfen.",
+
     # Hauptliste (neue Baumansicht)
     "val_sig_type_doc_ts":          "Dokumentzeitstempel",
     "val_rev_no_sig":               "–  (keine Signatur)",

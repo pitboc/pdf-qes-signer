@@ -34,20 +34,26 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QHBoxLayout,
-    QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+    QLabel, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
 )
 
 from .i18n import t
 from .validation_result import DocumentValidation, PadesProfile, RevisionInfo, SignatureInfo, ValidationStatus
 
 
-_RED   = "#9a0000"
-_GREEN = "#1a7a1a"
-_GREY  = "#666666"
+_RED    = "#9a0000"
+_GREEN  = "#1a7a1a"
+_GREY   = "#666666"
+_WARN_BG = "#fff3cd"   # amber background for warning banner
+_WARN_FG = "#6a4200"   # dark brown text
+_WARN_BD = "#e0a800"   # amber border
+
+# Change types that are suspicious after a signature (not benign infrastructure)
+_SUSPICIOUS_TYPES = {"form_fields", "annotations", "unknown"}
 
 
 def _bold() -> QFont:
@@ -118,20 +124,28 @@ def _profile_text(sig: SignatureInfo) -> tuple[str, str]:
 # ── ValidationDialog ──────────────────────────────────────────────────────────
 
 class ValidationDialog(QDialog):
-    """Modal dialog showing PDF signature objects (offline, Phase 1).
+    """Non-modal dialog showing PDF signature objects (offline, Phase 1).
 
     Tree of revisions (newest first) with expandable detail lines per
     signed revision.  An optional checkbox reveals unsigned revisions.
     No network access is performed.
+
+    Signals:
+        revision_selected(bytes): emitted when the user clicks a revision;
+            carries the PDF bytes sliced up to and including that revision.
     """
+
+    revision_selected = pyqtSignal(bytes)
 
     def __init__(self, parent,
                  doc: DocumentValidation,
                  pdf_bytes: bytes,
-                 auto_fetch: bool = False) -> None:
+                 auto_fetch: bool = False,
+                 show_all_initially: bool = False) -> None:
         super().__init__(parent)
         self._doc = doc
-        self._show_all = False
+        self._pdf_bytes = pdf_bytes
+        self._show_all = show_all_initially
 
         self.setWindowTitle(t("val_dlg_title"))
         self.setMinimumSize(680, 320)
@@ -146,16 +160,29 @@ class ValidationDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setSpacing(6)
 
+        # Warning banner – shown only when suspicious post-signature changes are detected
+        self._warn_label = QLabel()
+        self._warn_label.setWordWrap(True)
+        self._warn_label.setContentsMargins(8, 6, 8, 6)
+        self._warn_label.setStyleSheet(
+            f"background-color: {_WARN_BG}; color: {_WARN_FG};"
+            f" border: 1px solid {_WARN_BD}; border-radius: 4px;"
+        )
+        self._warn_label.hide()
+        layout.addWidget(self._warn_label)
+
         self._tree = QTreeWidget()
         self._tree.setColumnCount(2)
         self._tree.header().hide()
         self._tree.setAlternatingRowColors(True)
         self._tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
         self._tree.header().setStretchLastSection(True)
+        self._tree.itemSelectionChanged.connect(self._on_selection_changed)
         layout.addWidget(self._tree)
 
         bottom = QHBoxLayout()
         self._show_all_cb = QCheckBox(t("val_show_all_revisions"))
+        self._show_all_cb.setChecked(self._show_all)
         self._show_all_cb.toggled.connect(self._on_show_all_toggled)
         bottom.addWidget(self._show_all_cb)
         bottom.addStretch()
@@ -174,6 +201,7 @@ class ValidationDialog(QDialog):
 
     def _build_tree(self) -> None:
         self._tree.clear()
+        self._update_warning()
 
         revisions = self._doc.revisions
         if not self._show_all:
@@ -189,8 +217,57 @@ class ValidationDialog(QDialog):
 
         self._tree.resizeColumnToContents(0)
 
+    def _update_warning(self) -> None:
+        """Show or hide the post-signature modification warning banner."""
+        suspicious = self._suspicious_post_sig_types()
+        if not suspicious:
+            self._warn_label.hide()
+            return
+        type_labels = [t(f"val_rev_type_{ct}") for ct in sorted(suspicious)]
+        body = t("val_warn_post_sig_body", types=", ".join(type_labels))
+        title = t("val_warn_post_sig_title")
+        self._warn_label.setText(f"⚠  <b>{title}</b><br>{body}")
+        self._warn_label.show()
+
+    def _suspicious_post_sig_types(self) -> set:
+        """Return the set of suspicious change types that appear after the last signature."""
+        revisions = self._doc.revisions  # oldest-first
+        # Find index of last signed revision
+        last_sig_idx = -1
+        for i, rev in enumerate(revisions):
+            if rev.signed_by is not None:
+                last_sig_idx = i
+        if last_sig_idx == -1:
+            return set()
+        found: set = set()
+        for rev in revisions[last_sig_idx + 1:]:
+            for ct in rev.change_types:
+                if ct in _SUSPICIOUS_TYPES:
+                    found.add(ct)
+        return found
+
+    def _on_selection_changed(self) -> None:
+        """Emit revision_selected with the PDF bytes sliced at the selected revision."""
+        items = self._tree.selectedItems()
+        if not items:
+            return
+        item = items[0]
+        # Sub-items have no UserRole – walk up to the top-level item
+        rev_num = item.data(0, Qt.ItemDataRole.UserRole)
+        if rev_num is None:
+            parent = item.parent()
+            if parent:
+                rev_num = parent.data(0, Qt.ItemDataRole.UserRole)
+        if rev_num is None:
+            return
+        idx = rev_num - 1   # 0-based
+        offsets = self._doc.revision_end_offsets
+        if idx < len(offsets) and self._pdf_bytes:
+            self.revision_selected.emit(self._pdf_bytes[:offsets[idx]])
+
     def _build_rev_item(self, rev: RevisionInfo) -> None:
         item = QTreeWidgetItem(self._tree)
+        item.setData(0, Qt.ItemDataRole.UserRole, rev.revision_number)
         rev_label = t("val_rev_label", n=rev.revision_number, total=rev.total_revisions)
         item.setText(0, rev_label)
         item.setFont(0, _bold())

@@ -202,3 +202,8 @@ class DocumentValidation:
     overall_status: ValidationStatus = ValidationStatus.NOT_CHECKED
     has_dss: bool = False   # DSS dictionary present in the PDF
     is_lta: bool = False    # at least one archival (LTA) timestamp present
+
+    # Byte offset of the end of each revision (index matches revisions[idx]).
+    # revision_bytes = pdf_bytes[:revision_end_offsets[idx]] gives the PDF
+    # as it looked at that revision.  Populated by the extractor.
+    revision_end_offsets: list = field(default_factory=list)

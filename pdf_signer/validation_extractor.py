@@ -40,6 +40,7 @@ same serial within one document are extremely unlikely in practice.
 from __future__ import annotations
 
 import io
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -699,6 +700,23 @@ def extract(pdf_bytes: bytes) -> DocumentValidation:
     except Exception:
         pass
 
+    # Byte-Grenzen der Revisionen: Position nach %%EOF des jeweiligen
+    # xref-Abschnitts.  end_location zeigt auf den Beginn des trailer-Keywords;
+    # %%EOF folgt danach.  Wir suchen das erste %%EOF nach end_location,
+    # damit fitz beim Schneiden an dieser Stelle ein vollständiges PDF erhält
+    # (inkl. Trailer und EOF-Marker) und die korrekte Revision rendert.
+    revision_end_offsets: list[int] = []
+    try:
+        for sec in reader.xrefs._xref_sections:
+            start = sec.meta_info.end_location
+            m = re.search(b"%%EOF[\\r\\n]*", pdf_bytes[start:start + 4096])
+            if m:
+                revision_end_offsets.append(start + m.end())
+            else:
+                revision_end_offsets.append(start)
+    except Exception:
+        revision_end_offsets = []
+
     entries.sort(key=lambda x: x[0])
 
     # Total PDF revisions (including unsigned ones)
@@ -751,4 +769,5 @@ def extract(pdf_bytes: bytes) -> DocumentValidation:
         overall_status=overall,
         has_dss=has_dss,
         is_lta=is_lta,
+        revision_end_offsets=revision_end_offsets,
     )

@@ -44,7 +44,9 @@ pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
 
 ## Features
 
-- Open PDF files and navigate multi-page documents
+### Signing
+- Open PDF files and navigate multi-page documents (single-page and continuous view)
+- Zoom with Ctrl+scroll (cursor-centred), pan with middle-button drag
 - Draw signature fields by left-click and drag on the PDF canvas
 - Click an existing field to select it; right-click to delete it
 - Selected field is highlighted with a bold border and shows the visual appearance preview
@@ -66,7 +68,33 @@ pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
   automatically so further fields can be signed in sequence
 - Existing unsigned fields in already-signed PDFs are shown as locked (orange)
   and protected from modification to preserve the existing signature hash
-- Bilingual UI: German and English (switchable at runtime)
+
+### Signature validation
+- **Check signatures** (*Sign → Check signatures*): opens a non-modal revision
+  tree showing all PDF revisions newest-first; the main window remains
+  interactive while the dialog is open
+- Each signed revision displays: signer name, signing time (self-reported or
+  TSA-confirmed), crypto integrity status, and PAdES conformance level
+  (B / T / LT / LTA) with a plain-language explanation
+- Unsigned revisions (form field fills, DSS updates, XMP metadata) can be
+  revealed with *Show all revisions*
+- Clicking a revision switches the PDF viewer to show the document **as it
+  looked at that point in time** (historical view)
+- **Post-signature modification warning**: if the document has been modified
+  after the last signature in a way that affects visible content (e.g. form
+  fields changed by an external tool), a prominent warning banner appears
+  immediately when the file is opened — without requiring the user to open
+  the validation dialog. DSS and XMP revisions produced by the LTA process
+  are explicitly excluded from the warning to avoid false alarms.
+- When a warning is active, *Show all revisions* is automatically enabled in
+  the validation dialog so the modified revision is immediately visible
+
+### Configuration and profiles
+- **Multiple named profiles** (*Profiles* menu): each profile stores a
+  complete set of signing parameters (PKCS#11 library, key label, TSA URL,
+  appearance settings). Profiles can be created, renamed, deleted, and
+  switched at runtime.
+- Bilingual UI: German and English (switchable at runtime without restart)
 - Persistent configuration in `~/.config/pdf-signer/pdf_signer.ini`
 
 ## Requirements
@@ -180,6 +208,15 @@ Use *File → Save with fields (copy)* to embed the signature field annotations
 into a PDF copy without applying a signature. This is useful for preparing
 documents that others will sign later.
 
+### Check signatures
+
+Open a signed PDF and click *Sign → Check signatures* (or the toolbar button).
+The revision tree opens alongside the main window — both remain usable at the
+same time. Click any revision row to preview the document as it looked at that
+point. If the document was modified after the last signature in a way that
+affects visible content, a warning banner appears automatically in the main
+window when the file is opened.
+
 ## Configuration
 
 The application stores its settings in `~/.config/pdf-signer/pdf_signer.ini`.
@@ -190,19 +227,25 @@ with default values.
 
 ```
 pdf_signer/
-├── __init__.py        # package marker, version
-├── __main__.py        # enables python -m pdf_signer
-├── main.py            # entry point: argument parsing, QApplication
-├── config.py          # AppConfig (INI persistence), PDF_STANDARD_FONTS
-├── appearance.py      # SigAppearance, Qt and Pillow renderers
-├── signer.py          # SaveFieldsWorker, SignWorker, PKCS#11 logic
-├── pdf_view.py        # PDFViewWidget, SignatureFieldDef
-├── dialogs.py         # Pkcs11ConfigDialog, AppearanceConfigDialog, TokenInfoDialog
-├── main_window.py     # PDFSignerApp main window
+├── __init__.py            # package marker, version
+├── __main__.py            # enables python -m pdf_signer
+├── main.py                # entry point: argument parsing, QApplication
+├── config.py              # AppConfig (INI persistence), PDF_STANDARD_FONTS
+├── appearance.py          # SigAppearance, Qt and Pillow renderers
+├── signer.py              # SaveFieldsWorker, SignWorker, PKCS#11 logic
+├── pdf_view.py            # PDFViewWidget, SignatureFieldDef
+├── continuous_view.py     # ContinuousView (multi-page scroll mode)
+├── dialogs.py             # Pkcs11ConfigDialog, AppearanceConfigDialog, TokenInfoDialog
+├── main_window.py         # PDFSignerApp main window
+├── validation_result.py   # DocumentValidation data model (revisions, signatures, PAdES profiles)
+├── validation_extractor.py# Phase 1 offline extraction (crypto integrity, certificate chain, DSS)
+├── validation_dialog.py   # ValidationDialog: revision tree, PAdES profile, warning banner
+├── validation_worker.py   # Phase 2 background worker (network OCSP – not yet active)
+├── lotl_trust.py          # EU LOTL/TSL trust store (not yet active)
 └── i18n/
-    ├── __init__.py    # I18n class, t() function
-    ├── de.py          # German translations
-    └── en.py          # English translations
+    ├── __init__.py        # I18n class, t() function
+    ├── de.py              # German translations
+    └── en.py              # English translations
 ```
 
 ## API documentation

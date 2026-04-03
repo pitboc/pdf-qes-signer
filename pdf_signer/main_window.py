@@ -125,6 +125,12 @@ class PDFSignerApp(QMainWindow):
         self._continuous_mode: bool = False
         # Aktueller Zoom-Faktor (1.0 = 100 %, geteilt von Einzel- und Fortlaufend-Ansicht)
         self._zoom_factor: float = 1.5
+        # Signaturprüfungs-Dialog (nicht-modal); None wenn geschlossen
+        self._validation_dialog = None
+        # Historisches fitz-Dokument für revisionsabhängige Anzeige; None = aktuelles Dokument
+        self._historical_doc: Optional[fitz.Document] = None
+        # Gecachtes Extraktionsergebnis (Phase 1); wird beim Öffnen befüllt
+        self._doc_validation = None
         # Scrollbar-Startwerte für Middle-Drag-Panning (single-page mode)
         self._pan_hbar_start: int = 0
         self._pan_vbar_start: int = 0
@@ -139,6 +145,11 @@ class PDFSignerApp(QMainWindow):
         # Optionale initiale PDF-Datei direkt öffnen (z.B. per Kommandozeilenargument)
         if initial_pdf:
             self._open_pdf(initial_pdf)
+
+    @property
+    def _active_doc(self) -> Optional[fitz.Document]:
+        """Document currently shown: historical revision or the real document."""
+        return self._historical_doc if self._historical_doc else self.pdf_doc
 
     # ── UI construction ───────────────────────────────────────────────────
 
@@ -283,10 +294,26 @@ class PDFSignerApp(QMainWindow):
         self._tb_save_fields.triggered.connect(self.save_with_fields)
         tb.addAction(self._tb_save_fields)
 
-        # Central splitter: PDF canvas (left) + right panel
+        # Central widget: warning banner (hidden by default) + main splitter
+        _central = QWidget()
+        _central_layout = QVBoxLayout(_central)
+        _central_layout.setContentsMargins(0, 0, 0, 0)
+        _central_layout.setSpacing(0)
+
+        self._warn_main_label = QLabel()
+        self._warn_main_label.setContentsMargins(8, 2, 8, 2)
+        self._warn_main_label.setMaximumHeight(24)
+        self._warn_main_label.setStyleSheet(
+            "background-color: #fff3cd; color: #6a4200;"
+            " border-bottom: 1px solid #e0a800;"
+        )
+        self._warn_main_label.hide()
+        _central_layout.addWidget(self._warn_main_label)
+
         # Haupt-Splitter: PDF-Canvas links (größerer Anteil), Steuerbereich rechts
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.setCentralWidget(splitter)
+        _central_layout.addWidget(splitter)
+        self.setCentralWidget(_central)
 
         # Einzelseitenansicht: PDF-Canvas in ScrollArea (zoombar)
         # _outer_container ist das permanente ScrollArea-Widget (wird NIE ersetzt).
@@ -518,31 +545,37 @@ class PDFSignerApp(QMainWindow):
     def _render_current_page(self) -> None:
         """Render the current page (single-page mode) or refresh overlays
         (continuous mode).  A full rebuild of the continuous view is triggered
-        whenever the loaded document changed since the last open() call."""
-        if not self.pdf_doc:
+        whenever the loaded document changed since the last open() call.
+
+        Uses ``_active_doc`` so that the historical revision selected in the
+        validation dialog is shown instead of the real document when applicable.
+        In historical mode the signature field overlays are suppressed.
+        """
+        doc = self._active_doc
+        if not doc:
             return
+        historical = self._historical_doc is not None
+        sig    = [] if historical else self.sig_fields
+        locked = [] if historical else self.locked_fields
+        signed = [] if historical else self.signed_fields
         if self._continuous_mode:
-            if not self._cv.is_open_for(self.pdf_doc):
-                self._cv._zoom = self._zoom_factor   # apply current zoom on first open
-                self._cv.open(self.pdf_doc, self.appearance,
-                              self.sig_fields, self.locked_fields, self.signed_fields)
+            if not self._cv.is_open_for(doc):
+                self._cv._zoom = self._zoom_factor
+                self._cv.open(doc, self.appearance, sig, locked, signed)
                 self._cv.scroll_to_page(self.current_page)
             else:
-                self._cv.update_fields(self.sig_fields, self.locked_fields, self.signed_fields)
-                # Sync zoom if it was changed while we were in single-page mode
+                self._cv.update_fields(sig, locked, signed)
                 if abs(self._cv._zoom - self._zoom_factor) > 0.001:
                     self._cv.set_zoom(self._zoom_factor)
             self._page_edit.setText(str(self.current_page + 1))
-            self._page_total_lbl.setText(f"/ {len(self.pdf_doc)}")
+            self._page_total_lbl.setText(f"/ {len(doc)}")
             return
-        self._pdf_view._zoom = self._zoom_factor     # apply current zoom before rendering
-        page = self.pdf_doc[self.current_page]
-        self._pdf_view.set_page(
-            page, self.sig_fields, self.current_page,
-            self.locked_fields, self.signed_fields)
+        self._pdf_view._zoom = self._zoom_factor
+        page = doc[self.current_page]
+        self._pdf_view.set_page(page, sig, self.current_page, locked, signed)
         self._outer_container.adjustSize()
         self._page_edit.setText(str(self.current_page + 1))
-        self._page_total_lbl.setText(f"/ {len(self.pdf_doc)}")
+        self._page_total_lbl.setText(f"/ {len(doc)}")
 
     # ── Zoom ──────────────────────────────────────────────────────────────
 
@@ -958,6 +991,8 @@ class PDFSignerApp(QMainWindow):
             self._render_current_page()
             self.setWindowTitle(f"PDF QES Signer – {os.path.basename(path)}")
             self._set_status(t("status_opened", path=path, pages=len(doc)))
+            # Phase-1-Extraktion für Warnbanner (kein Netzwerk, schnell)
+            self._refresh_doc_validation()
             # Letztes geöffnetes Verzeichnis speichern
             self.config.set("paths", "last_open_dir", str(Path(path).parent))
             self.config.save()
@@ -1198,7 +1233,8 @@ class PDFSignerApp(QMainWindow):
 
     def prev_page(self) -> None:
         # Eine Seite zurückblättern (Minimum: Seite 0)
-        if self.pdf_doc and self.current_page > 0:
+        doc = self._active_doc
+        if doc and self.current_page > 0:
             self.current_page -= 1
             if self._continuous_mode:
                 self._cv.scroll_to_page(self.current_page)
@@ -1208,7 +1244,8 @@ class PDFSignerApp(QMainWindow):
 
     def next_page(self) -> None:
         # Eine Seite vorblättern (Maximum: letzte Seite)
-        if self.pdf_doc and self.current_page < len(self.pdf_doc) - 1:
+        doc = self._active_doc
+        if doc and self.current_page < len(doc) - 1:
             self.current_page += 1
             if self._continuous_mode:
                 self._cv.scroll_to_page(self.current_page)
@@ -1529,8 +1566,98 @@ class PDFSignerApp(QMainWindow):
         vl.addWidget(btn)
         dlg.exec()
 
+    def _set_modifying_actions_enabled(self, enabled: bool) -> None:
+        """Enable or disable all actions that would modify or replace the PDF."""
+        for act in (self._act_sign, self._tb_sign,
+                    self._act_save_fields, self._tb_save_fields,
+                    self._act_open, self._tb_open,
+                    self._act_check_sigs, self._tb_check_sigs):
+            act.setEnabled(enabled)
+        # Delete button: only active when enabled AND a free field is selected
+        if enabled:
+            row   = self._field_list.currentRow()
+            n_sig = len(self.sig_fields)
+            self._btn_delete.setEnabled(1 <= row <= n_sig)
+        else:
+            self._btn_delete.setEnabled(False)
+
+    def _on_validation_revision_selected(self, revision_bytes: bytes) -> None:
+        """Show the PDF as it looked at the selected revision."""
+        if self._historical_doc:
+            self._historical_doc.close()
+            self._historical_doc = None
+        try:
+            self._historical_doc = fitz.open(stream=revision_bytes, filetype="pdf")
+            self.current_page = min(self.current_page,
+                                    max(0, len(self._historical_doc) - 1))
+        except Exception:
+            self._historical_doc = None
+        self._render_current_page()
+
+    def _on_validation_dialog_finished(self, _result: int = 0) -> None:
+        """Restore normal view and re-enable actions when the dialog closes."""
+        if self._historical_doc:
+            self._historical_doc.close()
+            self._historical_doc = None
+        self._validation_dialog = None
+        self._render_current_page()
+        self._set_modifying_actions_enabled(True)
+
+    def _refresh_doc_validation(self) -> None:
+        """Phase-1-Extraktion ausführen und Warnbanner aktualisieren.
+
+        Liest von self.pdf_path (Disk), damit auch nach dem Signieren der
+        aktuelle Dateistand berücksichtigt wird.  Bei Fehler wird
+        _doc_validation auf None gesetzt und das Banner versteckt.
+        """
+        self._doc_validation = None
+        self._warn_main_label.hide()
+        if not self.pdf_path:
+            return
+        try:
+            from .validation_extractor import extract
+            with open(self.pdf_path, "rb") as fh:
+                full_bytes = fh.read()
+            self._doc_validation = extract(full_bytes)
+            self._update_main_warning()
+        except Exception:
+            pass
+
+    def _update_main_warning(self) -> None:
+        """Warnbanner im Hauptfenster ein- oder ausblenden."""
+        if self._doc_validation is None:
+            self._warn_main_label.hide()
+            return
+        from .validation_dialog import _SUSPICIOUS_TYPES
+        revisions = self._doc_validation.revisions
+        last_sig_idx = max(
+            (i for i, r in enumerate(revisions) if r.signed_by is not None),
+            default=-1,
+        )
+        if last_sig_idx == -1:
+            self._warn_main_label.hide()
+            return
+        found: set = set()
+        for rev in revisions[last_sig_idx + 1:]:
+            for ct in rev.change_types:
+                if ct in _SUSPICIOUS_TYPES:
+                    found.add(ct)
+        if not found:
+            self._warn_main_label.hide()
+            return
+        type_labels = [t(f"val_rev_type_{ct}") for ct in sorted(found)]
+        self._warn_main_label.setText(
+            t("val_warn_post_sig_short", types=", ".join(type_labels))
+        )
+        self._warn_main_label.show()
+
     def check_signatures(self) -> None:
-        """Phase 1 + Dialog für Signaturprüfung."""
+        """Signaturprüfungs-Dialog öffnen (nicht-modal, Phase 1 offline).
+
+        Öffnet das Dokument auch wenn keine Signaturen vorhanden sind; in
+        diesem Fall wird "Alle Revisionen anzeigen" automatisch aktiviert.
+        Alle PDF-verändernden Aktionen werden für die Dauer des Dialogs gesperrt.
+        """
         if not self.pdf_path:
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.information(self, t("val_dlg_title"), t("val_no_pdf"))
@@ -1546,13 +1673,23 @@ class PDFSignerApp(QMainWindow):
             QMessageBox.critical(self, t("val_dlg_title"), str(exc))
             return
 
-        from .validation_extractor import extract
         from .validation_dialog import ValidationDialog
-        doc = extract(full_bytes)
+        # Gecachtes Ergebnis nutzen wenn vorhanden, sonst neu extrahieren
+        if self._doc_validation is None:
+            from .validation_extractor import extract
+            self._doc_validation = extract(full_bytes)
+        doc = self._doc_validation
 
-        if not any(r.signed_by for r in doc.revisions):
-            from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.information(self, t("val_dlg_title"), t("val_no_sigs"))
-            return
+        has_signatures = any(r.signed_by for r in doc.revisions)
+        has_warning = self._warn_main_label.isVisible()
 
-        ValidationDialog(self, doc, full_bytes).exec()
+        self._validation_dialog = ValidationDialog(
+            self, doc, full_bytes,
+            show_all_initially=not has_signatures or has_warning,
+        )
+        self._validation_dialog.revision_selected.connect(
+            self._on_validation_revision_selected)
+        self._validation_dialog.finished.connect(
+            self._on_validation_dialog_finished)
+        self._set_modifying_actions_enabled(False)
+        self._validation_dialog.show()
