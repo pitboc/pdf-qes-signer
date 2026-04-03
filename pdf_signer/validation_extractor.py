@@ -45,7 +45,7 @@ from typing import Optional
 
 from .validation_result import (
     CertInfo, CertSource, CRLInfo, DocumentValidation, OCSPInfo,
-    RevisionInfo, SignatureInfo, TimestampInfo, ValidationStatus,
+    PadesProfile, RevisionInfo, SignatureInfo, TimestampInfo, ValidationStatus,
 )
 
 
@@ -538,6 +538,114 @@ def _build_doc_ts_info(ts, dss_pool: list) -> SignatureInfo:
     )
 
 
+# ── Unsigned revision classification ─────────────────────────────────────────
+
+def _classify_unsigned_revision(reader, idx: int) -> list:
+    """Return category tags describing what changed in an unsigned revision.
+
+    Tags: "original", "form_fields", "annotations", "dss", "metadata",
+    "unknown".  Multiple tags are possible (e.g. ["dss", "metadata"]).
+
+    Uses pyhanko's private ``_xref_sections`` to get the set of objects
+    changed in this revision, then checks known PDF structures.
+
+    Args:
+        reader: ``PdfFileReader`` for the full document.
+        idx:    0-based revision index (= pyhanko signed_revision value).
+    """
+    if idx == 0:
+        return ["original"]
+
+    try:
+        section = reader.xrefs._xref_sections[idx]
+        changed_obj_nums = {ref[0] for ref in section.xref_data.explicit_refs_in_revision}
+    except Exception:
+        return ["unknown"]
+
+    if not changed_obj_nums:
+        return ["unknown"]
+
+    found: list = []
+
+    try:
+        from pyhanko.pdf_utils.generic import Reference
+        resolver = reader.get_historical_resolver(idx)
+
+        for obj_num in changed_obj_nums:
+            try:
+                obj = resolver.get_object(Reference(obj_num, 0))
+                if not hasattr(obj, "keys"):
+                    continue
+                keys = set(obj.keys())
+
+                # XMP metadata stream: /Type /Metadata + /Subtype /XML
+                if ("/Type" in keys and "/Subtype" in keys
+                        and str(obj.raw_get("/Type")) == "/Metadata"
+                        and str(obj.raw_get("/Subtype")) == "/XML"
+                        and "metadata" not in found):
+                    found.append("metadata")
+                    continue
+
+                # DSS dictionary: top-level keys /Certs and/or /OCSPs and/or /CRLs
+                if (("/Certs" in keys or "/OCSPs" in keys or "/CRLs" in keys)
+                        and "dss" not in found):
+                    found.append("dss")
+                    continue
+
+                # Widget annotation (form field): has /FT (field type)
+                if "/FT" in keys and "form_fields" not in found:
+                    found.append("form_fields")
+                    continue
+
+                # Other annotation: /Rect + /Subtype but no /FT
+                if ("/Rect" in keys and "/Subtype" in keys
+                        and "/FT" not in keys
+                        and "annotations" not in found):
+                    found.append("annotations")
+
+            except Exception:
+                continue
+
+    except Exception:
+        pass
+
+    return found if found else ["unknown"]
+
+
+# ── PAdES profile ────────────────────────────────────────────────────────────
+
+def _calc_pades_profile(sig: SignatureInfo,
+                         has_dss_data: bool,
+                         doc_ts_revisions: set,
+                         this_rev: int) -> PadesProfile:
+    """Determine the PAdES conformance level from embedded data (Phase 1).
+
+    Args:
+        sig:              The signature to classify.
+        has_dss_data:     True if the document DSS contains any entries.
+        doc_ts_revisions: Set of PDF revision numbers that carry a document
+                          timestamp (LTA).
+        this_rev:         PDF revision number of *sig*.
+
+    Note: ``has_dss_data`` is document-global; without ``/VRI`` it cannot be
+    verified that the DSS entries specifically belong to *this* signature.
+    This is an acceptable heuristic for Phase 1.
+    """
+    if sig.sig_type == "doc_timestamp":
+        return PadesProfile.LTA  # by convention – see module docstring
+
+    has_tsa_token = sig.timestamp is not None
+    if not has_tsa_token:
+        return PadesProfile.B
+
+    if not has_dss_data:
+        return PadesProfile.T
+
+    # LTA: at least one document timestamp in a later revision covers this one
+    has_lta_after = any(r > this_rev for r in doc_ts_revisions)
+    return PadesProfile.LTA if has_lta_after else PadesProfile.LT
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def extract(pdf_bytes: bytes) -> DocumentValidation:
@@ -592,22 +700,51 @@ def extract(pdf_bytes: bytes) -> DocumentValidation:
         pass
 
     entries.sort(key=lambda x: x[0])
-    total = len(entries)
 
+    # Total PDF revisions (including unsigned ones)
+    total_pdf_revisions = max((r for r, _ in entries), default=1)
+    try:
+        total_pdf_revisions = reader.xrefs.total_revisions
+    except Exception:
+        pass
+
+    # Map revision number → SignatureInfo
+    sig_by_rev: dict[int, SignatureInfo] = {}
+    for rev_num, si in entries:
+        sig_by_rev[rev_num] = si
+
+    # Set of revision numbers that carry a document timestamp (for LTA detection)
+    doc_ts_revs: set[int] = {
+        rev_num for rev_num, si in entries if si.sig_type == "doc_timestamp"
+    }
+
+    # Assign PAdES profile to each regular signature
+    for rev_num, si in entries:
+        si.pades_profile = _calc_pades_profile(si, has_dss, doc_ts_revs, rev_num)
+
+    # Build RevisionInfo for every PDF revision (signed and unsigned).
+    # signed_revision from pyhanko is 0-based (0 = first xref section).
+    # We display revision numbers 1-based to the user (idx + 1).
     revisions: list[RevisionInfo] = []
-    for display_idx, (_, sig_info) in enumerate(entries, start=1):
-        date = sig_info.signing_time
+    for idx in range(total_pdf_revisions):
+        sig_info = sig_by_rev.get(idx)
+        if sig_info is None:
+            change_types = _classify_unsigned_revision(reader, idx)
+        else:
+            change_types = []
         revisions.append(RevisionInfo(
-            revision_number=display_idx,
-            total_revisions=total,
-            description=sig_info.signer_subject,
-            date=date,
+            revision_number=idx + 1,
+            total_revisions=total_pdf_revisions,
+            description=sig_info.signer_subject if sig_info else "",
+            date=sig_info.signing_time if sig_info else None,
             signed_by=sig_info,
-            status=sig_info.status,
+            status=sig_info.status if sig_info else ValidationStatus.NOT_CHECKED,
+            change_types=change_types,
         ))
 
-    overall = (_worst(*[r.status for r in revisions])
-               if revisions else ValidationStatus.NOT_CHECKED)
+    signed_revisions = [r for r in revisions if r.signed_by is not None]
+    overall = (_worst(*[r.status for r in signed_revisions])
+               if signed_revisions else ValidationStatus.NOT_CHECKED)
 
     return DocumentValidation(
         revisions=revisions,

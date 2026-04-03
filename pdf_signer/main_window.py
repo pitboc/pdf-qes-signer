@@ -1550,7 +1550,7 @@ class PDFSignerApp(QMainWindow):
         from .validation_dialog import ValidationDialog
         doc = extract(full_bytes)
 
-        if not doc.revisions:
+        if not any(r.signed_by for r in doc.revisions):
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.information(self, t("val_dlg_title"), t("val_no_sigs"))
             return

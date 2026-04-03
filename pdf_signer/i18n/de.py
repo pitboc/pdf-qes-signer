@@ -389,4 +389,32 @@ TRANSLATIONS: dict[str, str] = {
     "val_btn_recheck":          "Erneut prüfen",
     "val_no_sigs":              "Keine Signaturen im Dokument gefunden.",
     "val_no_pdf":               "Kein PDF geöffnet.",
+
+    # Typen unsigned Revisionen
+    "val_rev_type_original":    "Original-Dokument",
+    "val_rev_type_form_fields": "Formularfelder",
+    "val_rev_type_annotations": "Annotationen",
+    "val_rev_type_dss":         "Validierungsdaten (DSS)",
+    "val_rev_type_metadata":    "Dokumentmetadaten (XMP)",
+    "val_rev_type_unknown":     "Inkrementelles Update",
+
+    # Hauptliste (neue Baumansicht)
+    "val_sig_type_doc_ts":          "Dokumentzeitstempel",
+    "val_rev_no_sig":               "–  (keine Signatur)",
+    "val_show_all_revisions":       "Alle Revisionen anzeigen",
+    "val_detail_date":              "Datum",
+    "val_detail_integrity":         "Integrität",
+    "val_detail_profile":           "Profil",
+    "val_date_tsa":                 "{time}  (TSA-bestätigt)",
+    "val_date_self":                "{time}  (selbst gemeldet)",
+    "val_date_doc_ts":              "{time}",
+    "val_profile_is_doc_ts":        "–  (ist selbst der Dokumentzeitstempel)",
+    "val_profile_details_B":        "TSA-Token –, DSS –",
+    "val_profile_details_T":        "TSA-Token ✓, DSS –",
+    "val_profile_details_LT":       "TSA-Token ✓, DSS ✓, LTA-Zeitstempel –",
+    "val_profile_details_LTA":      "TSA-Token ✓, DSS ✓, LTA-Zeitstempel ✓",
+    "val_profile_meaning_B":        "Keine zusätzlichen Validierungsdaten eingebettet",
+    "val_profile_meaning_T":        "Signierzeitpunkt gesichert, Validierungsdaten nicht eingebettet",
+    "val_profile_meaning_LT":       "Validierungsdaten eingebettet, aber nicht kryptographisch gesichert",
+    "val_profile_meaning_LTA":      "Alle Validierungsdaten eingebettet und kryptographisch gesichert",
 }

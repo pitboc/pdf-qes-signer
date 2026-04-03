@@ -1,25 +1,32 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Dialog for displaying PDF signature objects.
+"""Dialog for displaying PDF signature validation results.
 
-Shows a flat list of PDF revisions (newest first).  Each row spans seven
-columns for easy vertical alignment.  Sub-items are collapsed by default
-and reveal field name, full subject DN, and (for signatures with an
-embedded TSA token) the self-reported CMS signing time.
+Shows a tree of PDF revisions (newest first).  Each revision with a signature
+has an expandable row with three detail lines: date, integrity, and PAdES
+profile.  Revisions without a signature are shown only when the user enables
+the "show all revisions" checkbox.
 
-No certificate chains, no revocation data, no network access.
+## Tree structure
 
-## Columns
+    ▼ Rev 3 / 3   Signatur · Erika Musterfrau          ← top-level, 2 cols
+          Datum        10.01.2024 14:32  (TSA-bestätigt)
+          Integrität   ✓ Unverändert
+          Profil       PAdES-LTA  (TSA-Token ✓, DSS ✓, LTA-Zeitstempel ✓)
+                       Alle Validierungsdaten eingebettet und kryptographisch gesichert
 
-    Rev      | Element               | Name             | TSA          | Zeit             | Gültig bis | Integrität
-    ---------|---------------------- |------------------|--------------|------------------|------------|------------------
-    Rev 3/3  | TSA (LTA) Zeitstempel | BalTstamp TSU1   | –            | 15.01.2024 09:00 | 31.12.2025 | ✓ unverändert
-    Rev 2/3  | Signatur              | Erika Musterfrau | BalTstamp    | 10.01.2024 14:32 | 31.12.2026 | ✓ unverändert
-    Rev 1/3  | Signatur              | Max Mustermann   | –            | 05.01.2024 11:15 | 31.12.2025 | ✓ unverändert
+    ▼ Rev 2 / 3   Dokumentzeitstempel · BalTstamp TSU1
+          Datum        15.01.2024 09:00
+          Integrität   ✓ Unverändert
+          Profil       –  (ist selbst der Dokumentzeitstempel)
 
-Integrity failure turns the entire row red.
-Certificate expiry at signing time turns the "Gültig bis" cell red.
-Sub-item text appears in the Element column (col 1) to avoid the narrow
-Rev column; other columns are empty for sub-items.
+      Rev 1 / 3   –  (keine Signatur)                  ← only with "show all"
+
+Column 0 carries the Rev label (top-level) or a grey detail label (sub-item).
+Column 1 carries the type·name summary (top-level) or the detail value.
+The column header is hidden; column 0 auto-sizes, column 1 stretches.
+
+Integrity failure turns the top-level row red.
+Double-click on a signed revision is reserved for the future detail window.
 """
 
 from __future__ import annotations
@@ -30,27 +37,23 @@ from typing import Optional
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
-    QDialog, QDialogButtonBox, QHBoxLayout, QLabel,
+    QCheckBox, QDialog, QDialogButtonBox, QHBoxLayout,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout,
 )
 
 from .i18n import t
-from .validation_result import DocumentValidation, RevisionInfo, SignatureInfo, ValidationStatus
+from .validation_result import DocumentValidation, PadesProfile, RevisionInfo, SignatureInfo, ValidationStatus
 
 
 _RED   = "#9a0000"
 _GREEN = "#1a7a1a"
-_GREY  = "#555555"
+_GREY  = "#666666"
 
-# Column indices
-_COL_REV         = 0
-_COL_ELEMENT     = 1
-_COL_NAME        = 2
-_COL_TSA         = 3
-_COL_TIME        = 4
-_COL_VALID_UNTIL = 5
-_COL_INTEGRITY   = 6
-_NUM_COLS        = 7
+
+def _bold() -> QFont:
+    f = QFont()
+    f.setBold(True)
+    return f
 
 
 def _fmt_dt(dt: Optional[datetime]) -> str:
@@ -59,19 +62,8 @@ def _fmt_dt(dt: Optional[datetime]) -> str:
     return dt.strftime("%d.%m.%Y %H:%M")
 
 
-def _fmt_date(dt: Optional[datetime]) -> str:
-    if dt is None:
-        return "–"
-    return dt.strftime("%d.%m.%Y")
-
-
 def _parse_dn(dn: str) -> dict[str, str]:
-    """Parse an asn1crypto human-friendly DN string into a field dict.
-
-    asn1crypto uses '; ' as separator when any value contains a comma
-    (e.g. 'Musterfrau, Erika'), otherwise ', '.  We detect the separator
-    by checking for a semicolon in the string.
-    """
+    """Parse an asn1crypto human-friendly DN string into a field dict."""
     sep = ";" if ";" in dn else ","
     result: dict[str, str] = {}
     for part in dn.split(sep):
@@ -91,26 +83,6 @@ def _extract_cn(subject: str) -> str:
     return subject.split(",")[0].strip()
 
 
-def _compact_dn(dn: str) -> str:
-    """Return a compact 'CN, O, C' summary from a human-friendly DN string.
-
-    Uses _parse_dn so that values with commas (e.g. 'Musterfrau, Erika') are
-    extracted correctly.  Falls back to the raw string if no fields found.
-    """
-    fields = _parse_dn(dn)
-    parts = []
-    cn = fields.get("Common Name") or fields.get("CN")
-    if cn:
-        parts.append(cn)
-    o = fields.get("Organization")
-    if o:
-        parts.append(o)
-    c = fields.get("Country")
-    if c:
-        parts.append(c)
-    return ", ".join(parts) if parts else dn
-
-
 def _auth_time(sig: SignatureInfo) -> Optional[datetime]:
     """Return the authoritative signing time (TSA-confirmed if available)."""
     if sig.timestamp:
@@ -118,116 +90,38 @@ def _auth_time(sig: SignatureInfo) -> Optional[datetime]:
     return sig.signing_time
 
 
-# ── Row builders ──────────────────────────────────────────────────────────────
-
-def _apply_integrity(item: QTreeWidgetItem,
-                     status: ValidationStatus) -> None:
-    """Populate col-6 integrity badge; paint whole row red on failure."""
-    bold = QFont()
-    bold.setBold(True)
-
-    if status == ValidationStatus.VALID:
-        item.setText(_COL_INTEGRITY, t("val_integrity_ok"))
-        item.setForeground(_COL_INTEGRITY, QColor(_GREEN))
-        item.setFont(_COL_INTEGRITY, bold)
-
-    elif status == ValidationStatus.INVALID:
-        item.setText(_COL_INTEGRITY, t("val_integrity_fail"))
-        red = QColor(_RED)
-        for col in range(_NUM_COLS):
-            item.setForeground(col, red)
-        item.setFont(_COL_INTEGRITY, bold)
-
-    # NOT_CHECKED / UNKNOWN: leave column empty
-
-
-def _build_sig_subitems(parent: QTreeWidgetItem,
-                         sig: SignatureInfo) -> None:
-    """Add detail sub-items with text in col 0 (will be spanned full-width)."""
-    no_sel = ~Qt.ItemFlag.ItemIsSelectable
-    grey   = QColor(_GREY)
-
-    def _sub(text: str) -> QTreeWidgetItem:
-        it = QTreeWidgetItem(parent)
-        it.setText(0, text)
-        it.setFlags(it.flags() & no_sel)
-        it.setForeground(0, grey)
-        return it
-
-    _sub(t("val_sub_field",   value=sig.field_name))
-    _sub(t("val_sub_name",    value=_compact_dn(sig.signer_subject)))
-    if sig.cert_chain:
-        _sub(t("val_sub_issuer", value=_compact_dn(sig.cert_chain[0].issuer)))
-
-
-def _build_rev_item(rev: RevisionInfo, parent) -> QTreeWidgetItem:
-    """Build one revision row across all seven columns."""
-    item = QTreeWidgetItem(parent)
-    bold = QFont()
-    bold.setBold(True)
-
-    # Col 0 – Rev label
-    item.setText(_COL_REV, t("val_rev_label",
-                              n=rev.revision_number,
-                              total=rev.total_revisions))
-    item.setFont(_COL_REV, bold)
-
-    sig = rev.signed_by
-    if sig is None:
-        item.setExpanded(False)
-        return item
-
-    # Col 1 – Element type
-    sig_type_key = ("val_sig_type_lta"
-                    if sig.sig_type == "doc_timestamp"
-                    else "val_sig_type_signature")
-    item.setText(_COL_ELEMENT, t(sig_type_key))
-    item.setFont(_COL_ELEMENT, bold)
-
-    # Col 2 – Signer / TSA name (CN)
-    item.setText(_COL_NAME, _extract_cn(sig.signer_subject))
-    item.setFont(_COL_NAME, bold)
-
-    # Col 3 – TSA name (only for regular signature with embedded timestamp)
-    if sig.sig_type == "signature" and sig.timestamp:
-        item.setText(_COL_TSA, _extract_cn(sig.timestamp.tsa_subject))
-    elif sig.sig_type == "doc_timestamp":
-        item.setText(_COL_TSA, t("val_tsa_is_tsa"))
-    else:
-        item.setText(_COL_TSA, "–")
-
-    # Col 4 – Authoritative time
+def _date_text(sig: SignatureInfo) -> str:
+    """Format the signing date with source qualifier."""
     auth = _auth_time(sig)
-    item.setText(_COL_TIME, _fmt_dt(auth))
-    item.setFont(_COL_TIME, bold)
+    time_str = _fmt_dt(auth)
+    if sig.sig_type == "doc_timestamp":
+        return t("val_date_doc_ts", time=time_str)
+    if sig.timestamp:
+        return t("val_date_tsa", time=time_str)
+    return t("val_date_self", time=time_str)
 
-    # Col 5 – Certificate validity range (date only); red if expired at signing time
-    if sig.cert_chain:
-        valid_from  = sig.cert_chain[0].valid_from
-        valid_until = sig.cert_chain[0].valid_until
-        item.setText(_COL_VALID_UNTIL,
-                     f"{_fmt_date(valid_from)} – {_fmt_date(valid_until)}")
-        if auth and valid_until and valid_until < auth:
-            item.setForeground(_COL_VALID_UNTIL, QColor(_RED))
-            item.setFont(_COL_VALID_UNTIL, bold)
-    else:
-        item.setText(_COL_VALID_UNTIL, "–")
 
-    # Col 6 – Integrity (may override row colour)
-    _apply_integrity(item, sig.crypto_status)
+def _profile_text(sig: SignatureInfo) -> tuple[str, str]:
+    """Return (profile_label, meaning_text) for the Profil detail line.
 
-    _build_sig_subitems(item, sig)
-    item.setExpanded(False)
-    return item
+    For document timestamps returns a special label and empty meaning.
+    """
+    if sig.sig_type == "doc_timestamp":
+        return t("val_profile_is_doc_ts"), ""
+    profile = sig.pades_profile
+    key = profile.value  # "B", "T", "LT", "LTA"
+    label = f"PAdES-{key}  ({t('val_profile_details_' + key)})"
+    meaning = t("val_profile_meaning_" + key)
+    return label, meaning
 
 
 # ── ValidationDialog ──────────────────────────────────────────────────────────
 
 class ValidationDialog(QDialog):
-    """Modal dialog showing PDF signature objects (offline, Phase 1 only).
+    """Modal dialog showing PDF signature objects (offline, Phase 1).
 
-    Displays a flat list of revisions (newest first) with structured columns
-    for type, signer, TSA, time, certificate expiry, and byte-integrity.
+    Tree of revisions (newest first) with expandable detail lines per
+    signed revision.  An optional checkbox reveals unsigned revisions.
     No network access is performed.
     """
 
@@ -237,10 +131,11 @@ class ValidationDialog(QDialog):
                  auto_fetch: bool = False) -> None:
         super().__init__(parent)
         self._doc = doc
+        self._show_all = False
 
         self.setWindowTitle(t("val_dlg_title"))
-        self.setMinimumSize(860, 380)
-        self.resize(1020, 460)
+        self.setMinimumSize(680, 320)
+        self.resize(860, 460)
 
         self._setup_ui()
         self._build_tree()
@@ -251,64 +146,113 @@ class ValidationDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setSpacing(6)
 
-        self._header = QLabel()
-        self._header.setWordWrap(True)
-        layout.addWidget(self._header)
-        self._update_header()
-
         self._tree = QTreeWidget()
-        self._tree.setColumnCount(_NUM_COLS)
-        self._tree.setHeaderLabels([
-            t("val_col_rev"),
-            t("val_col_element"),
-            t("val_col_name"),
-            t("val_col_tsa"),
-            t("val_col_time"),
-            t("val_col_valid_until"),
-            t("val_col_integrity"),
-        ])
+        self._tree.setColumnCount(2)
+        self._tree.header().hide()
         self._tree.setAlternatingRowColors(True)
-        self._tree.setSelectionMode(QTreeWidget.SelectionMode.NoSelection)
-        self._tree.header().setStretchLastSection(False)
+        self._tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
+        self._tree.header().setStretchLastSection(True)
         layout.addWidget(self._tree)
 
+        bottom = QHBoxLayout()
+        self._show_all_cb = QCheckBox(t("val_show_all_revisions"))
+        self._show_all_cb.toggled.connect(self._on_show_all_toggled)
+        bottom.addWidget(self._show_all_cb)
+        bottom.addStretch()
         btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         btn_box.rejected.connect(self.reject)
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-        btn_row.addWidget(btn_box)
-        layout.addLayout(btn_row)
+        bottom.addWidget(btn_box)
+        layout.addLayout(bottom)
 
-    def _update_header(self) -> None:
-        doc = self._doc
-        info = t("val_doc_info", n=len(doc.revisions))
-        if doc.has_dss:
-            info += t("val_doc_dss")
-        if doc.is_lta:
-            info += t("val_doc_lta")
-        self._header.setText(f"<span style='color:#444;'>{info}</span>")
+    # ── Slots ─────────────────────────────────────────────────────────────
+
+    def _on_show_all_toggled(self, checked: bool) -> None:
+        self._show_all = checked
+        self._build_tree()
 
     # ── Tree ──────────────────────────────────────────────────────────────
 
     def _build_tree(self) -> None:
         self._tree.clear()
 
-        if not self._doc.revisions:
-            QTreeWidgetItem(self._tree, [t("val_no_sigs")])
+        revisions = self._doc.revisions
+        if not self._show_all:
+            revisions = [r for r in revisions if r.signed_by is not None]
+
+        if not revisions:
+            item = QTreeWidgetItem(self._tree)
+            item.setText(0, t("val_no_sigs"))
             return
 
-        for rev in reversed(self._doc.revisions):
-            item = _build_rev_item(rev, self._tree)
-            item.setData(0, Qt.ItemDataRole.UserRole, rev.revision_number)
-            # Span sub-item text across all columns
-            for i in range(item.childCount()):
-                self._tree.setFirstColumnSpanned(
-                    i, self._tree.indexFromItem(item), True)
+        for rev in reversed(revisions):
+            self._build_rev_item(rev)
 
-        self._tree.resizeColumnToContents(_COL_REV)
-        self._tree.resizeColumnToContents(_COL_ELEMENT)
-        self._tree.resizeColumnToContents(_COL_NAME)
-        self._tree.resizeColumnToContents(_COL_TSA)
-        self._tree.resizeColumnToContents(_COL_TIME)
-        self._tree.resizeColumnToContents(_COL_VALID_UNTIL)
-        self._tree.resizeColumnToContents(_COL_INTEGRITY)
+        self._tree.resizeColumnToContents(0)
+
+    def _build_rev_item(self, rev: RevisionInfo) -> None:
+        item = QTreeWidgetItem(self._tree)
+        rev_label = t("val_rev_label", n=rev.revision_number, total=rev.total_revisions)
+        item.setText(0, rev_label)
+        item.setFont(0, _bold())
+
+        sig = rev.signed_by
+        if sig is None:
+            if rev.change_types:
+                parts = [t(f"val_rev_type_{ct}") for ct in rev.change_types]
+                item.setText(1, ", ".join(parts))
+            else:
+                item.setText(1, t("val_rev_no_sig"))
+            item.setForeground(1, QColor(_GREY))
+            return
+
+        # Top-level: type · CN
+        if sig.sig_type == "doc_timestamp":
+            sig_type = t("val_sig_type_doc_ts")
+        else:
+            sig_type = t("val_sig_type_signature")
+        cn = _extract_cn(sig.signer_subject)
+        item.setText(1, f"{sig_type}  ·  {cn}")
+        item.setFont(1, _bold())
+
+        # Integrity failure → paint top-level row red
+        if sig.crypto_status == ValidationStatus.INVALID:
+            red = QColor(_RED)
+            item.setForeground(0, red)
+            item.setForeground(1, red)
+
+        # Sub-items
+        self._add_sub(item, t("val_detail_date"), _date_text(sig))
+        self._add_integrity_sub(item, sig)
+        self._add_profile_sub(item, sig)
+
+        item.setExpanded(True)
+
+    def _add_sub(self, parent: QTreeWidgetItem,
+                 label: str, value: str) -> QTreeWidgetItem:
+        """Add a non-selectable detail sub-item with label/value columns."""
+        sub = QTreeWidgetItem(parent)
+        sub.setFlags(sub.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+        sub.setText(0, label)
+        sub.setForeground(0, QColor(_GREY))
+        sub.setText(1, value)
+        return sub
+
+    def _add_integrity_sub(self, parent: QTreeWidgetItem,
+                            sig: SignatureInfo) -> None:
+        sub = self._add_sub(parent, t("val_detail_integrity"), "")
+        if sig.crypto_status == ValidationStatus.VALID:
+            sub.setText(1, t("val_integrity_ok"))
+            sub.setForeground(1, QColor(_GREEN))
+            sub.setFont(1, _bold())
+        elif sig.crypto_status == ValidationStatus.INVALID:
+            sub.setText(1, t("val_integrity_fail"))
+            sub.setForeground(1, QColor(_RED))
+            sub.setFont(1, _bold())
+        # NOT_CHECKED / UNKNOWN: leave value empty
+
+    def _add_profile_sub(self, parent: QTreeWidgetItem,
+                          sig: SignatureInfo) -> None:
+        profile_label, meaning = _profile_text(sig)
+        self._add_sub(parent, t("val_detail_profile"), profile_label)
+        if meaning:
+            self._add_sub(parent, "", meaning)

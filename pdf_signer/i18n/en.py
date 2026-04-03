@@ -389,4 +389,32 @@ TRANSLATIONS: dict[str, str] = {
     "val_btn_recheck":          "Re-check",
     "val_no_sigs":              "No signatures found in document.",
     "val_no_pdf":               "No PDF open.",
+
+    # Unsigned revision types
+    "val_rev_type_original":    "Original document",
+    "val_rev_type_form_fields": "Form fields",
+    "val_rev_type_annotations": "Annotations",
+    "val_rev_type_dss":         "Validation data (DSS)",
+    "val_rev_type_metadata":    "Document metadata (XMP)",
+    "val_rev_type_unknown":     "Incremental update",
+
+    # Main list (new tree view)
+    "val_sig_type_doc_ts":          "Document Timestamp",
+    "val_rev_no_sig":               "–  (no signature)",
+    "val_show_all_revisions":       "Show all revisions",
+    "val_detail_date":              "Date",
+    "val_detail_integrity":         "Integrity",
+    "val_detail_profile":           "Profile",
+    "val_date_tsa":                 "{time}  (TSA-confirmed)",
+    "val_date_self":                "{time}  (self-reported)",
+    "val_date_doc_ts":              "{time}",
+    "val_profile_is_doc_ts":        "–  (is itself the document timestamp)",
+    "val_profile_details_B":        "TSA token –, DSS –",
+    "val_profile_details_T":        "TSA token ✓, DSS –",
+    "val_profile_details_LT":       "TSA token ✓, DSS ✓, LTA timestamp –",
+    "val_profile_details_LTA":      "TSA token ✓, DSS ✓, LTA timestamp ✓",
+    "val_profile_meaning_B":        "No additional validation data embedded",
+    "val_profile_meaning_T":        "Signing time secured, validation data not embedded",
+    "val_profile_meaning_LT":       "Validation data embedded, but not cryptographically secured",
+    "val_profile_meaning_LTA":      "All validation data embedded and cryptographically secured",
 }

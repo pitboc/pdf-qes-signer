@@ -15,6 +15,24 @@ The containment order is therefore:
 displays them newest-first so the visual nesting matches the cryptographic
 containment.
 
+``RevisionInfo.revision_number`` is the real PDF revision number (1-based),
+as reported by pyhanko's ``signed_revision``.  ``total_revisions`` is the
+total number of PDF revisions including unsigned ones.  Unsigned revisions
+have ``signed_by = None``.
+
+## PAdES profile
+
+``SignatureInfo.pades_profile`` classifies the signature structurally (no
+network access, no trust evaluation):
+
+- B   – CMS signature only
+- T   – + RFC-3161 timestamp token embedded in the CMS container
+- LT  – + validation data (certs + OCSP/CRL) present in the DSS dictionary
+- LTA – + LTA document timestamp that cryptographically covers the DSS
+
+For document timestamps (``sig_type == "doc_timestamp"``) the field is set
+to ``LTA`` by convention; it is not displayed as a PAdES profile in the UI.
+
 ## Two-phase population
 
 Objects are first created with ``status = ValidationStatus.NOT_CHECKED`` so
@@ -39,6 +57,17 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Literal, Optional
+
+
+class PadesProfile(Enum):
+    """PAdES conformance level inferred from data embedded in the PDF.
+
+    Determined structurally in Phase 1 (offline, no trust evaluation).
+    """
+    B   = "B"    # Basic: CMS signature only, no embedded TSA token
+    T   = "T"    # + RFC-3161 timestamp token inside the CMS container
+    LT  = "LT"   # + validation data (certs + OCSP/CRL) in DSS dictionary
+    LTA = "LTA"  # + LTA document timestamp covering the DSS
 
 
 class ValidationStatus(Enum):
@@ -129,14 +158,28 @@ class SignatureInfo:
     # Overall status = worst of the three above.
     status: ValidationStatus = ValidationStatus.NOT_CHECKED
 
+    # PAdES conformance level, inferred structurally in Phase 1.
+    # For doc_timestamp entries this is always LTA by convention.
+    pades_profile: PadesProfile = PadesProfile.B
+
 
 @dataclass
 class RevisionInfo:
-    """One PDF revision (base document or incremental update)."""
+    """One PDF revision (base document or incremental update).
 
-    revision_number: int    # 1-based; 1 = original document
-    total_revisions: int    # total revision count in this document
-    description: str        # short label, e.g. "Signatur: Max Mustermann"
+    ``revision_number`` is the 1-based display number (pyhanko's 0-based
+    ``signed_revision`` + 1).  ``total_revisions`` is the total number of
+    xref sections in the PDF.
+
+    For unsigned revisions ``signed_by`` is ``None`` and ``change_types``
+    lists the detected content categories (see ``_classify_unsigned_revision``
+    in the extractor).  Possible values: "original", "form_fields",
+    "annotations", "dss", "metadata", "unknown".
+    """
+
+    revision_number: int    # 1-based display number
+    total_revisions: int    # total xref-section count in this document
+    description: str        # short label (signer subject or empty)
 
     # Authoritative time: from the embedded timestamp when present,
     # otherwise from the self-reported signing time, otherwise None.
@@ -144,6 +187,7 @@ class RevisionInfo:
 
     signed_by: Optional[SignatureInfo] = None
     status: ValidationStatus = ValidationStatus.NOT_CHECKED
+    change_types: list = field(default_factory=list)  # tags for unsigned revisions
 
 
 @dataclass
