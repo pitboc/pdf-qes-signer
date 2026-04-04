@@ -161,6 +161,16 @@ TRANSLATIONS: dict[str, str] = {
         "Vollständiger Traceback in der Konsole (stderr)."
     ),
     "dlg_field_already_signed": "Dieses Feld ist bereits signiert und kann nicht erneut verwendet werden.",
+    "warn_docmdp_p1":     "Dokument gesperrt – keine Änderungen erlaubt (docMDP P=1)",
+    "warn_docmdp_p2":     "Dokument eingeschränkt – nur Formularfelder & Signaturen erlaubt (docMDP P=2)",
+    "dlg_docmdp_title":   "Dokument-Einschränkung",
+    "dlg_docmdp_info":    (
+        "Dies ist die erste Signatur in diesem Dokument.\n"
+        "Legen Sie fest, welche Änderungen danach noch erlaubt sind:"
+    ),
+    "dlg_docmdp_none":    "Keine Einschränkung",
+    "dlg_docmdp_p2":      "Formularfelder & weitere Signaturen erlaubt (empfohlen)",
+    "dlg_docmdp_p1":      "Keine weiteren Änderungen erlaubt",
     "dlg_locked_field_title": "Feld gesperrt",
     "dlg_locked_field_msg": (
         "Das Feld '{name}' ist durch eine bestehende Signatur im Dokument geschützt\n"

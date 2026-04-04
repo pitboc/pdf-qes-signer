@@ -68,6 +68,11 @@ pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
   automatically so further fields can be signed in sequence
 - Existing unsigned fields in already-signed PDFs are shown as locked (orange)
   and protected from modification to preserve the existing signature hash
+- **docMDP restriction** (Document Modification Detection and Prevention): when
+  applying the first signature, a dialog lets you choose whether subsequent
+  changes are allowed — no restriction, form fields & further signatures only
+  (P=2, recommended), or no changes at all (P=1). The last choice is remembered
+  per profile as the default for the next document.
 
 ### Signature validation
 - **Check signatures** (*Sign → Check signatures*): opens a non-modal revision
@@ -88,6 +93,10 @@ pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
   are explicitly excluded from the warning to avoid false alarms.
 - When a warning is active, *Show all revisions* is automatically enabled in
   the validation dialog so the modified revision is immediately visible
+- **docMDP lock detection**: if an open PDF carries a P=1 certification
+  signature (no changes allowed), a warning banner is shown immediately and
+  all editing and signing actions are disabled; drawing new signature fields is
+  also blocked at the canvas level
 
 ### Configuration and profiles
 - **Multiple named profiles** (*Profiles* menu): each profile stores a

@@ -26,7 +26,7 @@ from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
     QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox,
-    QPushButton, QSizePolicy, QSlider, QSpinBox, QTabWidget,
+    QPushButton, QRadioButton, QSizePolicy, QSlider, QSpinBox, QTabWidget,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QCheckBox, QComboBox,
     QAbstractItemView, QGridLayout,
 )
@@ -2037,3 +2037,54 @@ class DeleteProfileDialog(QDialog):
 
         self.changes_made = True
         self._refresh_list()
+
+
+class DocMDPDialog(QDialog):
+    """Ask the user which docMDP restriction to apply to the first signature.
+
+    The selected value is one of ``"none"``, ``"p2"``, or ``"p1"`` and can be
+    read from ``self.docmdp`` after the dialog is accepted.  The caller is
+    responsible for persisting the value back to the profile config.
+    """
+
+    def __init__(self, initial: str = "none", parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(t("dlg_docmdp_title"))
+        self.docmdp = initial
+
+        lay = QVBoxLayout(self)
+
+        lbl = QLabel(t("dlg_docmdp_info"))
+        lbl.setWordWrap(True)
+        lay.addWidget(lbl)
+
+        self._rb_none = QRadioButton(t("dlg_docmdp_none"))
+        self._rb_p2   = QRadioButton(t("dlg_docmdp_p2"))
+        self._rb_p1   = QRadioButton(t("dlg_docmdp_p1"))
+
+        for rb, val in ((self._rb_none, "none"),
+                        (self._rb_p2,   "p2"),
+                        (self._rb_p1,   "p1")):
+            lay.addWidget(rb)
+            if val == initial:
+                rb.setChecked(True)
+
+        if not any(rb.isChecked()
+                   for rb in (self._rb_none, self._rb_p2, self._rb_p1)):
+            self._rb_none.setChecked(True)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok |
+            QDialogButtonBox.StandardButton.Cancel)
+        btns.accepted.connect(self._on_accept)
+        btns.rejected.connect(self.reject)
+        lay.addWidget(btns)
+
+    def _on_accept(self) -> None:
+        if self._rb_p2.isChecked():
+            self.docmdp = "p2"
+        elif self._rb_p1.isChecked():
+            self.docmdp = "p1"
+        else:
+            self.docmdp = "none"
+        self.accept()

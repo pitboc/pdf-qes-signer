@@ -181,6 +181,7 @@ class ContinuousView(QScrollArea):
         self._zoom: float = PDFViewWidget.ZOOM   # current zoom factor
         self._pan_hbar_start: int = 0            # scrollbar origin for middle-drag panning
         self._pan_vbar_start: int = 0
+        self._drawing_enabled: bool = True       # propagated to all PDFViewWidget slots
 
         # Per-slot state: one entry per page; each is either a
         # _PagePlaceholder or a rendered PDFViewWidget
@@ -274,6 +275,17 @@ class ContinuousView(QScrollArea):
         for slot in self._slots:
             if isinstance(slot, PDFViewWidget):
                 slot.update_fields(sig_fields, locked_fields, signed_fields)
+
+    @property
+    def drawing_enabled(self) -> bool:
+        return self._drawing_enabled
+
+    @drawing_enabled.setter
+    def drawing_enabled(self, value: bool) -> None:
+        self._drawing_enabled = value
+        for slot in self._slots:
+            if isinstance(slot, PDFViewWidget):
+                slot.drawing_enabled = value
 
     def set_selected_field(self, fdef: SignatureFieldDef | None) -> None:
         """Highlight *fdef* on its page widget; clear highlight on all others."""
@@ -457,6 +469,7 @@ class ContinuousView(QScrollArea):
 
         pv = PDFViewWidget(self._appearance)
         pv._zoom = self._zoom          # apply current zoom before rendering
+        pv.drawing_enabled = self._drawing_enabled
         pv.set_page(
             self._doc[idx],
             self._sig_fields, idx,

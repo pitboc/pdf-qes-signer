@@ -161,6 +161,16 @@ TRANSLATIONS: dict[str, str] = {
         "Full traceback in console (stderr)."
     ),
     "dlg_field_already_signed": "This field is already signed and cannot be used again.",
+    "warn_docmdp_p1":     "Document locked – no changes allowed (docMDP P=1)",
+    "warn_docmdp_p2":     "Document restricted – form fields & signatures only (docMDP P=2)",
+    "dlg_docmdp_title":   "Document Restriction",
+    "dlg_docmdp_info":    (
+        "This is the first signature in this document.\n"
+        "Choose what changes are still allowed afterwards:"
+    ),
+    "dlg_docmdp_none":    "No restriction",
+    "dlg_docmdp_p2":      "Form fields & further signatures allowed (recommended)",
+    "dlg_docmdp_p1":      "No further changes allowed",
     "dlg_locked_field_title": "Field locked",
     "dlg_locked_field_msg": (
         "The field '{name}' is protected by an existing signature in the document\n"

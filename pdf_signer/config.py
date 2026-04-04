@@ -105,6 +105,13 @@ class AppConfig:
             "url":                  "http://tsa.baltstamp.lt",
             "embed_validation_info": "0",
         },
+        "signing": {
+            # docMDP: Document Modification Detection and Prevention
+            # "none" – keine Einschränkung (kein certify-Flag)
+            # "p2"   – Formularfelder + weitere Signaturen erlaubt (PAdES-empfohlen)
+            # "p1"   – keine Änderungen nach der Signatur
+            "docmdp": "none",
+        },
         "appearance": {
             "image_path":    "",
             "layout":        "img_left",

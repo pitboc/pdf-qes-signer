@@ -207,3 +207,8 @@ class DocumentValidation:
     # revision_bytes = pdf_bytes[:revision_end_offsets[idx]] gives the PDF
     # as it looked at that revision.  Populated by the extractor.
     revision_end_offsets: list = field(default_factory=list)
+
+    # docMDP permission level of the certification signature, if any.
+    # 1 = no changes, 2 = form fields + signatures, 3 = + annotations.
+    # None means no certification signature is present.
+    docmdp_level: Optional[int] = None

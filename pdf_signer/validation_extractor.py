@@ -677,12 +677,17 @@ def extract(pdf_bytes: bytes) -> DocumentValidation:
     # Collect all signatures sorted by PDF revision (oldest first)
     entries: list[tuple[int, SignatureInfo]] = []
 
+    # docMDP level from the first (certifying) signature, if any.
+    # EmbeddedPdfSignature.docmdp_level returns an MDPPerm enum or None.
+    docmdp_level: Optional[int] = None
     try:
         for sig in reader.embedded_regular_signatures:
             try:
                 si = _build_sig_info(sig, dss_pool, ocsp_by_serial,
                                      crl_info)
                 entries.append((sig.signed_revision, si))
+                if docmdp_level is None and sig.docmdp_level is not None:
+                    docmdp_level = sig.docmdp_level.value
             except Exception:
                 pass
     except Exception:
@@ -791,4 +796,5 @@ def extract(pdf_bytes: bytes) -> DocumentValidation:
         has_dss=has_dss,
         is_lta=is_lta,
         revision_end_offsets=revision_end_offsets,
+        docmdp_level=docmdp_level,
     )

@@ -81,7 +81,8 @@ from .signer import (
 )
 from .pdf_view import PDFViewWidget, SignatureFieldDef
 from .dialogs import (Pkcs11ConfigDialog, ProfileManagerDialog,
-                       ProfileSelectDialog, _pfx_load_cert_info)
+                       ProfileSelectDialog, _pfx_load_cert_info,
+                       DocMDPDialog)
 from .i18n import t, i18n, AVAILABLE_LANGUAGES
 from .appearance_panel import AppearancePanel
 from .continuous_view import ContinuousView
@@ -940,6 +941,14 @@ class PDFSignerApp(QMainWindow):
                 return
 
     def _on_field_added(self, fdef: SignatureFieldDef) -> None:
+        # docMDP P=1: Felder hinzufügen verboten → rückgängig machen
+        if (self._doc_validation and self._doc_validation.docmdp_level == 1):
+            try:
+                self.sig_fields.remove(fdef)
+            except ValueError:
+                pass
+            self._render_current_page()
+            return
         # Feld wurde im Canvas gezeichnet → Feldliste aktualisieren und
         # das neue Feld als aktive Auswahl setzen.
         # Das neue Feld ist immer das letzte in sig_fields → Zeile len(sig_fields).
@@ -1432,6 +1441,17 @@ class PDFSignerApp(QMainWindow):
         if not out:
             return
 
+        # Erste Signatur: docMDP-Einschränkung vom User abfragen
+        docmdp = "none"
+        if not self.signed_fields:
+            dlg = DocMDPDialog(
+                initial=self.config.get("signing", "docmdp"), parent=self)
+            if dlg.exec() != DocMDPDialog.DialogCode.Accepted:
+                return
+            docmdp = dlg.docmdp
+            self.config.set("signing", "docmdp", docmdp)
+            self.config.save()
+
         # Signaturmodus und zugehörige Parameter aus der Konfig holen
         mode     = self.config.get("pkcs11", "signer_mode")
         pin      = self._pin_edit.text().strip()
@@ -1500,7 +1520,7 @@ class PDFSignerApp(QMainWindow):
             self._working_bytes, out, fdef, lib, pin, key_id, cert_cn,
             self.appearance, all_fields=list(self.sig_fields), tsa_url=tsa_url,
             field_name=invis_name, mode=mode, pfx_path=pfx_path,
-            embed_validation_info=embed_vi)
+            embed_validation_info=embed_vi, docmdp=docmdp)
         # finished-Signal: signiertes PDF als neues Arbeitsdokument laden
         self._sign_worker.finished.connect(self._on_sign_done)
         self._sign_worker.error.connect(self._on_sign_error)
@@ -1607,6 +1627,8 @@ class PDFSignerApp(QMainWindow):
         self._validation_dialog = None
         self._render_current_page()
         self._set_modifying_actions_enabled(True)
+        # Re-apply docMDP restrictions if the document is locked
+        self._update_main_warning()
 
     def _refresh_doc_validation(self) -> None:
         """Phase-1-Extraktion ausführen und Warnbanner aktualisieren.
@@ -1628,24 +1650,57 @@ class PDFSignerApp(QMainWindow):
         except Exception:
             pass
 
+    def _set_doc_edit_enabled(self, enabled: bool) -> None:
+        """Enable/disable sign and field-editing actions (open/check_sigs unaffected).
+
+        Also propagates to the field-drawing views so that no drag/name-dialog
+        can be started when *enabled* is False.
+        """
+        for act in (self._act_sign, self._tb_sign,
+                    self._act_save_fields, self._tb_save_fields):
+            act.setEnabled(enabled)
+        if enabled:
+            row   = self._field_list.currentRow()
+            n_sig = len(self.sig_fields)
+            self._btn_delete.setEnabled(1 <= row <= n_sig)
+        else:
+            self._btn_delete.setEnabled(False)
+        self._pdf_view.drawing_enabled = enabled
+        self._cv.drawing_enabled       = enabled
+
     def _update_main_warning(self) -> None:
-        """Warnbanner im Hauptfenster ein- oder ausblenden."""
+        """Warnbanner im Hauptfenster ein- oder ausblenden; docMDP-Sperre anwenden.
+
+        docMDP P=1: alle Änderungs-Aktionen deaktivieren, Banner zeigen.
+        docMDP P=2: nur Informationsbanner (Signieren weiterhin erlaubt).
+        Post-Signatur-Warnung: Banner wenn verdächtige Änderungen nach Signatur.
+        """
         if self._doc_validation is None:
             self._warn_main_label.hide()
+            self._set_doc_edit_enabled(True)
             return
+
+        level = self._doc_validation.docmdp_level
+
+        if level == 1:
+            # P=1: vollständige Sperre – keine Signatur, kein Feld-Zeichnen, kein Speichern
+            self._warn_main_label.setText(t("warn_docmdp_p1"))
+            self._warn_main_label.show()
+            self._set_doc_edit_enabled(False)
+            return
+
+        # P=2 oder keine MDP-Einschränkung: Aktionen freigeben
+        self._set_doc_edit_enabled(True)
+
         from .validation_dialog import check_post_sig_warnings
         post_last, between = check_post_sig_warnings(self._doc_validation.revisions)
         if post_last:
             labels = ", ".join(t(f"val_rev_type_{ct}") for ct in sorted(post_last))
-            self._warn_main_label.setText(
-                t("val_warn_post_sig_short", types=labels)
-            )
+            self._warn_main_label.setText(t("val_warn_post_sig_short", types=labels))
             self._warn_main_label.show()
         elif between:
             labels = ", ".join(t(f"val_rev_type_{ct}") for ct in sorted(between))
-            self._warn_main_label.setText(
-                t("val_warn_between_sig_short", types=labels)
-            )
+            self._warn_main_label.setText(t("val_warn_between_sig_short", types=labels))
             self._warn_main_label.show()
         else:
             self._warn_main_label.hide()

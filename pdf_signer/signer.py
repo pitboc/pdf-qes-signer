@@ -378,7 +378,8 @@ class SignWorker(QThread):
                  appearance=None, all_fields: list | None = None,
                  tsa_url: str = "", field_name: str = "Signature",
                  mode: str = "pkcs11", pfx_path: str = "",
-                 embed_validation_info: bool = False) -> None:
+                 embed_validation_info: bool = False,
+                 docmdp: str = "none") -> None:
         super().__init__()
         # pdf_bytes: Arbeitskopie des PDFs (ohne freie Signaturfelder);
         # Workers re-embedden sig_fields vor dem Signieren
@@ -412,6 +413,9 @@ class SignWorker(QThread):
         # embed_validation_info: OCSP-Response einbetten + PAdES-LTA-Archivzeitstempel;
         # erfordert einen aktiven Timestamper (tsa_url) – nur setzen wenn TSA aktiv
         self.embed_validation_info = embed_validation_info
+        # docmdp: Document Modification Detection and Prevention für die erste Signatur.
+        # "none" → kein certify-Flag; "p2" → Formularfelder + Signaturen; "p1" → keine Änderungen
+        self.docmdp = docmdp
 
     # ── Shared helpers ────────────────────────────────────────────────────────
 
@@ -532,6 +536,21 @@ class SignWorker(QThread):
                 # 5 Minuten entsprechen dem üblichen Praxiswert für TSA/OCSP.
                 time_tolerance=timedelta(minutes=5),
             )
+        # docMDP: certify-Flag und Änderungserlaubnis für die erste Signatur.
+        # Nur setzen wenn docmdp != "none"; pyhanko verwendet MDPPerm-Enum.
+        # docmdp_permissions-Default von pyhanko ist bereits FILL_FORMS (p2).
+        certify = self.docmdp in ("p1", "p2")
+        if self.docmdp == "p1":
+            from pyhanko.sign.fields import MDPPerm
+            docmdp_permissions = MDPPerm.NO_CHANGES
+        elif self.docmdp == "p2":
+            from pyhanko.sign.fields import MDPPerm
+            docmdp_permissions = MDPPerm.FILL_FORMS
+        else:
+            docmdp_permissions = None  # certify=False → wird ignoriert
+        kwargs: dict = {}
+        if docmdp_permissions is not None:
+            kwargs["docmdp_permissions"] = docmdp_permissions
         return PdfSignatureMetadata(
             field_name=field_name,
             name=sig_name     or None,
@@ -545,6 +564,8 @@ class SignWorker(QThread):
             # das kein DSS-Dictionary und kein LTA unterstützt.
             # Nur bei aktivem LTA umschalten, sonst bleibt der Standard.
             subfilter=SigSeedSubFilter.PADES if lta else None,
+            certify=certify,
+            **kwargs,
         )
 
     def _build_stamp_style(self, cert_cn: str):

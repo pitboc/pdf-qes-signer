@@ -161,6 +161,7 @@ class PDFViewWidget(QWidget):
         self._rb_start:   Optional[QPointF] = None   # Ctrl+drag rubber-band start
         self._rb_end:     Optional[QPointF] = None   # Ctrl+drag rubber-band end
         self._pan_start:  Optional[QPointF] = None   # middle-drag panning start
+        self.drawing_enabled: bool = True             # False → no new field drag
         self._sig_fields:    list[SignatureFieldDef] = []
         self._locked_fields: list[SignatureFieldDef] = []
         self._signed_fields: list[SignatureFieldDef] = []
@@ -348,7 +349,7 @@ class PDFViewWidget(QWidget):
                 if fdef is not None:
                     # Click on an existing field → select it, don't start a drag
                     self.field_clicked.emit(fdef)
-                else:
+                elif self.drawing_enabled:
                     self._drag_start = QPointF(ev.position())
                     self._drag_end   = None
         elif ev.button() == Qt.MouseButton.MiddleButton:
