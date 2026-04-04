@@ -267,7 +267,7 @@ class ValidationDialog(QDialog):
         bottom.addWidget(self._show_all_cb)
         bottom.addStretch()
         btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        btn_box.rejected.connect(self.reject)
+        btn_box.rejected.connect(self.close)
         bottom.addWidget(btn_box)
         layout.addLayout(bottom)
 
@@ -495,5 +495,5 @@ class ValidationDialog(QDialog):
         cn = _extract_cn_from_chain(chain)
         title = t(title_key, cn=cn)
         if self._cert_detail_win is None:
-            self._cert_detail_win = CertChainDetailWindow(self._config, parent=None)
+            self._cert_detail_win = CertChainDetailWindow(self._config, parent=self)
         self._cert_detail_win.show_chain(chain, title, status, cn)

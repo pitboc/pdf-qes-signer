@@ -2106,7 +2106,7 @@ class CertChainDetailWindow(QWidget):
 
     def __init__(self, config, parent=None) -> None:
         from PyQt6.QtCore import Qt
-        super().__init__(parent, Qt.WindowType.Window)
+        super().__init__(parent, Qt.WindowType.Dialog)
         self._config = config
         self._setup_ui()
         self._restore_geometry()
@@ -2160,7 +2160,8 @@ class CertChainDetailWindow(QWidget):
         self._overall_lbl.setStyleSheet(
             f"font-weight: bold; color: {color};" if color else "")
 
-        self.show()
+        if not self.isVisible():
+            self.show()
         self.raise_()
 
     # ── Helpers ───────────────────────────────────────────────────────────
