@@ -225,7 +225,9 @@ class ValidationDialog(QDialog):
         self._pdf_bytes = pdf_bytes
         self._show_all = show_all_initially
         self._config = config
-        self._cert_detail_win = None   # CertChainDetailWindow singleton
+        self._cert_detail_win = None    # CertChainDetailWindow singleton
+        self._worker = None             # ValidationWorker (Phase 2)
+        self._detail_source: Optional[tuple] = None  # (chain, title_key, status_owner)
 
         self.setWindowTitle(t("val_dlg_title"))
         self.setMinimumSize(680, 320)
@@ -266,6 +268,16 @@ class ValidationDialog(QDialog):
         self._show_all_cb.toggled.connect(self._on_show_all_toggled)
         bottom.addWidget(self._show_all_cb)
         bottom.addStretch()
+
+        self._phase2_lbl = QLabel()
+        self._phase2_lbl.setStyleSheet(f"color: {_GREY};")
+        self._phase2_lbl.hide()
+        bottom.addWidget(self._phase2_lbl)
+
+        self._fetch_btn = QPushButton(t("val_btn_fetch_certs"))
+        self._fetch_btn.clicked.connect(self._start_fetch)
+        bottom.addWidget(self._fetch_btn)
+
         btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         close_btn = btn_box.button(QDialogButtonBox.StandardButton.Close)
         close_btn.setText(t("btn_close"))
@@ -278,10 +290,40 @@ class ValidationDialog(QDialog):
     # ── Slots ─────────────────────────────────────────────────────────────
 
     def closeEvent(self, event) -> None:
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.requestInterruption()
+            self._worker.wait(2000)
         if self._cert_detail_win is not None:
             self._cert_detail_win.close()
             self._cert_detail_win = None
         super().closeEvent(event)
+
+    def _start_fetch(self) -> None:
+        """Start Phase 2 background worker to fetch missing certificates via AIA."""
+        from .validation_worker import ValidationWorker
+        if self._worker is not None and self._worker.isRunning():
+            return
+        self._fetch_btn.setEnabled(False)
+        self._phase2_lbl.setText(t("val_phase2_running"))
+        self._phase2_lbl.show()
+        self._worker = ValidationWorker(self._doc, self._pdf_bytes, auto_fetch=True)
+        self._worker.step_done.connect(self._on_worker_step)
+        self._worker.finished.connect(self._on_worker_done)
+        self._worker.error.connect(self._on_worker_error)
+        self._worker.start()
+
+    def _on_worker_step(self, msg: str) -> None:
+        self._phase2_lbl.setText(msg)
+
+    def _on_worker_done(self) -> None:
+        self._phase2_lbl.setText(t("val_phase2_done"))
+        self._fetch_btn.setEnabled(True)
+        self._build_tree()
+        self._refresh_detail_win()
+
+    def _on_worker_error(self, msg: str) -> None:
+        self._phase2_lbl.setText(t("val_phase2_error", msg=msg))
+        self._fetch_btn.setEnabled(True)
 
     def _on_show_all_toggled(self, checked: bool) -> None:
         self._show_all = checked
@@ -385,22 +427,23 @@ class ValidationDialog(QDialog):
         self._add_integrity_sub(item, sig)
         self._add_profile_sub(item, sig)
 
-        # Certificate chain rows
+        # Certificate chain rows – pass sig/timestamp as status_owner so the
+        # detail window can be refreshed with the current status after Phase 2.
         if sig.sig_type != "doc_timestamp":
             self._add_chain_sub(item, "val_detail_sig_chain",
                                  sig.cert_chain, sig.chain_status,
-                                 "cert_win_title_sig")
+                                 "cert_win_title_sig", status_owner=sig)
         if sig.timestamp is not None:
             tsa_chain  = sig.timestamp.cert_chain
             tsa_status = sig.timestamp.chain_status
             self._add_chain_sub(item, "val_detail_tsa_chain",
                                  tsa_chain, tsa_status,
-                                 "cert_win_title_tsa")
+                                 "cert_win_title_tsa", status_owner=sig.timestamp)
         elif sig.sig_type == "doc_timestamp":
             # LTA doc timestamp: only TSA chain
             self._add_chain_sub(item, "val_detail_tsa_chain",
                                  sig.cert_chain, sig.chain_status,
-                                 "cert_win_title_tsa")
+                                 "cert_win_title_tsa", status_owner=sig)
 
         item.setExpanded(True)
 
@@ -438,7 +481,8 @@ class ValidationDialog(QDialog):
                        label_key: str,
                        chain: list,
                        status: ValidationStatus,
-                       title_key: str) -> None:
+                       title_key: str,
+                       status_owner=None) -> None:
         """Add one chain summary row with status colour, tooltip, and Details button."""
         text, tip = _chain_label_tip(chain, status)
         sub = self._add_sub(parent, t(label_key), text)
@@ -464,8 +508,8 @@ class ValidationDialog(QDialog):
             btn.setStyleSheet("color: #1a73e8; text-decoration: underline;")
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(
-                lambda _checked, c=chain, s=status, tk=title_key:
-                    self._open_chain_detail(c, s, tk))
+                lambda _checked, c=chain, s=status, tk=title_key, so=status_owner:
+                    self._open_chain_detail(c, s, tk, so))
             self._tree.setItemWidget(sub, 1,
                                      self._wrap_btn(text, tip, btn, status))
 
@@ -493,11 +537,29 @@ class ValidationDialog(QDialog):
         return w
 
     def _open_chain_detail(self, chain: list, status: ValidationStatus,
-                           title_key: str) -> None:
-        """Open or update the CertChainDetailWindow."""
+                           title_key: str, status_owner=None) -> None:
+        """Open or update the CertChainDetailWindow.
+
+        *status_owner* is a SignatureInfo or TimestampInfo whose
+        ``chain_status`` attribute is read when refreshing after Phase 2.
+        """
         from .dialogs import CertChainDetailWindow
         cn = _extract_cn_from_chain(chain)
         title = t(title_key, cn=cn)
         if self._cert_detail_win is None:
             self._cert_detail_win = CertChainDetailWindow(self._config, parent=self)
+        self._detail_source = (chain, title_key, status_owner)
         self._cert_detail_win.show_chain(chain, title, status, cn)
+
+    def _refresh_detail_win(self) -> None:
+        """Re-render the detail window with updated chain data after Phase 2."""
+        if self._cert_detail_win is None or not self._cert_detail_win.isVisible():
+            return
+        if self._detail_source is None:
+            return
+        chain, title_key, status_owner = self._detail_source
+        status = (status_owner.chain_status
+                  if status_owner is not None
+                  else ValidationStatus.NOT_CHECKED)
+        cn = _extract_cn_from_chain(chain)
+        self._cert_detail_win.show_chain(chain, t(title_key, cn=cn), status, cn)

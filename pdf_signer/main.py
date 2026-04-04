@@ -23,7 +23,31 @@ def main() -> None:
     parser.add_argument(
         "pdf", nargs="?", default=None,
         help="PDF file to open on startup")
+    parser.add_argument(
+        "--debug", metavar="MODULE", default=None,
+        help="Enable debug logging for a module. "
+             "Use 'certchain' for certificate chain diagnostics.")
     args = parser.parse_args()
+
+    if args.debug:
+        import logging
+        _debug_loggers = {
+            "certchain": [
+                "pdf_signer.validation_worker",
+                "pdf_signer.validation_extractor",
+                "pdf_signer.lotl_trust",
+            ],
+        }
+        names = _debug_loggers.get(args.debug, [f"pdf_signer.{args.debug}"])
+        _handler = logging.StreamHandler(sys.stderr)
+        _handler.setFormatter(
+            logging.Formatter("%(name)s %(levelname)s: %(message)s"))
+        for _name in names:
+            _lg = logging.getLogger(_name)
+            _lg.setLevel(logging.DEBUG)
+            _lg.addHandler(_handler)
+        print(f"[debug] Logging aktiviert für: {', '.join(names)}",
+              file=sys.stderr)
 
     # Check required dependencies before importing Qt modules
     _check_imports()

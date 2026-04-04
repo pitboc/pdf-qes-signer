@@ -2252,7 +2252,7 @@ class CertChainDetailWindow(QWidget):
             CertSource.SYSTEM:     t("cert_win_source_system"),
             CertSource.DOWNLOADED: t("cert_win_source_downloaded"),
             CertSource.NOT_FOUND:  t("cert_win_source_not_found"),
-            CertSource.EU_TSL:     t("cert_win_source_system"),
+            CertSource.EU_TSL:     t("cert_win_source_eu_tsl"),
         }.get(source, t("cert_win_source_unknown"))
 
     @staticmethod

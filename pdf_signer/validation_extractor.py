@@ -40,9 +40,12 @@ same serial within one document are extremely unlikely in practice.
 from __future__ import annotations
 
 import io
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Optional
+
+_log = logging.getLogger(__name__)
 
 from .validation_result import (
     CertInfo, CertSource, CRLInfo, DocumentValidation, OCSPInfo,
@@ -52,34 +55,40 @@ from .validation_result import (
 
 # ── certifi trust-anchor cache ────────────────────────────────────────────────
 
-_certifi_subjects: Optional[set[bytes]] = None
+_certifi_fingerprints: Optional[set[bytes]] = None
 
 
-def _get_certifi_subjects() -> set[bytes]:
-    """Return the set of subject.hashable values for all certs in the certifi bundle.
+def _get_certifi_fingerprints() -> set[bytes]:
+    """Return SHA-256 fingerprints of all certs in the certifi Mozilla CA bundle.
+
+    Using full-cert fingerprints (not just the DN) ensures that an attacker
+    cannot spoof a trusted root by embedding a forged cert with the same
+    Subject DN as a real certifi root.
 
     Result is cached after the first call.  Returns an empty set if certifi is
     not installed or the bundle cannot be read.
     """
-    global _certifi_subjects
-    if _certifi_subjects is not None:
-        return _certifi_subjects
+    import hashlib
+    global _certifi_fingerprints
+    if _certifi_fingerprints is not None:
+        return _certifi_fingerprints
     try:
         import certifi
-        from asn1crypto import pem as asn1_pem, x509 as asn1_x509
-        subjects: set[bytes] = set()
+        from asn1crypto import pem as asn1_pem
+        fps: set[bytes] = set()
         with open(certifi.where(), "rb") as fh:
             pem_data = fh.read()
         for _, _, der in asn1_pem.unarmor(pem_data, multiple=True):
             try:
-                cert = asn1_x509.Certificate.load(der)
-                subjects.add(bytes(cert.subject.hashable))
+                fps.add(hashlib.sha256(der).digest())
             except Exception:
                 pass
-        _certifi_subjects = subjects
-    except Exception:
-        _certifi_subjects = set()
-    return _certifi_subjects
+        _certifi_fingerprints = fps
+        _log.debug("certchain: certifi fingerprints loaded: %d entries", len(fps))
+    except Exception as _e:
+        _certifi_fingerprints = set()
+        _log.debug("certchain: certifi fingerprints failed to load: %s", _e)
+    return _certifi_fingerprints
 
 
 def _compute_chain_status(chain: list[CertInfo],
@@ -125,10 +134,22 @@ def _compute_chain_status(chain: list[CertInfo],
     # Root trust via certifi – update source in-place when matched
     root = chain[-1]
     root_trusted = False
-    if root.is_root and root.subject_hashable:
-        if root.subject_hashable in _get_certifi_subjects():
+    _log.debug("certchain [extractor]: root subject=%r is_root=%s source=%s "
+               "fp=%s",
+               root.subject, root.is_root, root.source,
+               root.cert_fingerprint.hex()[:16] if root.cert_fingerprint else "None")
+    if root.is_root and root.cert_fingerprint:
+        certifi_fps = _get_certifi_fingerprints()
+        matched = root.cert_fingerprint in certifi_fps
+        _log.debug("certchain [extractor]: certifi fps=%d, root match=%s",
+                   len(certifi_fps), matched)
+        if matched:
             root_trusted = True
             root.source = CertSource.CERTIFI  # mark so UI can show the source
+    else:
+        _log.debug("certchain [extractor]: root not checked "
+                   "(is_root=%s, has_fingerprint=%s)",
+                   root.is_root, bool(root.cert_fingerprint))
 
     if not root_trusted:
         return ValidationStatus.UNKNOWN  # chain complete, root not in certifi
@@ -191,9 +212,14 @@ def _cert_to_info(cert,
         except Exception:
             is_ca = is_root
         try:
-            subject_hashable = bytes(cert.subject.hashable)
+            subject_hashable = cert.subject.dump()
         except Exception:
             subject_hashable = None
+        try:
+            import hashlib as _hashlib
+            cert_fingerprint = _hashlib.sha256(cert.dump()).digest()
+        except Exception:
+            cert_fingerprint = None
         return CertInfo(
             subject=cert.subject.human_friendly,
             issuer=cert.issuer.human_friendly,
@@ -204,6 +230,7 @@ def _cert_to_info(cert,
             is_root=is_root,
             is_ca=is_ca,
             subject_hashable=subject_hashable,
+            cert_fingerprint=cert_fingerprint,
             ocsp=ocsp,
             crl=crl,
         )
@@ -283,7 +310,7 @@ def _build_chain(signer_cert,
             except Exception:
                 issuer_name = "?"
             try:
-                issuer_hashable = bytes(current.issuer.hashable)
+                issuer_hashable = current.issuer.dump()
             except Exception:
                 issuer_hashable = None
             chain.append(CertInfo(
@@ -497,7 +524,10 @@ def _check_crypto_integrity(sig, is_timestamp: bool = False) -> ValidationStatus
         else:
             from pyhanko.sign.validation import validate_pdf_signature
             status = validate_pdf_signature(sig)
-        return ValidationStatus.VALID if status.valid else ValidationStatus.INVALID
+        # ``intact`` = byte-range hash matches (no tampering).
+        # ``valid``  = CMS signature math verifies.
+        # Both must be True for a cryptographically sound signature.
+        return ValidationStatus.VALID if (status.intact and status.valid) else ValidationStatus.INVALID
     except Exception:
         return ValidationStatus.NOT_CHECKED
     finally:

@@ -402,6 +402,7 @@ TRANSLATIONS: dict[str, str] = {
     "val_phase2_done":          "Prüfung abgeschlossen.",
     "val_phase2_error":         "Fehler: {msg}",
     "val_btn_recheck":          "Erneut prüfen",
+    "val_btn_fetch_certs":      "Online-Zertifikate abrufen",
     "val_no_sigs":              "Keine Signaturen im Dokument gefunden.",
     "val_no_pdf":               "Kein PDF geöffnet.",
 
@@ -489,6 +490,7 @@ TRANSLATIONS: dict[str, str] = {
     "cert_win_source_embedded":     "Eingebettet (PDF)",
     "cert_win_source_certifi":      "certifi (Mozilla-Bundle)",
     "cert_win_source_system":       "System-Vertrauensspeicher",
+    "cert_win_source_eu_tsl":       "EU-Vertrauensliste (LOTL/TSL)",
     "cert_win_source_downloaded":   "Heruntergeladen (AIA)",
     "cert_win_source_not_found":    "Nicht gefunden",
     "cert_win_source_unknown":      "Unbekannt",

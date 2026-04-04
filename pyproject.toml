@@ -44,7 +44,11 @@ dev = [
     "build",
     "twine",
     "pdoc",
+    "pytest>=7",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [project.scripts]
 pdf-signer = "pdf_signer.main:main"

@@ -115,7 +115,8 @@ class CertInfo:
     status: ValidationStatus
     is_root: bool = False
     is_ca: bool = False        # True if Basic Constraints cA=TRUE (or self-signed root)
-    subject_hashable: Optional[bytes] = None  # asn1crypto Name.hashable – for reliable lookup
+    subject_hashable: Optional[bytes] = None  # cert.subject.dump() – DER bytes, used for chain-building only
+    cert_fingerprint: Optional[bytes] = None  # SHA-256(cert.dump()) – used for trust confirmation
     ocsp: Optional[OCSPInfo] = None
     crl: Optional[CRLInfo] = None
 

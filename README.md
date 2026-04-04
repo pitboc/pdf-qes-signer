@@ -256,26 +256,56 @@ first start and renamed to `pdf_signer.ini.migrated`.
 
 ```
 pdf_signer/
-├── __init__.py            # package marker, version
-├── __main__.py            # enables python -m pdf_signer
-├── main.py                # entry point: argument parsing, QApplication
-├── config.py              # AppConfig (INI persistence), PDF_STANDARD_FONTS
-├── appearance.py          # SigAppearance, Qt and Pillow renderers
-├── signer.py              # SaveFieldsWorker, SignWorker, PKCS#11 logic
-├── pdf_view.py            # PDFViewWidget, SignatureFieldDef
-├── continuous_view.py     # ContinuousView (multi-page scroll mode)
-├── dialogs.py             # Pkcs11ConfigDialog, AppearanceConfigDialog, TokenInfoDialog, DocMDPDialog, CertChainDetailWindow
-├── main_window.py         # PDFSignerApp main window
-├── validation_result.py   # DocumentValidation data model (revisions, signatures, PAdES profiles)
-├── validation_extractor.py# Phase 1 offline extraction (crypto integrity, certificate chain, DSS)
-├── validation_dialog.py   # ValidationDialog: revision tree, PAdES profile, warning banner
-├── validation_worker.py   # Phase 2 background worker (network OCSP – not yet active)
-├── lotl_trust.py          # EU LOTL/TSL trust store (not yet active)
+├── __init__.py             # package marker, version
+├── __main__.py             # enables python -m pdf_signer
+├── main.py                 # entry point: argument parsing, QApplication
+├── config.py               # AppConfig (INI persistence), PDF_STANDARD_FONTS
+├── appearance.py           # SigAppearance, Qt and Pillow renderers
+├── signer.py               # SaveFieldsWorker, SignWorker, PKCS#11 logic
+├── pdf_view.py             # PDFViewWidget, SignatureFieldDef
+├── continuous_view.py      # ContinuousView (multi-page scroll mode)
+├── dialogs.py              # Pkcs11ConfigDialog, AppearanceConfigDialog, TokenInfoDialog, DocMDPDialog, CertChainDetailWindow
+├── main_window.py          # PDFSignerApp main window
+├── validation_result.py    # DocumentValidation data model (revisions, signatures, PAdES profiles)
+├── validation_extractor.py # Phase 1 offline extraction (crypto integrity, certificate chain, DSS)
+├── validation_dialog.py    # ValidationDialog: revision tree, PAdES profile, warning banner
+├── validation_worker.py    # Phase 2 background worker (trust chain validation, AIA/OCSP, EU LOTL)
+├── lotl_trust.py           # EU LOTL/TSL trust store (cached XML)
 └── i18n/
-    ├── __init__.py        # I18n class, t() function
-    ├── de.py              # German translations
-    └── en.py              # English translations
+    ├── __init__.py         # I18n class, t() function
+    ├── de.py               # German translations
+    └── en.py               # English translations
+tests/
+└── test_cert_chain_security.py  # automated security tests for certificate chain validation
+tools/
+└── create_test_pdfs.py     # generates test PDFs with forged/expired/tampered cert chains
 ```
+
+## Testing
+
+The test suite covers security-critical validation logic and requires no
+hardware token or network access.
+
+Install the development dependencies once:
+
+```bash
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+Run all tests:
+
+```bash
+.venv/bin/python -m pytest
+```
+
+The tests generate synthetic PDFs with forged, expired, and tampered
+certificate chains and assert that the validator never classifies any of them
+as `VALID`.  The most critical test (`test_spoofed_root_dn_not_trusted`)
+verifies that a certificate with the same Distinguished Name as a trusted
+Mozilla CA root but a different key is not accepted — this guards against a
+class of trust-bypass attacks where only the Subject DN is compared instead
+of the full certificate fingerprint.
 
 ## API documentation
 
