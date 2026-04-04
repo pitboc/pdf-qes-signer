@@ -719,25 +719,46 @@ def extract(pdf_bytes: bytes) -> DocumentValidation:
 
     entries.sort(key=lambda x: x[0])
 
-    # Total PDF revisions (including unsigned ones)
-    total_pdf_revisions = max((r for r, _ in entries), default=1)
-    try:
-        total_pdf_revisions = reader.xrefs.total_revisions
-    except Exception:
-        pass
+    # Total PDF revisions (including unsigned ones).
+    # Linearisierte PDFs haben eine zweite xref-Sektion (Hint) am Dateianfang,
+    # die pyhanko als eigene Revision zählt.  Diese Sektion ist kein echter
+    # inkrementeller Update: ihr Byte-Offset ist kleiner als der der ersten
+    # Sektion.  Wir erkennen und entfernen solche Artefakte anhand nicht-
+    # monoton steigender revision_end_offsets.
+    if revision_end_offsets:
+        filtered_offsets: list[int] = []
+        filtered_indices: list[int] = []  # 0-based xref-section indices to keep
+        for i, off in enumerate(revision_end_offsets):
+            if filtered_offsets and off <= filtered_offsets[-1]:
+                # Offset nicht größer als der vorherige → Linearisierungs-Hint
+                continue
+            filtered_offsets.append(off)
+            filtered_indices.append(i)
+        revision_end_offsets = filtered_offsets
+        total_pdf_revisions = len(filtered_indices)
+        # Signatur-Revisionen auf neue Indizes umrechnen
+        old_to_new = {old: new for new, old in enumerate(filtered_indices)}
+        entries = [(old_to_new[r], si) for r, si in entries if r in old_to_new]
+        sig_by_rev_new: dict[int, SignatureInfo] = {}
+        for rev_num, si in entries:
+            sig_by_rev_new[rev_num] = si
+    else:
+        total_pdf_revisions = max((r for r, _ in entries), default=1)
+        try:
+            total_pdf_revisions = reader.xrefs.total_revisions
+        except Exception:
+            pass
+        sig_by_rev_new = {r: si for r, si in entries}
 
-    # Map revision number → SignatureInfo
-    sig_by_rev: dict[int, SignatureInfo] = {}
-    for rev_num, si in entries:
-        sig_by_rev[rev_num] = si
+    sig_by_rev = sig_by_rev_new
 
     # Set of revision numbers that carry a document timestamp (for LTA detection)
     doc_ts_revs: set[int] = {
-        rev_num for rev_num, si in entries if si.sig_type == "doc_timestamp"
+        rev_num for rev_num, si in sig_by_rev.items() if si.sig_type == "doc_timestamp"
     }
 
     # Assign PAdES profile to each regular signature
-    for rev_num, si in entries:
+    for rev_num, si in sig_by_rev.items():
         si.pades_profile = _calc_pades_profile(si, has_dss, doc_ts_revs, rev_num)
 
     # Build RevisionInfo for every PDF revision (signed and unsigned).
