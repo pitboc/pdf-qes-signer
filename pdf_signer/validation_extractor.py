@@ -41,13 +41,102 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from .validation_result import (
     CertInfo, CertSource, CRLInfo, DocumentValidation, OCSPInfo,
     PadesProfile, RevisionInfo, SignatureInfo, TimestampInfo, ValidationStatus,
 )
+
+
+# ── certifi trust-anchor cache ────────────────────────────────────────────────
+
+_certifi_subjects: Optional[set[bytes]] = None
+
+
+def _get_certifi_subjects() -> set[bytes]:
+    """Return the set of subject.hashable values for all certs in the certifi bundle.
+
+    Result is cached after the first call.  Returns an empty set if certifi is
+    not installed or the bundle cannot be read.
+    """
+    global _certifi_subjects
+    if _certifi_subjects is not None:
+        return _certifi_subjects
+    try:
+        import certifi
+        from asn1crypto import pem as asn1_pem, x509 as asn1_x509
+        subjects: set[bytes] = set()
+        with open(certifi.where(), "rb") as fh:
+            pem_data = fh.read()
+        for _, _, der in asn1_pem.unarmor(pem_data, multiple=True):
+            try:
+                cert = asn1_x509.Certificate.load(der)
+                subjects.add(bytes(cert.subject.hashable))
+            except Exception:
+                pass
+        _certifi_subjects = subjects
+    except Exception:
+        _certifi_subjects = set()
+    return _certifi_subjects
+
+
+def _compute_chain_status(chain: list[CertInfo],
+                          signing_time: Optional[datetime]) -> ValidationStatus:
+    """Compute chain trust status from embedded data and the certifi bundle.
+
+    Phase 1 (offline): certifi is the only external trust anchor.
+
+    Returns:
+        VALID      – complete chain, root in certifi, end-entity OCSP good
+        UNKNOWN    – chain structurally ok but revocation or root unconfirmed
+        INVALID    – chain broken, a cert was expired at signing time, or revoked
+        NOT_CHECKED – chain is empty
+    """
+    if not chain:
+        return ValidationStatus.NOT_CHECKED
+
+    # Incomplete chain (NOT_FOUND placeholder at end)
+    if any(c.source == CertSource.NOT_FOUND for c in chain):
+        return ValidationStatus.INVALID
+
+    # Validity dates at signing time
+    check_time = signing_time
+    if check_time is None:
+        check_time = datetime.now(tz=timezone.utc)
+    elif check_time.tzinfo is None:
+        check_time = check_time.replace(tzinfo=timezone.utc)
+
+    for c in chain:
+        vf, vu = c.valid_from, c.valid_until
+        if vf == datetime.min or vu == datetime.max:
+            continue
+        vf = vf if vf.tzinfo else vf.replace(tzinfo=timezone.utc)
+        vu = vu if vu.tzinfo else vu.replace(tzinfo=timezone.utc)
+        if not (vf <= check_time <= vu):
+            return ValidationStatus.INVALID
+
+    # End-entity revocation from embedded OCSP
+    ee = chain[0]
+    if ee.ocsp is not None and ee.ocsp.cert_status == "revoked":
+        return ValidationStatus.INVALID
+
+    # Root trust via certifi – update source in-place when matched
+    root = chain[-1]
+    root_trusted = False
+    if root.is_root and root.subject_hashable:
+        if root.subject_hashable in _get_certifi_subjects():
+            root_trusted = True
+            root.source = CertSource.CERTIFI  # mark so UI can show the source
+
+    if not root_trusted:
+        return ValidationStatus.UNKNOWN  # chain complete, root not in certifi
+
+    # Root trusted: VALID only if OCSP good, otherwise UNKNOWN (revocation pending)
+    if ee.ocsp is not None and ee.ocsp.cert_status == "good":
+        return ValidationStatus.VALID
+    return ValidationStatus.UNKNOWN
 
 
 # ── Status helpers ────────────────────────────────────────────────────────────
@@ -320,11 +409,17 @@ def _extract_tst_info(signed_data) -> tuple[Optional[datetime], str]:
         return None, ""
 
 
-def _embedded_tsa_token(sig) -> Optional[TimestampInfo]:
+def _embedded_tsa_token(sig, dss_pool: list) -> Optional[TimestampInfo]:
     """Extract the RFC-3161 timestamp token embedded inside a regular signature.
 
     This token lives in the ``id-aa-signatureTimeStampToken`` unsigned attribute
     of the CMS ``SignerInfo``.  Returns ``None`` if no such token is present.
+
+    Args:
+        sig:      pyhanko ``EmbeddedPdfSignature`` object.
+        dss_pool: Certificate pool from the document DSS, used to complete the
+                  TSA chain when the TSA token itself does not include all
+                  intermediates or the root (e.g. root added later by LTA).
     """
     try:
         from asn1crypto import cms as asn1_cms, x509 as asn1_x509
@@ -352,7 +447,10 @@ def _embedded_tsa_token(sig) -> Optional[TimestampInfo]:
                     if tsa_certs:
                         tsa_cert = tsa_certs[0].chosen
                         tsa_subject = _subject_cn(tsa_cert)
-                        all_tsa_certs = [c.chosen for c in tsa_certs]
+                        # Merge token-internal certs with DSS pool so that
+                        # intermediates and the root added by a later LTA
+                        # revision are also available for chain building.
+                        all_tsa_certs = [c.chosen for c in tsa_certs] + dss_pool
                         tsa_chain = _build_chain(tsa_cert, all_tsa_certs, {}, None)
                 except Exception:
                     pass
@@ -363,6 +461,7 @@ def _embedded_tsa_token(sig) -> Optional[TimestampInfo]:
                     source=CertSource.EMBEDDED,
                     status=ValidationStatus.NOT_CHECKED,
                     cert_chain=tsa_chain,
+                    chain_status=_compute_chain_status(tsa_chain, gen_time),
                 )
             except Exception:
                 continue
@@ -447,7 +546,7 @@ def _build_sig_info(sig, dss_pool: list,
         chain = _build_chain(signer_cert, all_certs, ocsp_by_serial, crl_info)
 
     # Embedded TSA timestamp token (optional, inside the signature)
-    tsa_ts = _embedded_tsa_token(sig)
+    tsa_ts = _embedded_tsa_token(sig, dss_pool)
 
     # Crypto integrity (byte range hash)
     crypto_status = _check_crypto_integrity(sig)
@@ -467,7 +566,7 @@ def _build_sig_info(sig, dss_pool: list,
         timestamp=tsa_ts,
         cert_chain=chain,
         crypto_status=crypto_status,
-        chain_status=ValidationStatus.NOT_CHECKED,   # requires trust anchor → Phase 2
+        chain_status=_compute_chain_status(chain, tsa_ts.time if tsa_ts else signing_time),
         revocation_status=rev_status,
         status=overall,
     )
@@ -514,6 +613,7 @@ def _build_doc_ts_info(ts, dss_pool: list) -> SignatureInfo:
     if tsa_cert is not None:
         chain = _build_chain(tsa_cert, all_certs, {}, None)
 
+    tsa_chain_status = _compute_chain_status(chain, gen_time)
     ts_info = TimestampInfo(
         time=gen_time or datetime.min,
         tsa_subject=tsa_subject,
@@ -521,6 +621,7 @@ def _build_doc_ts_info(ts, dss_pool: list) -> SignatureInfo:
         source=CertSource.EMBEDDED,
         status=ValidationStatus.NOT_CHECKED,
         cert_chain=chain,
+        chain_status=tsa_chain_status,
     )
 
     crypto_status = _check_crypto_integrity(ts, is_timestamp=True)
@@ -533,7 +634,7 @@ def _build_doc_ts_info(ts, dss_pool: list) -> SignatureInfo:
         timestamp=ts_info,
         cert_chain=chain,
         crypto_status=crypto_status,
-        chain_status=ValidationStatus.NOT_CHECKED,
+        chain_status=tsa_chain_status,
         revocation_status=ValidationStatus.NOT_CHECKED,
         status=crypto_status,
     )

@@ -443,4 +443,53 @@ TRANSLATIONS: dict[str, str] = {
     "val_profile_meaning_T":        "Signierzeitpunkt gesichert, Validierungsdaten nicht eingebettet",
     "val_profile_meaning_LT":       "Validierungsdaten eingebettet, aber nicht kryptographisch gesichert",
     "val_profile_meaning_LTA":      "Alle Validierungsdaten eingebettet und kryptographisch gesichert",
+
+    # Certificate chain summary rows in validation tree
+    "val_detail_sig_chain":         "Signaturkette",
+    "val_detail_tsa_chain":         "TSA-Kette",
+    "val_chain_details_btn":        "Details →",
+
+    # Chain status labels (shown in tree + detail window)
+    "val_chain_valid":              "✓ Gültig",
+    "val_chain_incomplete":         "✗ Unvollständig",
+    "val_chain_expired":            "✗ Abgelaufen",
+    "val_chain_revoked":            "✗ Widerrufen",
+    "val_chain_unknown_root":       "Vollständig · Root unbekannt",
+    "val_chain_unknown_revoc":      "Vollständig · Widerruf unbekannt",
+    "val_chain_not_checked":        "–",
+
+    # Tooltips for chain status labels
+    "val_chain_valid_tip":          "Kette vollständig, Root vertrauenswürdig (certifi/Mozilla-Bundle), Widerruf eingebettet und gültig.",
+    "val_chain_incomplete_tip":     "Die Zertifikatskette bricht ab – ein Intermediate-Zertifikat fehlt.",
+    "val_chain_expired_tip":        "Mindestens ein Zertifikat der Kette war zum Signierzeitpunkt außerhalb seiner Gültigkeitsdauer.",
+    "val_chain_revoked_tip":        "Laut eingebetteter OCSP-Antwort wurde das Signaturzertifikat gesperrt.",
+    "val_chain_unknown_root_tip":   "Die Kette ist vollständig, aber das Root-Zertifikat ist nur im Dokument eingebettet und nicht in einem bekannten Vertrauensspeicher (certifi/Mozilla-Bundle).",
+    "val_chain_unknown_revoc_tip":  "Das Root-Zertifikat ist vertrauenswürdig (certifi/Mozilla-Bundle), aber der Widerrufsstatus des Signaturzertifikats wurde nicht geprüft.",
+    "val_chain_self_signed":        "Selbstsigniert · kein CA-Vertrauen",
+    "val_chain_self_signed_tip":    "Das Zertifikat ist selbst ausgestellt – es gibt keine übergeordnete Zertifizierungsstelle. Das Zertifikat ist eingebettet, aber nicht in einem bekannten Vertrauensspeicher vorhanden.",
+
+    # Certificate chain detail window
+    "cert_win_title_sig":           "Signaturkette – {cn}",
+    "cert_win_title_tsa":           "TSA-Kette – {cn}",
+    "cert_win_role_ee":             "End-Entity",
+    "cert_win_role_intermediate":   "Intermediate",
+    "cert_win_role_root":           "Root",
+    "cert_win_role_self_signed":    "Selbstsigniert",
+    "cert_win_self_signed_issuer":  "(selbstsigniert)",
+    "cert_win_label_issuer":        "Aussteller",
+    "cert_win_label_valid":         "Gültig",
+    "cert_win_label_source":        "Quelle",
+    "cert_win_label_ocsp":          "OCSP",
+    "cert_win_label_overall":       "Gesamtstatus",
+    "cert_win_source_embedded":     "Eingebettet (PDF)",
+    "cert_win_source_certifi":      "certifi (Mozilla-Bundle)",
+    "cert_win_source_system":       "System-Vertrauensspeicher",
+    "cert_win_source_downloaded":   "Heruntergeladen (AIA)",
+    "cert_win_source_not_found":    "Nicht gefunden",
+    "cert_win_source_unknown":      "Unbekannt",
+    "cert_win_ocsp_good":           "gut ✓",
+    "cert_win_ocsp_revoked":        "widerrufen ✗",
+    "cert_win_ocsp_unknown":        "unbekannt",
+    "cert_win_ocsp_not_checked":    "nicht geprüft",
+    "cert_win_close":               "Schließen",
 }

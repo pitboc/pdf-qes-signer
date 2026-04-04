@@ -22,7 +22,7 @@ from typing import Optional
 import re
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QColor, QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
     QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox,
@@ -2088,3 +2088,226 @@ class DocMDPDialog(QDialog):
         else:
             self.docmdp = "none"
         self.accept()
+
+
+class CertChainDetailWindow(QWidget):
+    """Inspector window showing the certificate chain for one signature or TSA token.
+
+    Acts as a singleton inspector: calling ``show_chain`` replaces the current
+    content so the user can switch between chains without opening new windows.
+    Geometry (position + size) is persisted in the global ``AppConfig`` under
+    the ``[cert_detail_window]`` section.
+    """
+
+    # Colour constants reused from validation_dialog
+    _GREEN = "#1a7a1a"
+    _RED   = "#9a0000"
+    _GREY  = "#666666"
+
+    def __init__(self, config, parent=None) -> None:
+        from PyQt6.QtCore import Qt
+        super().__init__(parent, Qt.WindowType.Window)
+        self._config = config
+        self._setup_ui()
+        self._restore_geometry()
+
+    # ── UI ────────────────────────────────────────────────────────────────
+
+    def _setup_ui(self) -> None:
+        from PyQt6.QtWidgets import QPushButton
+        from PyQt6.QtCore import Qt
+        lay = QVBoxLayout(self)
+        lay.setSpacing(4)
+
+        self._tree = QTreeWidget()
+        self._tree.setColumnCount(2)
+        self._tree.header().hide()
+        self._tree.setAlternatingRowColors(True)
+        self._tree.setSelectionMode(QTreeWidget.SelectionMode.NoSelection)
+        self._tree.header().setStretchLastSection(True)
+        lay.addWidget(self._tree)
+
+        bot = QHBoxLayout()
+        self._overall_lbl = QLabel()
+        self._overall_lbl.setContentsMargins(2, 2, 2, 2)
+        bot.addWidget(self._overall_lbl)
+        bot.addStretch()
+        close_btn = QPushButton(t("cert_win_close"))
+        close_btn.clicked.connect(self.close)
+        bot.addWidget(close_btn)
+        lay.addLayout(bot)
+
+    # ── Public API ────────────────────────────────────────────────────────
+
+    def show_chain(self, chain: list, title: str,
+                   overall_status, cn: str) -> None:
+        """Replace displayed chain and update the window title."""
+        from .validation_result import ValidationStatus, CertSource
+        self.setWindowTitle(title)
+        self._tree.clear()
+
+        chain_len = len(chain)
+        for cert in chain:
+            self._add_cert_item(cert, chain_len)
+
+        self._tree.resizeColumnToContents(0)
+        self._tree.expandAll()
+
+        # Overall status line
+        label, color = self._status_label_color(overall_status, chain)
+        txt = f"{t('cert_win_label_overall')}:  {label}"
+        self._overall_lbl.setText(txt)
+        self._overall_lbl.setStyleSheet(
+            f"font-weight: bold; color: {color};" if color else "")
+
+        self.show()
+        self.raise_()
+
+    # ── Helpers ───────────────────────────────────────────────────────────
+
+    def _add_cert_item(self, cert, chain_len: int = 0) -> None:
+        from .validation_result import CertSource, ValidationStatus
+        from PyQt6.QtGui import QFont
+
+        is_self_signed = cert.is_root and chain_len == 1
+        if is_self_signed:
+            role = t("cert_win_role_self_signed")
+        else:
+            role = self._cert_role(cert)
+        cn   = self._cn_from_subject(cert.subject)
+
+        top = QTreeWidgetItem(self._tree)
+        top.setFlags(top.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+        top.setText(0, cn)
+        top.setText(1, role)
+        f = QFont()
+        f.setBold(True)
+        top.setFont(0, f)
+
+        if cert.source == CertSource.NOT_FOUND:
+            top.setForeground(0, QColor(self._RED))
+            top.setForeground(1, QColor(self._RED))
+
+        issuer_display = (t("cert_win_self_signed_issuer")
+                          if is_self_signed
+                          else self._cn_from_subject(cert.issuer))
+        self._add_sub(top, t("cert_win_label_issuer"), issuer_display)
+        self._add_sub(top, t("cert_win_label_valid"),
+                      self._fmt_validity(cert))
+        self._add_sub(top, t("cert_win_label_source"),
+                      self._source_text(cert.source))
+        if cert.ocsp is not None:
+            self._add_sub(top, t("cert_win_label_ocsp"),
+                          self._ocsp_text(cert.ocsp))
+
+    def _add_sub(self, parent: QTreeWidgetItem,
+                 label: str, value: str) -> QTreeWidgetItem:
+        sub = QTreeWidgetItem(parent)
+        sub.setFlags(sub.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+        sub.setText(0, label)
+        sub.setForeground(0, QColor(self._GREY))
+        sub.setText(1, value)
+        return sub
+
+    @staticmethod
+    def _cert_role(cert) -> str:
+        from .validation_result import CertSource
+        if cert.source == CertSource.NOT_FOUND:
+            return "?"
+        if cert.is_root:
+            return t("cert_win_role_root")
+        if cert.is_ca:
+            return t("cert_win_role_intermediate")
+        return t("cert_win_role_ee")
+
+    @staticmethod
+    def _cn_from_subject(subject: str) -> str:
+        sep = ";" if ";" in subject else ","
+        for part in subject.split(sep):
+            part = part.strip()
+            colon = part.find(":")
+            if colon > 0:
+                key = part[:colon].strip()
+                if key in ("Common Name", "CN"):
+                    return part[colon + 1:].strip()
+        return subject.split(sep)[0].strip() if subject else "?"
+
+    @staticmethod
+    def _fmt_validity(cert) -> str:
+        from datetime import datetime
+        vf, vu = cert.valid_from, cert.valid_until
+        if vf == datetime.min or vu == datetime.max:
+            return "–"
+        return f"{vf.strftime('%d.%m.%Y')} – {vu.strftime('%d.%m.%Y')}"
+
+    @staticmethod
+    def _source_text(source) -> str:
+        from .validation_result import CertSource
+        return {
+            CertSource.EMBEDDED:   t("cert_win_source_embedded"),
+            CertSource.CERTIFI:    t("cert_win_source_certifi"),
+            CertSource.SYSTEM:     t("cert_win_source_system"),
+            CertSource.DOWNLOADED: t("cert_win_source_downloaded"),
+            CertSource.NOT_FOUND:  t("cert_win_source_not_found"),
+            CertSource.EU_TSL:     t("cert_win_source_system"),
+        }.get(source, t("cert_win_source_unknown"))
+
+    @staticmethod
+    def _ocsp_text(ocsp) -> str:
+        status_map = {
+            "good":    t("cert_win_ocsp_good"),
+            "revoked": t("cert_win_ocsp_revoked"),
+            "unknown": t("cert_win_ocsp_unknown"),
+        }
+        label = status_map.get(ocsp.cert_status, t("cert_win_ocsp_not_checked"))
+        if ocsp.produced_at:
+            label += f"  ({ocsp.produced_at.strftime('%d.%m.%Y')})"
+        return label
+
+    @staticmethod
+    def _status_label_color(status, chain) -> tuple[str, str]:
+        from .validation_result import ValidationStatus, CertSource
+        if status == ValidationStatus.VALID:
+            return t("val_chain_valid"), "#1a7a1a"
+        if status == ValidationStatus.INVALID:
+            # Determine reason
+            if any(c.source == CertSource.NOT_FOUND for c in chain):
+                return t("val_chain_incomplete"), "#9a0000"
+            ee = chain[0] if chain else None
+            if ee and ee.ocsp and ee.ocsp.cert_status == "revoked":
+                return t("val_chain_revoked"), "#9a0000"
+            return t("val_chain_expired"), "#9a0000"
+        if status == ValidationStatus.UNKNOWN:
+            if len(chain) == 1 and chain[0].is_root:
+                return t("val_chain_self_signed"), "#8a6000"
+            root = chain[-1] if chain else None
+            if root and root.source == CertSource.CERTIFI:
+                return t("val_chain_unknown_revoc"), "#8a6000"
+            return t("val_chain_unknown_root"), "#8a6000"
+        return t("val_chain_not_checked"), ""
+
+    # ── Geometry persistence ──────────────────────────────────────────────
+
+    def _restore_geometry(self) -> None:
+        try:
+            x = int(self._config.get("cert_detail_window", "x"))
+            y = int(self._config.get("cert_detail_window", "y"))
+            w = int(self._config.get("cert_detail_window", "width"))
+            h = int(self._config.get("cert_detail_window", "height"))
+            self.resize(max(300, w), max(200, h))
+            if x >= 0 and y >= 0:
+                self.move(x, y)
+        except Exception:
+            self.resize(520, 420)
+
+    def closeEvent(self, event) -> None:
+        try:
+            geo = self.geometry()
+            self._config.set("cert_detail_window", "x",      str(geo.x()))
+            self._config.set("cert_detail_window", "y",      str(geo.y()))
+            self._config.set("cert_detail_window", "width",  str(geo.width()))
+            self._config.set("cert_detail_window", "height", str(geo.height()))
+            self._config.save()
+        except Exception:
+            pass
+        super().closeEvent(event)

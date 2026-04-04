@@ -441,4 +441,53 @@ TRANSLATIONS: dict[str, str] = {
     "val_profile_meaning_T":        "Signing time secured, validation data not embedded",
     "val_profile_meaning_LT":       "Validation data embedded, but not cryptographically secured",
     "val_profile_meaning_LTA":      "All validation data embedded and cryptographically secured",
+
+    # Certificate chain summary rows in validation tree
+    "val_detail_sig_chain":         "Sig. chain",
+    "val_detail_tsa_chain":         "TSA chain",
+    "val_chain_details_btn":        "Details →",
+
+    # Chain status labels
+    "val_chain_valid":              "✓ Valid",
+    "val_chain_incomplete":         "✗ Incomplete",
+    "val_chain_expired":            "✗ Expired",
+    "val_chain_revoked":            "✗ Revoked",
+    "val_chain_unknown_root":       "Complete · Root unknown",
+    "val_chain_unknown_revoc":      "Complete · Revocation unknown",
+    "val_chain_not_checked":        "–",
+
+    # Tooltips for chain status labels
+    "val_chain_valid_tip":          "Chain complete, root trusted (certifi/Mozilla bundle), revocation embedded and good.",
+    "val_chain_incomplete_tip":     "The certificate chain is broken – an intermediate CA certificate is missing.",
+    "val_chain_expired_tip":        "At least one certificate in the chain was outside its validity period at signing time.",
+    "val_chain_revoked_tip":        "The signing certificate was revoked according to the embedded OCSP response.",
+    "val_chain_unknown_root_tip":   "The chain is complete but the root certificate is only embedded in the document and not found in a known trust store (certifi/Mozilla bundle).",
+    "val_chain_unknown_revoc_tip":  "The root certificate is trusted (certifi/Mozilla bundle) but the revocation status of the signing certificate has not been checked.",
+    "val_chain_self_signed":        "Self-signed · no CA trust",
+    "val_chain_self_signed_tip":    "The certificate is self-issued – there is no issuing certificate authority. The certificate is embedded in the document but is not present in any known trust store.",
+
+    # Certificate chain detail window
+    "cert_win_title_sig":           "Signature chain – {cn}",
+    "cert_win_title_tsa":           "TSA chain – {cn}",
+    "cert_win_role_ee":             "End-Entity",
+    "cert_win_role_intermediate":   "Intermediate",
+    "cert_win_role_root":           "Root",
+    "cert_win_role_self_signed":    "Self-signed",
+    "cert_win_self_signed_issuer":  "(self-signed)",
+    "cert_win_label_issuer":        "Issuer",
+    "cert_win_label_valid":         "Valid",
+    "cert_win_label_source":        "Source",
+    "cert_win_label_ocsp":          "OCSP",
+    "cert_win_label_overall":       "Overall status",
+    "cert_win_source_embedded":     "Embedded (PDF)",
+    "cert_win_source_certifi":      "certifi (Mozilla bundle)",
+    "cert_win_source_system":       "System trust store",
+    "cert_win_source_downloaded":   "Downloaded (AIA)",
+    "cert_win_source_not_found":    "Not found",
+    "cert_win_source_unknown":      "Unknown",
+    "cert_win_ocsp_good":           "good ✓",
+    "cert_win_ocsp_revoked":        "revoked ✗",
+    "cert_win_ocsp_unknown":        "unknown",
+    "cert_win_ocsp_not_checked":    "not checked",
+    "cert_win_close":               "Close",
 }

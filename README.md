@@ -81,6 +81,15 @@ pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
 - Each signed revision displays: signer name, signing time (self-reported or
   TSA-confirmed), crypto integrity status, and PAdES conformance level
   (B / T / LT / LTA) with a plain-language explanation
+- **Certificate chain inspection**: each signature and embedded TSA token shows
+  a chain status row (valid / self-signed / unknown root / revocation unknown /
+  incomplete / expired / revoked) with a colour-coded label and tooltip;
+  clicking *Details →* opens a floating inspector window listing every
+  certificate in the chain with role, validity period, source, and OCSP status.
+  Trust is evaluated offline against the Mozilla CA bundle (certifi); the
+  window position and size are persisted across sessions. Certificate chains
+  for TSA tokens are completed from the document DSS so that root certificates
+  added by a later LTA revision are visible for earlier signatures as well.
 - Unsigned revisions (form field fills, DSS updates, XMP metadata) can be
   revealed with *Show all revisions*
 - Clicking a revision switches the PDF viewer to show the document **as it
@@ -255,7 +264,7 @@ pdf_signer/
 ├── signer.py              # SaveFieldsWorker, SignWorker, PKCS#11 logic
 ├── pdf_view.py            # PDFViewWidget, SignatureFieldDef
 ├── continuous_view.py     # ContinuousView (multi-page scroll mode)
-├── dialogs.py             # Pkcs11ConfigDialog, AppearanceConfigDialog, TokenInfoDialog
+├── dialogs.py             # Pkcs11ConfigDialog, AppearanceConfigDialog, TokenInfoDialog, DocMDPDialog, CertChainDetailWindow
 ├── main_window.py         # PDFSignerApp main window
 ├── validation_result.py   # DocumentValidation data model (revisions, signatures, PAdES profiles)
 ├── validation_extractor.py# Phase 1 offline extraction (crypto integrity, certificate chain, DSS)

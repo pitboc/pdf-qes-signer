@@ -1740,6 +1740,7 @@ class PDFSignerApp(QMainWindow):
         self._validation_dialog = ValidationDialog(
             self, doc, full_bytes,
             show_all_initially=not has_signatures or has_warning,
+            config=self.config,
         )
         self._validation_dialog.revision_selected.connect(
             self._on_validation_revision_selected)

@@ -38,11 +38,14 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QHBoxLayout,
-    QLabel, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+    QLabel, QPushButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
 )
 
 from .i18n import t
-from .validation_result import DocumentValidation, PadesProfile, RevisionInfo, SignatureInfo, ValidationStatus
+from .validation_result import (
+    CertSource, DocumentValidation, PadesProfile, RevisionInfo,
+    SignatureInfo, TimestampInfo, ValidationStatus,
+)
 
 
 _RED    = "#9a0000"
@@ -140,6 +143,47 @@ def _date_text(sig: SignatureInfo) -> str:
     return t("val_date_self", time=time_str)
 
 
+def _is_self_signed_chain(chain: list) -> bool:
+    """Return True when the chain consists of exactly one self-signed certificate."""
+    return len(chain) == 1 and chain[0].is_root
+
+
+def _chain_label_tip(chain: list, status: ValidationStatus) -> tuple[str, str]:
+    """Return (label, tooltip) for a chain status row."""
+    if not chain or status == ValidationStatus.NOT_CHECKED:
+        return t("val_chain_not_checked"), ""
+    if status == ValidationStatus.VALID:
+        return t("val_chain_valid"), t("val_chain_valid_tip")
+    if status == ValidationStatus.INVALID:
+        if any(c.source == CertSource.NOT_FOUND for c in chain):
+            return t("val_chain_incomplete"), t("val_chain_incomplete_tip")
+        ee = chain[0] if chain else None
+        if ee and ee.ocsp and ee.ocsp.cert_status == "revoked":
+            return t("val_chain_revoked"), t("val_chain_revoked_tip")
+        return t("val_chain_expired"), t("val_chain_expired_tip")
+    # UNKNOWN
+    if _is_self_signed_chain(chain):
+        return t("val_chain_self_signed"), t("val_chain_self_signed_tip")
+    root = chain[-1] if chain else None
+    if root and root.source == CertSource.CERTIFI:
+        return t("val_chain_unknown_revoc"), t("val_chain_unknown_revoc_tip")
+    return t("val_chain_unknown_root"), t("val_chain_unknown_root_tip")
+
+
+def _extract_cn_from_chain(chain: list) -> str:
+    """Return CN of the end-entity certificate, or '?' if chain is empty."""
+    if not chain:
+        return "?"
+    subj = chain[0].subject
+    sep = ";" if ";" in subj else ","
+    for part in subj.split(sep):
+        part = part.strip()
+        colon = part.find(":")
+        if colon > 0 and part[:colon].strip() in ("Common Name", "CN"):
+            return part[colon + 1:].strip()
+    return subj.split(sep)[0].strip() or "?"
+
+
 def _profile_text(sig: SignatureInfo) -> tuple[str, str]:
     """Return (profile_label, meaning_text) for the Profil detail line.
 
@@ -174,11 +218,14 @@ class ValidationDialog(QDialog):
                  doc: DocumentValidation,
                  pdf_bytes: bytes,
                  auto_fetch: bool = False,
-                 show_all_initially: bool = False) -> None:
+                 show_all_initially: bool = False,
+                 config=None) -> None:
         super().__init__(parent)
         self._doc = doc
         self._pdf_bytes = pdf_bytes
         self._show_all = show_all_initially
+        self._config = config
+        self._cert_detail_win = None   # CertChainDetailWindow singleton
 
         self.setWindowTitle(t("val_dlg_title"))
         self.setMinimumSize(680, 320)
@@ -225,6 +272,12 @@ class ValidationDialog(QDialog):
         layout.addLayout(bottom)
 
     # ── Slots ─────────────────────────────────────────────────────────────
+
+    def closeEvent(self, event) -> None:
+        if self._cert_detail_win is not None:
+            self._cert_detail_win.close()
+            self._cert_detail_win = None
+        super().closeEvent(event)
 
     def _on_show_all_toggled(self, checked: bool) -> None:
         self._show_all = checked
@@ -328,6 +381,23 @@ class ValidationDialog(QDialog):
         self._add_integrity_sub(item, sig)
         self._add_profile_sub(item, sig)
 
+        # Certificate chain rows
+        if sig.sig_type != "doc_timestamp":
+            self._add_chain_sub(item, "val_detail_sig_chain",
+                                 sig.cert_chain, sig.chain_status,
+                                 "cert_win_title_sig")
+        if sig.timestamp is not None:
+            tsa_chain  = sig.timestamp.cert_chain
+            tsa_status = sig.timestamp.chain_status
+            self._add_chain_sub(item, "val_detail_tsa_chain",
+                                 tsa_chain, tsa_status,
+                                 "cert_win_title_tsa")
+        elif sig.sig_type == "doc_timestamp":
+            # LTA doc timestamp: only TSA chain
+            self._add_chain_sub(item, "val_detail_tsa_chain",
+                                 sig.cert_chain, sig.chain_status,
+                                 "cert_win_title_tsa")
+
         item.setExpanded(True)
 
     def _add_sub(self, parent: QTreeWidgetItem,
@@ -359,3 +429,71 @@ class ValidationDialog(QDialog):
         self._add_sub(parent, t("val_detail_profile"), profile_label)
         if meaning:
             self._add_sub(parent, "", meaning)
+
+    def _add_chain_sub(self, parent: QTreeWidgetItem,
+                       label_key: str,
+                       chain: list,
+                       status: ValidationStatus,
+                       title_key: str) -> None:
+        """Add one chain summary row with status colour, tooltip, and Details button."""
+        text, tip = _chain_label_tip(chain, status)
+        sub = self._add_sub(parent, t(label_key), text)
+        if tip:
+            sub.setToolTip(1, tip)
+
+        # Colour
+        if status == ValidationStatus.VALID:
+            sub.setForeground(1, QColor(_GREEN))
+            sub.setFont(1, _bold())
+        elif status == ValidationStatus.INVALID:
+            sub.setForeground(1, QColor(_RED))
+            sub.setFont(1, _bold())
+        elif status == ValidationStatus.UNKNOWN:
+            sub.setForeground(1, QColor("#8a6000"))
+
+        # "Details →" button only when there is something to show.
+        # Clear column-1 text first so Qt doesn't draw it behind the widget.
+        if chain and self._config is not None:
+            sub.setText(1, "")
+            btn = QPushButton(t("val_chain_details_btn"))
+            btn.setFlat(True)
+            btn.setStyleSheet("color: #1a73e8; text-decoration: underline;")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(
+                lambda _checked, c=chain, s=status, tk=title_key:
+                    self._open_chain_detail(c, s, tk))
+            self._tree.setItemWidget(sub, 1,
+                                     self._wrap_btn(text, tip, btn, status))
+
+    @staticmethod
+    def _wrap_btn(text: str, tip: str, btn: QPushButton,
+                  status: ValidationStatus) -> "QWidget":
+        """Return a widget with the status label and the Details button side by side."""
+        from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel as _QLabel
+        w = QWidget()
+        lay = QHBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+        lbl = _QLabel(text)
+        if tip:
+            lbl.setToolTip(tip)
+        if status == ValidationStatus.VALID:
+            lbl.setStyleSheet("color: #1a7a1a; font-weight: bold;")
+        elif status == ValidationStatus.INVALID:
+            lbl.setStyleSheet("color: #9a0000; font-weight: bold;")
+        elif status == ValidationStatus.UNKNOWN:
+            lbl.setStyleSheet("color: #8a6000;")
+        lay.addWidget(lbl)
+        lay.addWidget(btn)
+        lay.addStretch()
+        return w
+
+    def _open_chain_detail(self, chain: list, status: ValidationStatus,
+                           title_key: str) -> None:
+        """Open or update the CertChainDetailWindow."""
+        from .dialogs import CertChainDetailWindow
+        cn = _extract_cn_from_chain(chain)
+        title = t(title_key, cn=cn)
+        if self._cert_detail_win is None:
+            self._cert_detail_win = CertChainDetailWindow(self._config, parent=None)
+        self._cert_detail_win.show_chain(chain, title, status, cn)

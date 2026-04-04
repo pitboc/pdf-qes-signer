@@ -82,6 +82,14 @@ class AppConfig:
             # "never"  – use only data already present in the PDF
             "auto_fetch_revocation": "always",
         },
+        "cert_detail_window": {
+            # Last-known geometry of the certificate chain detail window.
+            # -1 means "not yet placed" → centre on first open.
+            "x":      "-1",
+            "y":      "-1",
+            "width":  "520",
+            "height": "420",
+        },
     }
 
     # Profile settings – stored in profiles/<name>.ini

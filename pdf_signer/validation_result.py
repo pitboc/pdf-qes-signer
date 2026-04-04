@@ -81,7 +81,8 @@ class ValidationStatus(Enum):
 class CertSource(Enum):
     """Origin of a certificate or revocation object."""
     EMBEDDED   = "embedded"    # stored inside the PDF (CMS container or DSS)
-    SYSTEM     = "system"      # found in the OS / certifi trust store
+    CERTIFI    = "certifi"     # root matched in certifi (Mozilla CA bundle)
+    SYSTEM     = "system"      # found in the OS trust store
     EU_TSL     = "eu_tsl"      # found in an EU national Trust Service List (LOTL)
     DOWNLOADED = "downloaded"  # fetched from the network at runtime
     NOT_FOUND  = "not_found"   # required but not available
@@ -128,6 +129,7 @@ class TimestampInfo:
     source: CertSource    # where the TSA certificate came from
     status: ValidationStatus
     cert_chain: list[CertInfo] = field(default_factory=list)
+    chain_status: ValidationStatus = ValidationStatus.NOT_CHECKED
 
 
 @dataclass
