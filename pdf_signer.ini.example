@@ -1,14 +1,45 @@
 # PDF QES Signer – example configuration
-# Copy to ~/.config/pdf-signer/pdf_signer.ini and adjust as needed.
-# The application creates this file automatically on first run.
+#
+# The application stores its configuration in two locations:
+#
+#   ~/.config/pdf-signer/settings.ini          ← global settings (language, active profile)
+#   ~/.config/pdf-signer/profiles/default.ini  ← profile settings (signing, appearance, …)
+#
+# Both files are created automatically on first run.
+# Additional profiles are stored as ~/.config/pdf-signer/profiles/<name>.ini
+#
+# If an old single-file ~/.config/pdf-signer/pdf_signer.ini exists, it is
+# migrated automatically on first start and renamed to pdf_signer.ini.migrated.
+
+
+# ── ~/.config/pdf-signer/settings.ini ────────────────────────────────────────
+
+[app]
+# UI language: de | en
+language = de
+# Name of the active profile (must match a file in profiles/)
+active_profile = default
+
+[validation]
+# Fetch missing OCSP responses from the network when checking signatures:
+#   always – fetch when not embedded in the PDF
+#   never  – use only data already present in the PDF
+auto_fetch_revocation = always
+
+
+# ── ~/.config/pdf-signer/profiles/default.ini ────────────────────────────────
 
 [pkcs11]
-# Full path to your PKCS#11 library
+# Signing mode: pkcs11 (hardware token) | pfx (PKCS#12 file)
+signer_mode = pkcs11
+# Full path to your PKCS#11 library (pkcs11 mode only)
 lib_path = /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so
 # Hex CKA_ID of the private key (filled automatically by the token test dialog)
 key_id =
 # Certificate subject CN (filled automatically by the token test dialog)
 cert_cn =
+# Path to a PFX/PKCS#12 file (pfx mode only)
+pfx_path =
 
 [paths]
 # Directories remembered between sessions (filled automatically)
@@ -16,15 +47,21 @@ last_open_dir = ~
 last_lib_dir  = /usr/lib
 last_img_dir  = ~
 
-[app]
-# UI language: de | en
-language = de
-
 [tsa]
 # Enable RFC 3161 timestamp (1 = enabled, 0 = disabled)
 enabled = 0
-# TSA service URL (leave empty for default: BaltStamp)
+# TSA service URL
 url = http://tsa.baltstamp.lt
+# Embed OCSP revocation data and archival timestamp (PAdES-LTA); requires TSA
+embed_validation_info = 0
+
+[signing]
+# docMDP: document modification policy for the first (certifying) signature.
+# Shown as a dialog when applying the first signature; value is the last choice.
+#   none – no restriction (no certify flag)
+#   p2   – form fields and further signatures allowed (recommended)
+#   p1   – no changes allowed after signing
+docmdp = none
 
 [appearance]
 # Absolute path to a PNG image shown in the signature field (optional)

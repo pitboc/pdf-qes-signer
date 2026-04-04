@@ -104,7 +104,8 @@ pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
   appearance settings). Profiles can be created, renamed, deleted, and
   switched at runtime.
 - Bilingual UI: German and English (switchable at runtime without restart)
-- Persistent configuration in `~/.config/pdf-signer/pdf_signer.ini`
+- Persistent configuration in `~/.config/pdf-signer/settings.ini` (global)
+  and `~/.config/pdf-signer/profiles/<name>.ini` (per profile)
 
 ## Requirements
 
@@ -228,9 +229,19 @@ window when the file is opened.
 
 ## Configuration
 
-The application stores its settings in `~/.config/pdf-signer/pdf_signer.ini`.
-See [`pdf_signer.ini.example`](pdf_signer.ini.example) for all available options
+The application stores its settings in two files:
+
+- `~/.config/pdf-signer/settings.ini` – global settings (language, active profile,
+  validation fetch mode)
+- `~/.config/pdf-signer/profiles/<name>.ini` – per-profile settings (PKCS#11
+  library, key, TSA, docMDP, appearance)
+
+Both files are created automatically on first run. See
+[`pdf_signer.ini.example`](pdf_signer.ini.example) for all available options
 with default values.
+
+If an old single-file `pdf_signer.ini` exists, it is migrated automatically on
+first start and renamed to `pdf_signer.ini.migrated`.
 
 ## Project structure
 
