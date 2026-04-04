@@ -56,6 +56,39 @@ _WARN_BD = "#e0a800"   # amber border
 _SUSPICIOUS_TYPES = {"form_fields", "annotations", "unknown"}
 
 
+def check_post_sig_warnings(revisions: list) -> tuple[set, set]:
+    """Prüfe auf verdächtige unsignierte Revisionen nach der ersten Signatur.
+
+    Returns:
+        ``(post_last, between)`` – Mengen verdächtiger Change-Types:
+
+        - *post_last*: Typen in Revisionen **nach der letzten** Signatur
+          (durch keine Signatur abgedeckt – kritisch).
+        - *between*: Typen in Revisionen **zwischen** zwei Signaturen
+          (durch eine spätere Signatur abgedeckt, nicht durch die erste).
+    """
+    signed_indices = [i for i, r in enumerate(revisions) if r.signed_by is not None]
+    if not signed_indices:
+        return set(), set()
+
+    first_sig_idx = signed_indices[0]
+    last_sig_idx  = signed_indices[-1]
+
+    between:   set = set()
+    post_last: set = set()
+
+    for i, rev in enumerate(revisions):
+        if rev.signed_by is not None or i <= first_sig_idx:
+            continue
+        suspicious = {ct for ct in rev.change_types if ct in _SUSPICIOUS_TYPES}
+        if i > last_sig_idx:
+            post_last.update(suspicious)
+        else:
+            between.update(suspicious)
+
+    return post_last, between
+
+
 def _bold() -> QFont:
     f = QFont()
     f.setBold(True)
@@ -219,32 +252,25 @@ class ValidationDialog(QDialog):
 
     def _update_warning(self) -> None:
         """Show or hide the post-signature modification warning banner."""
-        suspicious = self._suspicious_post_sig_types()
-        if not suspicious:
+        post_last, between = check_post_sig_warnings(self._doc.revisions)
+        lines: list[str] = []
+        if post_last:
+            labels = ", ".join(t(f"val_rev_type_{ct}") for ct in sorted(post_last))
+            lines.append(
+                f"⚠  <b>{t('val_warn_post_sig_title')}</b><br>"
+                f"{t('val_warn_post_sig_body', types=labels)}"
+            )
+        if between:
+            labels = ", ".join(t(f"val_rev_type_{ct}") for ct in sorted(between))
+            lines.append(
+                f"⚠  <b>{t('val_warn_between_sig_title')}</b><br>"
+                f"{t('val_warn_between_sig_body', types=labels)}"
+            )
+        if lines:
+            self._warn_label.setText("<br><br>".join(lines))
+            self._warn_label.show()
+        else:
             self._warn_label.hide()
-            return
-        type_labels = [t(f"val_rev_type_{ct}") for ct in sorted(suspicious)]
-        body = t("val_warn_post_sig_body", types=", ".join(type_labels))
-        title = t("val_warn_post_sig_title")
-        self._warn_label.setText(f"⚠  <b>{title}</b><br>{body}")
-        self._warn_label.show()
-
-    def _suspicious_post_sig_types(self) -> set:
-        """Return the set of suspicious change types that appear after the last signature."""
-        revisions = self._doc.revisions  # oldest-first
-        # Find index of last signed revision
-        last_sig_idx = -1
-        for i, rev in enumerate(revisions):
-            if rev.signed_by is not None:
-                last_sig_idx = i
-        if last_sig_idx == -1:
-            return set()
-        found: set = set()
-        for rev in revisions[last_sig_idx + 1:]:
-            for ct in rev.change_types:
-                if ct in _SUSPICIOUS_TYPES:
-                    found.add(ct)
-        return found
 
     def _on_selection_changed(self) -> None:
         """Emit revision_selected with the PDF bytes sliced at the selected revision."""

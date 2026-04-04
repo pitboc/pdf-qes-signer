@@ -1217,14 +1217,18 @@ class PDFSignerApp(QMainWindow):
                     if widget.xref in strip_set:
                         page.delete_widget(widget)
 
-        # Store working bytes.  When post-signature free fields were stripped,
-        # use the raw file bytes truncated to the end of the last signature's
-        # coverage so the post-signature incremental update is excluded.
-        # Workers will re-embed sig_fields on top of this clean base.
-        # _working_bytes setzen: bei vorhandenen Signaturen auf den Bereich
-        # bis zum Ende der letzten Signaturabdeckung kürzen; sonst komplette Bytes.
+        # Store working bytes.
+        # For signed documents we use the full raw file bytes so that any
+        # content added after the last signature (e.g. form values filled by
+        # an external editor) is preserved in the new signing revision.
+        # pyhanko's IncrementalPdfFileWriter picks up last_startxref from the
+        # actual last %%EOF in the file, so the /Prev chain correctly includes
+        # all revisions.  Duplicate sig_fields already present in the raw bytes
+        # are silently ignored by pyhanko's append_signature_field.
+        # _working_bytes setzen: vollständige Roh-Bytes damit externe
+        # Post-Signatur-Inhalte (z.B. Okular-Formularwerte) erhalten bleiben.
         if signed_end > 0:
-            self._working_bytes = _raw[:signed_end]  # type: ignore[name-defined]
+            self._working_bytes = _raw  # type: ignore[name-defined]
         else:
             # Keine Signaturen → Bytes aus dem bereinigten fitz-Dokument exportieren
             # (garbage=0, deflate=False: keine Komprimierung, keine Bereinigung
@@ -1524,6 +1528,7 @@ class PDFSignerApp(QMainWindow):
             self._load_existing_fields(doc)
             self._update_field_list()
             self._render_current_page()
+            self._refresh_doc_validation()
         except Exception:
             pass  # Non-critical – UI stays in previous state
 
@@ -1628,28 +1633,22 @@ class PDFSignerApp(QMainWindow):
         if self._doc_validation is None:
             self._warn_main_label.hide()
             return
-        from .validation_dialog import _SUSPICIOUS_TYPES
-        revisions = self._doc_validation.revisions
-        last_sig_idx = max(
-            (i for i, r in enumerate(revisions) if r.signed_by is not None),
-            default=-1,
-        )
-        if last_sig_idx == -1:
+        from .validation_dialog import check_post_sig_warnings
+        post_last, between = check_post_sig_warnings(self._doc_validation.revisions)
+        if post_last:
+            labels = ", ".join(t(f"val_rev_type_{ct}") for ct in sorted(post_last))
+            self._warn_main_label.setText(
+                t("val_warn_post_sig_short", types=labels)
+            )
+            self._warn_main_label.show()
+        elif between:
+            labels = ", ".join(t(f"val_rev_type_{ct}") for ct in sorted(between))
+            self._warn_main_label.setText(
+                t("val_warn_between_sig_short", types=labels)
+            )
+            self._warn_main_label.show()
+        else:
             self._warn_main_label.hide()
-            return
-        found: set = set()
-        for rev in revisions[last_sig_idx + 1:]:
-            for ct in rev.change_types:
-                if ct in _SUSPICIOUS_TYPES:
-                    found.add(ct)
-        if not found:
-            self._warn_main_label.hide()
-            return
-        type_labels = [t(f"val_rev_type_{ct}") for ct in sorted(found)]
-        self._warn_main_label.setText(
-            t("val_warn_post_sig_short", types=", ".join(type_labels))
-        )
-        self._warn_main_label.show()
 
     def check_signatures(self) -> None:
         """Signaturprüfungs-Dialog öffnen (nicht-modal, Phase 1 offline).

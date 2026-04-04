@@ -399,12 +399,18 @@ TRANSLATIONS: dict[str, str] = {
     "val_rev_type_unknown":     "Incremental update",
 
     # Warning: changes after last signature
-    "val_warn_post_sig_title":  "Document modified after signature",
+    "val_warn_post_sig_title":  "Document modified after last signature",
     "val_warn_post_sig_body":   "The following changes were added after the last signature"
-                                " and are not covered by it: {types}\n"
+                                " and are not covered by any signature: {types}\n"
                                 "The currently displayed content may differ from the signed state.",
     "val_warn_post_sig_short":  "⚠  Document modified after the last signature ({types})."
                                 "  Please check the signatures.",
+    "val_warn_between_sig_title": "Changes between signatures",
+    "val_warn_between_sig_body":  "The following changes were added after the first signature"
+                                  " and are only covered by a later signature: {types}\n"
+                                  "The first signature does not cover this content.",
+    "val_warn_between_sig_short": "⚠  Changes between signatures ({types}) –"
+                                  " not covered by all signatures.",
 
     # Main list (new tree view)
     "val_sig_type_doc_ts":          "Document Timestamp",

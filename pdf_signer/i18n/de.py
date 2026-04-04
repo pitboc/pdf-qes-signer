@@ -399,13 +399,20 @@ TRANSLATIONS: dict[str, str] = {
     "val_rev_type_unknown":     "Inkrementelles Update",
 
     # Warnung: Änderungen nach letzter Signatur
-    "val_warn_post_sig_title":  "Dokument nach Signatur verändert",
+    "val_warn_post_sig_title":  "Dokument nach letzter Signatur verändert",
     "val_warn_post_sig_body":   "Folgende Änderungen wurden nach der letzten Signatur hinzugefügt"
-                                " und sind nicht durch sie abgedeckt: {types}\n"
+                                " und sind durch keine Signatur abgedeckt: {types}\n"
                                 "Der aktuell angezeigte Inhalt stimmt möglicherweise nicht"
                                 " mit dem signierten Stand überein.",
     "val_warn_post_sig_short":  "⚠  Dokument nach der letzten Signatur verändert ({types})."
                                 "  Bitte Signaturen prüfen.",
+    "val_warn_between_sig_title": "Änderungen zwischen Signaturen",
+    "val_warn_between_sig_body":  "Folgende Änderungen wurden nach der ersten Signatur"
+                                  " hinzugefügt und sind nur durch eine spätere Signatur"
+                                  " abgedeckt: {types}\n"
+                                  "Die erste Signatur deckt diesen Inhalt nicht ab.",
+    "val_warn_between_sig_short": "⚠  Änderungen zwischen Signaturen ({types}) –"
+                                  " nicht durch alle Signaturen abgedeckt.",
 
     # Hauptliste (neue Baumansicht)
     "val_sig_type_doc_ts":          "Dokumentzeitstempel",
