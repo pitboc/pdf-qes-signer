@@ -2,6 +2,11 @@
 """English UI translations for PDF QES Signer."""
 
 TRANSLATIONS: dict[str, str] = {
+    # Generic buttons
+    "btn_ok":     "OK",
+    "btn_cancel": "Cancel",
+    "btn_close":  "Close",
+
     # Profile menu
     "menu_profile":        "Profiles…",
     "dlg_profile_mgr_title":   "Manage Profiles",

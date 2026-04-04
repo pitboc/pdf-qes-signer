@@ -2,6 +2,11 @@
 """German UI translations for PDF QES Signer."""
 
 TRANSLATIONS: dict[str, str] = {
+    # Generic buttons (used wherever QDialogButtonBox standard buttons need translated text)
+    "btn_ok":     "OK",
+    "btn_cancel": "Abbrechen",
+    "btn_close":  "Schließen",
+
     # Profile menu
     "menu_profile":        "Profile…",
     "dlg_profile_mgr_title":   "Profile verwalten",

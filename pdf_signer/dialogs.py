@@ -2076,6 +2076,8 @@ class DocMDPDialog(QDialog):
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok |
             QDialogButtonBox.StandardButton.Cancel)
+        btns.button(QDialogButtonBox.StandardButton.Ok).setText(t("btn_ok"))
+        btns.button(QDialogButtonBox.StandardButton.Cancel).setText(t("btn_cancel"))
         btns.accepted.connect(self._on_accept)
         btns.rejected.connect(self.reject)
         lay.addWidget(btns)

@@ -267,6 +267,10 @@ class ValidationDialog(QDialog):
         bottom.addWidget(self._show_all_cb)
         bottom.addStretch()
         btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        close_btn = btn_box.button(QDialogButtonBox.StandardButton.Close)
+        close_btn.setText(t("btn_close"))
+        from PyQt6.QtGui import QIcon
+        close_btn.setIcon(QIcon())
         btn_box.rejected.connect(self.close)
         bottom.addWidget(btn_box)
         layout.addLayout(bottom)
