@@ -40,15 +40,17 @@ def _fake_asset_response(tag: str = "v0.3.1",
 # ---------------------------------------------------------------------------
 
 class TestDetectInstallMethod:
-    def test_pip_default(self, monkeypatch):
-        """Standard-Python-Executable → pip."""
-        from pdf_signer.updater import _detect_install_method
-        # sys.executable zeigt nicht auf pipx-Home
+    def test_pip_in_venv(self, monkeypatch):
+        """sys.prefix != sys.base_prefix → pip."""
+        from pdf_signer import updater
         monkeypatch.setenv("PIPX_HOME", "/nonexistent/pipx")
-        assert _detect_install_method() == "pip"
+        monkeypatch.delenv("CONDA_PREFIX", raising=False)
+        monkeypatch.setattr(updater.sys, "prefix", "/some/venv")
+        monkeypatch.setattr(updater.sys, "base_prefix", "/usr")
+        assert updater._detect_install_method() == "pip"
 
     def test_pipx_detected(self, monkeypatch, tmp_path):
-        """Wenn sys.executable unter PIPX_HOME liegt → pipx."""
+        """sys.executable unter PIPX_HOME → pipx."""
         from pdf_signer import updater
         fake_pipx = tmp_path / "pipx"
         fake_exe  = fake_pipx / "venvs" / "pdf-qes-signer" / "bin" / "python"
@@ -58,6 +60,36 @@ class TestDetectInstallMethod:
         monkeypatch.setenv("PIPX_HOME", str(fake_pipx))
         monkeypatch.setattr(updater.sys, "executable", str(fake_exe))
         assert updater._detect_install_method() == "pipx"
+
+    def test_conda_via_env_var(self, monkeypatch):
+        """CONDA_PREFIX gesetzt → conda."""
+        from pdf_signer import updater
+        monkeypatch.setenv("CONDA_PREFIX", "/opt/conda/envs/myenv")
+        monkeypatch.setenv("PIPX_HOME", "/nonexistent/pipx")
+        assert updater._detect_install_method() == "conda"
+
+    def test_conda_via_path(self, monkeypatch, tmp_path):
+        """'conda' im exe-Pfad → conda."""
+        from pdf_signer import updater
+        fake_exe = tmp_path / "miniconda3" / "envs" / "myenv" / "bin" / "python"
+        fake_exe.parent.mkdir(parents=True)
+        fake_exe.touch()
+        monkeypatch.delenv("CONDA_PREFIX", raising=False)
+        monkeypatch.setenv("PIPX_HOME", "/nonexistent/pipx")
+        monkeypatch.setattr(updater.sys, "executable", str(fake_exe))
+        monkeypatch.setattr(updater.sys, "prefix", str(fake_exe.parent.parent))
+        monkeypatch.setattr(updater.sys, "base_prefix", "/usr")
+        assert updater._detect_install_method() == "conda"
+
+    def test_system_python(self, monkeypatch):
+        """sys.prefix == sys.base_prefix, kein conda → system."""
+        from pdf_signer import updater
+        monkeypatch.setenv("PIPX_HOME", "/nonexistent/pipx")
+        monkeypatch.delenv("CONDA_PREFIX", raising=False)
+        monkeypatch.setattr(updater.sys, "executable", "/usr/bin/python3")
+        monkeypatch.setattr(updater.sys, "prefix", "/usr")
+        monkeypatch.setattr(updater.sys, "base_prefix", "/usr")
+        assert updater._detect_install_method() == "system"
 
 
 class TestGetLatestReleaseAsset:
@@ -207,6 +239,20 @@ class TestInstallWheel:
         ok, err = updater.install_wheel(tmp_path / "pkg.whl")
         assert ok is False
         assert "pipx" in err.lower()
+
+    def test_conda_aborts(self, tmp_path, monkeypatch):
+        from pdf_signer import updater
+        monkeypatch.setattr(updater, "_detect_install_method", lambda: "conda")
+        ok, err = updater.install_wheel(tmp_path / "pkg.whl")
+        assert ok is False
+        assert "conda" in err.lower() or "Conda" in err
+
+    def test_system_aborts(self, tmp_path, monkeypatch):
+        from pdf_signer import updater
+        monkeypatch.setattr(updater, "_detect_install_method", lambda: "system")
+        ok, err = updater.install_wheel(tmp_path / "pkg.whl")
+        assert ok is False
+        assert "venv" in err.lower() or "Environment" in err
 
 
 class TestFallbackCommand:

@@ -133,13 +133,18 @@ def get_latest_release_asset(timeout: int = 8) -> Optional[tuple[str, str]]:
 
 
 def _detect_install_method() -> str:
-    """Erkennt ob die App via ``pipx`` oder ``pip`` installiert wurde.
+    """Erkennt die Installationsumgebung der laufenden App.
 
     Returns:
-        ``"pipx"`` wenn ``sys.executable`` unter dem pipx-Home liegt,
-        sonst ``"pip"``.
+        ``"pip"``     – pip in einem venv (unterstützt)
+        ``"pipx"``    – pipx-verwaltetes venv (unterstützt)
+        ``"conda"``   – Conda/Mamba-Umgebung (nicht unterstützt)
+        ``"system"``  – System-Python ohne venv (nicht unterstützt)
+        ``"unknown"`` – sonstige Umgebung
     """
     exe = Path(sys.executable).resolve()
+
+    # pipx: sys.executable liegt unter PIPX_HOME
     pipx_home = Path(
         os.environ.get("PIPX_HOME", Path.home() / ".local" / "pipx")
     ).resolve()
@@ -147,7 +152,21 @@ def _detect_install_method() -> str:
         exe.relative_to(pipx_home)
         return "pipx"
     except ValueError:
+        pass
+
+    # conda/mamba: CONDA_PREFIX gesetzt oder "conda"/"miniforge"/"miniconda"
+    # im Pfad des Executables
+    exe_str = str(exe).lower()
+    if (os.environ.get("CONDA_PREFIX")
+            or any(k in exe_str for k in ("conda", "mamba", "miniforge", "miniconda"))):
+        return "conda"
+
+    # pip in venv: sys.prefix != sys.base_prefix
+    if sys.prefix != sys.base_prefix:
         return "pip"
+
+    # System-Python (kein venv aktiv)
+    return "system"
 
 
 def download_file(
@@ -183,11 +202,14 @@ def download_file(
 def install_wheel(wheel_path: Path, dry_run: bool = False) -> tuple[bool, str]:
     """Wheel via pip oder pipx installieren.
 
+    Unterstützte Umgebungen: ``"pip"`` (venv) und ``"pipx"``.
+    Bei ``"conda"`` oder ``"system"`` wird ein erklärender Fehler zurückgegeben.
+
     Args:
         wheel_path: Pfad zur heruntergeladenen ``.whl``-Datei.
         dry_run:    Wenn ``True`` wird ``--dry-run`` übergeben (kein echtes Install).
                     Hinweis: pipx unterstützt kein ``--dry-run``; bei pipx+dry_run
-                    wird der Install übersprungen und direkt Erfolg zurückgegeben.
+                    wird nur geprüft ob pipx erreichbar ist.
 
     Returns:
         ``(True, "")`` bei Erfolg; ``(False, error_msg)`` bei Fehler.
@@ -195,18 +217,33 @@ def install_wheel(wheel_path: Path, dry_run: bool = False) -> tuple[bool, str]:
     method = _detect_install_method()
     _log.debug("install_wheel: method=%s dry_run=%s path=%s", method, dry_run, wheel_path)
 
+    if method == "conda":
+        return False, (
+            "Conda-Umgebung erkannt – automatisches Update nicht unterstützt.\n\n"
+            "Bitte manuell aktualisieren:\n"
+            f"  pip install --upgrade {wheel_path}"
+        )
+
+    if method == "system":
+        return False, (
+            "Kein virtuelles Environment erkannt – automatisches Update nicht unterstützt.\n\n"
+            "Bitte in einem venv ausführen oder manuell aktualisieren:\n"
+            f"  pip install --upgrade {wheel_path}"
+        )
+
     if method == "pipx":
         if dry_run:
-            # pipx hat kein --dry-run; wir prüfen nur ob pipx erreichbar ist
             try:
                 result = subprocess.run(
                     ["pipx", "--version"], capture_output=True, text=True
                 )
-                return result.returncode == 0, "" if result.returncode == 0 else result.stderr
+                return result.returncode == 0, ("" if result.returncode == 0
+                                                else result.stderr.strip())
             except FileNotFoundError:
                 return False, "pipx nicht gefunden"
         cmd = ["pipx", "install", "--force", str(wheel_path)]
     else:
+        # "pip" oder "unknown" → pip versuchen
         cmd = [sys.executable, "-m", "pip", "install", "--upgrade", str(wheel_path)]
         if dry_run:
             cmd.append("--dry-run")
