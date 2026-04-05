@@ -90,6 +90,19 @@ pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
   window position and size are persisted across sessions. Certificate chains
   for TSA tokens are completed from the document DSS so that root certificates
   added by a later LTA revision are visible for earlier signatures as well.
+- **EU LOTL / TSL trust validation**: when the *automatic fetch* mode is
+  active, the validator confirms QES certificate chains against the
+  [EU List of Trusted Lists](https://eidas.ec.europa.eu/efos/lotl) and
+  the relevant national Trust Service List (TSL). The country is inferred
+  from the `C=` attribute in the certificate's Subject DN. Trust anchors
+  are accepted only when their SHA-256 fingerprint appears in a
+  nationally-published TSL — not merely because they are embedded in the
+  PDF. Downloaded TSL data is cached under
+  `~/.config/pdf-signer/tsl_cache/` and reused until the TSL's own
+  `NextUpdate` date.
+- **Trust Store Cache** (*Sign → Trust Store Cache…*): shows the
+  status of the locally cached LOTL URL list and national TSL files
+  (validity date, size) and lets you delete stale or unwanted cache data.
 - Unsigned revisions (form field fills, DSS updates, XMP metadata) can be
   revealed with *Show all revisions*
 - Clicking a revision switches the PDF viewer to show the document **as it
@@ -244,6 +257,10 @@ The application stores its settings in two files:
   validation fetch mode)
 - `~/.config/pdf-signer/profiles/<name>.ini` – per-profile settings (PKCS#11
   library, key, TSA, docMDP, appearance)
+- `~/.config/pdf-signer/tsl_cache/lotl_urls.json` – cached EU LOTL URL list
+  (created on demand during signature validation)
+- `~/.config/pdf-signer/tsl_cache/tsl_<CC>.xml` – cached national TSL for
+  country `CC`, e.g. `tsl_DE.xml`; refreshed automatically when expired
 
 Both files are created automatically on first run. See
 [`pdf_signer.ini.example`](pdf_signer.ini.example) for all available options
@@ -276,15 +293,16 @@ pdf_signer/
     ├── de.py               # German translations
     └── en.py               # English translations
 tests/
-└── test_cert_chain_security.py  # automated security tests for certificate chain validation
+├── test_cert_chain_security.py  # security tests: forged/expired/tampered cert chains (no network)
+└── test_tsl_loading.py          # TSL loading tests: country hint, fetch trigger, EU_TSL classification
 tools/
-└── create_test_pdfs.py     # generates test PDFs with forged/expired/tampered cert chains
+└── create_test_pdfs.py     # generates test PDFs with forged/expired/tampered/TSL-trigger chains
 ```
 
 ## Testing
 
-The test suite covers security-critical validation logic and requires no
-hardware token or network access.
+The test suite covers security-critical validation logic and LOTL/TSL loading
+behaviour. No hardware token is required.
 
 Install the development dependencies once:
 
@@ -299,13 +317,49 @@ Run all tests:
 .venv/bin/python -m pytest
 ```
 
-The tests generate synthetic PDFs with forged, expired, and tampered
-certificate chains and assert that the validator never classifies any of them
-as `VALID`.  The most critical test (`test_spoofed_root_dn_not_trusted`)
-verifies that a certificate with the same Distinguished Name as a trusted
-Mozilla CA root but a different key is not accepted — this guards against a
-class of trust-bypass attacks where only the Subject DN is compared instead
-of the full certificate fingerprint.
+### `test_cert_chain_security.py` — no network required
+
+Generates synthetic PDFs with forged, expired, and tampered certificate chains
+and asserts that the validator never classifies any of them as `VALID`. The
+most critical test (`test_spoofed_root_dn_not_trusted`) verifies that a
+certificate with the same Distinguished Name as a trusted Mozilla CA root but a
+different key is not accepted — this guards against trust-bypass attacks where
+only the Subject DN is compared instead of the full certificate fingerprint.
+
+### `test_tsl_loading.py` — partly requires network
+
+Tests that the TSL loading mechanism fires correctly when a certificate's
+Subject DN contains a country attribute (`C=`), and that it is silent when no
+country attribute is present.
+
+| Test | Network | What is verified |
+|------|---------|------------------|
+| `test_tsl_confirmed_via_mock` | no | Fake TSL containing the test cert's fingerprint → cert classified as `EU_TSL` |
+| `test_tsl_fetched_real_network` | **yes** | Real Finnish TSL downloaded via EU LOTL → `tsl_FI.xml` appears in cache |
+| `test_no_tsl_fetch_no_country` | no | No `C=` in Subject → TSL fetch never triggered, cache unchanged |
+
+`test_tsl_fetched_real_network` fetches the Finnish TSL (~130 KB) and writes it
+to `~/.config/pdf-signer/tsl_cache/tsl_FI.xml`. On subsequent runs the cached
+file is reused and no network request is made.
+
+## Known limitations
+
+### TSL XML signature not verified
+
+The EU LOTL and all national Trust Service Lists (TSLs) carry an
+[XML Digital Signature (XMLDSig)](https://www.w3.org/TR/xmldsig-core/)
+as required by ETSI TS 119 612.  This application does **not** verify
+those signatures.  XMLDSig requires XML canonicalisation (C14N) and
+XMLDSig envelope parsing — a format fundamentally different from the
+CMS/PKCS#7 signatures used in PDFs.  Full verification would require
+`xmlsec` + `lxml` (native C library `libxmlsec1`), which are not
+current dependencies.
+
+In practice the risk is low: integrity during download is guaranteed by
+TLS (trust anchor: Mozilla CA bundle via certifi).  A local attacker
+who could modify the cached TSL files under
+`~/.config/pdf-signer/tsl_cache/` would already have write access to
+the user's home directory.
 
 ## API documentation
 
