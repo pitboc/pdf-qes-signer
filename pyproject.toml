@@ -49,6 +49,9 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: Tests die echtes Netzwerk und echte Ressourcen benötigen",
+]
 
 [project.scripts]
 pdf-signer = "pdf_signer.main:main"

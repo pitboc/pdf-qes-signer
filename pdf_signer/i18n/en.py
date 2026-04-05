@@ -319,6 +319,25 @@ TRANSLATIONS: dict[str, str] = {
         "Ctrl + drag          →  zoom into selection\n"
         "Middle-drag          →  pan the view"
     ),
+    "about_check_update":        "Check for updates",
+    "about_update_checking":     "Checking…",
+    "about_update_available":    "New release available: {version}",
+    "about_update_current":      "Up to date – no update available.",
+    "settings_check_on_startup": "Automatically check for updates on startup",
+    # Update install dialog
+    "update_btn_install":        "Install update",
+    "update_btn_retry":          "Try again",
+    "update_btn_cancel":         "Cancel",
+    "update_btn_restart":        "Restart",
+    "update_dlg_title":          "Install update",
+    "update_dlg_info":           "Version {version} is available (current: {current}).",
+    "update_dry_run_hint":       "Test mode: --dry-run, nothing will be installed.",
+    "update_status_downloading": "Downloading…",
+    "update_status_installing":  "Installing…",
+    "update_status_success":     "Installation complete – please restart the application.",
+    "update_status_error":       "Installation failed. Please run manually:",
+    "update_dry_run_success":    "Test successful (--dry-run, nothing installed).",
+    "update_no_asset":           "No download asset found for this release.",
     "license_title": "License Information",
     "license_msg": (
         "PDF QES Signer\n"

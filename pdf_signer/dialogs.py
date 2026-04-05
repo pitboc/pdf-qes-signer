@@ -10,6 +10,7 @@ Provides:
   - NewProfileDialog      – create a new profile (copy of current)
   - RenameProfileDialog   – rename any profile
   - DeleteProfileDialog   – delete a profile with special-case handling
+  - UpdateDialog          – automatic download + install of a new release
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from PyQt6.QtWidgets import (
     QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox,
     QPushButton, QRadioButton, QSizePolicy, QSlider, QSpinBox, QTabWidget,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QCheckBox, QComboBox,
-    QAbstractItemView, QGridLayout,
+    QAbstractItemView, QGridLayout, QProgressBar, QTextEdit,
 )
 
 from .config import AppConfig, PDF_STANDARD_FONTS
@@ -2417,3 +2418,179 @@ class TrustStoreCacheDialog(QDialog):
         from .lotl_trust import XmlCacheTrustStore
         XmlCacheTrustStore().clear_cache(keep_urls=False)
         self._refresh()
+
+
+# ---------------------------------------------------------------------------
+# UpdateDialog
+# ---------------------------------------------------------------------------
+
+class UpdateDialog(QDialog):
+    """Dialog für den automatischen Download und die Installation eines Updates.
+
+    Ablauf (``autostart=True``, Normalfall):
+    1. Dialog öffnet sich, Download startet sofort.
+    2. Fortschrittsbalken und Statustext zeigen den Verlauf.
+    3. Nur „Abbrechen" ist sichtbar (wird nach Abschluss zu „Schließen").
+    4. Bei Erfolg erscheint „Neu starten".
+    5. Bei Fehler erscheint „Erneut versuchen" + Fehlertext mit Fallback-Befehl.
+
+    ``autostart=False`` (Test/dry-run): „Installieren"-Button muss explizit
+    gedrückt werden.
+
+    Args:
+        tag:       Release-Tag der neuen Version (z. B. ``"v0.3.1"``).
+        url:       Download-URL der ``.whl``-Datei.
+        autostart: Download sofort beim Öffnen starten (Standard: ``True``).
+        dry_run:   ``pip install --dry-run`` – Download echt, Install nur Test.
+        parent:    Eltern-Widget.
+    """
+
+    def __init__(self, tag: str, url: str, autostart: bool = True,
+                 dry_run: bool = False, parent=None) -> None:
+        super().__init__(parent)
+        self._tag       = tag
+        self._url       = url
+        self._autostart = autostart
+        self._dry_run   = dry_run
+        self._worker: Optional[object] = None
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        self.setWindowTitle(t("update_dlg_title"))
+        self.setMinimumWidth(500)
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
+
+        vl = QVBoxLayout(self)
+        vl.setSpacing(10)
+
+        # Info-Zeile
+        from . import __version__ as _cur
+        info_lbl = QLabel(t("update_dlg_info",
+                             version=self._tag.lstrip("v"),
+                             current=_cur))
+        info_lbl.setWordWrap(True)
+        vl.addWidget(info_lbl)
+
+        if self._dry_run:
+            dry_lbl = QLabel(t("update_dry_run_hint"))
+            dry_lbl.setWordWrap(True)
+            vl.addWidget(dry_lbl)
+
+        # Fortschrittsbalken – bei autostart sofort sichtbar
+        self._progress = QProgressBar()
+        self._progress.setRange(0, 0)   # indeterminate bis erster Chunk
+        self._progress.setVisible(self._autostart)
+        vl.addWidget(self._progress)
+
+        # Statuszeile
+        self._status_lbl = QLabel(
+            t("update_status_downloading") if self._autostart else ""
+        )
+        self._status_lbl.setWordWrap(True)
+        vl.addWidget(self._status_lbl)
+
+        # Fehlerdetails
+        self._error_box = QTextEdit()
+        self._error_box.setReadOnly(True)
+        self._error_box.setFixedHeight(90)
+        self._error_box.setVisible(False)
+        vl.addWidget(self._error_box)
+
+        # Buttons
+        hl = QHBoxLayout()
+        hl.setSpacing(6)
+
+        # „Installieren" / „Erneut versuchen" – nur bei manuellem Start sichtbar
+        self._btn_retry = QPushButton(t("update_btn_install"))
+        self._btn_retry.setDefault(True)
+        self._btn_retry.setVisible(not self._autostart)
+        self._btn_retry.clicked.connect(self._start_install)
+        hl.addWidget(self._btn_retry)
+
+        # „Neu starten" – erst nach Erfolg sichtbar
+        self._btn_restart = QPushButton(t("update_btn_restart"))
+        self._btn_restart.setVisible(False)
+        self._btn_restart.clicked.connect(self._do_restart)
+        hl.addWidget(self._btn_restart)
+
+        hl.addStretch()
+
+        # „Abbrechen" während des Downloads, danach „Schließen"
+        self._btn_close = QPushButton(
+            t("update_btn_cancel") if self._autostart else t("dlg_token_close")
+        )
+        self._btn_close.clicked.connect(self._on_close)
+        hl.addWidget(self._btn_close)
+        vl.addLayout(hl)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self._autostart and self._worker is None:
+            self._start_install()
+
+    def _start_install(self) -> None:
+        from .updater import UpdateInstallWorker
+        self._btn_retry.setVisible(False)
+        self._error_box.setVisible(False)
+        self._progress.setRange(0, 0)
+        self._progress.setVisible(True)
+        self._status_lbl.setText(t("update_status_downloading"))
+        self._btn_close.setText(t("update_btn_cancel"))
+        self._worker = UpdateInstallWorker(
+            self._tag, self._url, dry_run=self._dry_run, parent=self
+        )
+        self._worker.progress.connect(self._on_progress)
+        self._worker.status.connect(self._on_status)
+        self._worker.finished.connect(self._on_finished)
+        self._worker.start()
+
+    def _on_progress(self, done: int, total: int) -> None:
+        if total > 0:
+            self._progress.setRange(0, 100)
+            self._progress.setValue(int(done * 100 / total))
+        # total == 0: bleibt indeterminate
+
+    def _on_status(self, key: str) -> None:
+        if key == "installing":
+            self._progress.setRange(0, 100)
+            self._progress.setValue(100)
+            self._status_lbl.setText(t("update_status_installing"))
+
+    def _on_finished(self, ok: bool, error: str) -> None:
+        self._btn_close.setText(t("dlg_token_close"))
+        if ok:
+            self._progress.setRange(0, 100)
+            self._progress.setValue(100)
+            self._status_lbl.setText(
+                t("update_dry_run_success") if self._dry_run
+                else t("update_status_success")
+            )
+            if not self._dry_run:
+                self._btn_restart.setVisible(True)
+                self._btn_restart.setDefault(True)
+        else:
+            if error == "aborted":
+                self._status_lbl.setText("")
+                self._progress.setVisible(False)
+            else:
+                self._status_lbl.setText(t("update_status_error"))
+                self._error_box.setPlainText(error)
+                self._error_box.setVisible(True)
+            self._btn_retry.setText(t("update_btn_retry"))
+            self._btn_retry.setVisible(True)
+
+    def _do_restart(self) -> None:
+        from .updater import restart_app
+        restart_app()
+
+    def _on_close(self) -> None:
+        if self._worker and self._worker.isRunning():
+            self._worker.abort()
+            self._worker.wait(2000)
+        self.accept()
+
+    def closeEvent(self, event) -> None:
+        if self._worker and self._worker.isRunning():
+            self._worker.abort()
+            self._worker.wait(2000)
+        super().closeEvent(event)

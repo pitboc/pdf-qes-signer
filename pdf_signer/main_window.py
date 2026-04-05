@@ -136,12 +136,18 @@ class PDFSignerApp(QMainWindow):
         self._pan_hbar_start: int = 0
         self._pan_vbar_start: int = 0
 
+        self._update_worker = None        # UpdateCheckWorker – Referenz halten damit GC nicht löscht
+        self._update_found: str | None = None  # gefundene neue Version (Tag), oder None
+
         self._build_ui()
         self._apply_language()
         self.statusBar().showMessage(t("status_ready"))
         self._update_profile_label()
         # Fehlende Abhängigkeiten (pyhanko, python-pkcs11) beim Start prüfen
         self._check_dependencies()
+        # Optionaler Startup-Update-Check (nur wenn in Einstellungen aktiviert)
+        if self.config.getbool("update", "check_on_startup"):
+            self._start_update_check()
 
         # Optionale initiale PDF-Datei direkt öffnen (z.B. per Kommandozeilenargument)
         if initial_pdf:
@@ -221,6 +227,14 @@ class PDFSignerApp(QMainWindow):
             self._lang_actions[code] = act
             self._menu_lang.addAction(act)
         self._menu_settings.addMenu(self._menu_lang)
+
+        # Update-Check-Einstellung
+        self._act_check_updates = QAction(self)
+        self._act_check_updates.setCheckable(True)
+        self._act_check_updates.setChecked(
+            self.config.getbool("update", "check_on_startup"))
+        self._act_check_updates.toggled.connect(self._toggle_update_check)
+        self._menu_settings.addAction(self._act_check_updates)
 
         self._menu_help = self.menuBar().addMenu("")
         self._act_about = QAction(self)
@@ -470,6 +484,7 @@ class PDFSignerApp(QMainWindow):
         self._act_pkcs11.setText(t("menu_settings_pkcs11"))
         self._act_profile.setText(t("menu_profile"))
         self._menu_lang.setTitle(t("menu_settings_language"))
+        self._act_check_updates.setText(t("settings_check_on_startup"))
         self._menu_help.setTitle(t("menu_help"))
         self._act_about.setText(t("menu_help_about"))
         self._act_license.setText(t("menu_help_license"))
@@ -1570,12 +1585,100 @@ class PDFSignerApp(QMainWindow):
             self, t("dlg_ocsp_warning_title"),
             t("dlg_ocsp_warning_msg", error=msg))
 
+    def _toggle_update_check(self, checked: bool) -> None:
+        self.config.setbool("update", "check_on_startup", checked)
+        self.config.save()
+
+    def _start_update_check(self) -> None:
+        """Startup-Update-Prüfung im Hintergrund starten.
+
+        Bei verfügbarem Update wird die Meldung in der Statusleiste angezeigt.
+        Wenn kein Update gefunden wird, passiert nichts (kein Hinweis).
+        """
+        from . import __version__
+        from .updater import UpdateCheckWorker
+        self._update_worker = UpdateCheckWorker(__version__, parent=self)
+        self._update_worker.update_available.connect(self._on_update_available)
+        self._update_worker.start()
+
+    def _on_update_available(self, tag: str, url: str) -> None:
+        """Ergebnis des Startup-Checks merken; wird beim nächsten Über-Dialog angezeigt."""
+        self._update_found = tag
+
     def _show_about(self) -> None:
-        # "Über"-Dialog mit Versionsnummer und Git-Commit-Hash anzeigen
+        """Über-Dialog mit Update-Suchen- und Update-Installieren-Button."""
+        from PyQt6.QtWidgets import (QDialog, QLabel, QVBoxLayout,
+                                      QHBoxLayout, QPushButton)
+        from PyQt6.QtCore import Qt
         from . import __version__, __commit__
-        QMessageBox.about(
-            self, t("about_title"),
-            t("about_msg", version=__version__, commit=__commit__))
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(t("about_title"))
+        dlg.setMinimumWidth(420)
+
+        vl = QVBoxLayout(dlg)
+        vl.setSpacing(12)
+
+        lbl = QLabel(t("about_msg", version=__version__, commit=__commit__))
+        lbl.setTextFormat(Qt.TextFormat.PlainText)
+        lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        vl.addWidget(lbl)
+
+        # Status-Zeile für Update-Ergebnis
+        status_lbl = QLabel("")
+        status_lbl.setTextFormat(Qt.TextFormat.PlainText)
+        status_lbl.setWordWrap(True)
+        if self._update_found:
+            status_lbl.setText(t("about_update_available", version=self._update_found))
+        vl.addWidget(status_lbl)
+
+        hl = QHBoxLayout()
+        hl.setSpacing(6)
+        btn_check   = QPushButton(t("about_check_update"))
+        btn_install = QPushButton(t("update_btn_install"))
+        btn_install.setVisible(bool(self._update_found))
+        btn_close   = QPushButton(t("dlg_token_close"))
+        btn_close.clicked.connect(dlg.accept)
+        hl.addWidget(btn_check)
+        hl.addWidget(btn_install)
+        hl.addStretch()
+        hl.addWidget(btn_close)
+        vl.addLayout(hl)
+
+        def _do_check():
+            from .updater import check_for_update
+            btn_check.setEnabled(False)
+            status_lbl.setText(t("about_update_checking"))
+            dlg.repaint()
+            result = check_for_update(__version__)
+            if result is None:
+                status_lbl.setText(t("about_update_current"))
+                btn_install.setVisible(False)
+            else:
+                tag, _url = result
+                self._update_found = tag
+                status_lbl.setText(t("about_update_available", version=tag))
+                btn_install.setVisible(True)
+            btn_check.setEnabled(True)
+
+        def _do_install():
+            from .updater import get_latest_release_asset
+            from .dialogs import UpdateDialog
+            btn_install.setEnabled(False)
+            status_lbl.setText(t("about_update_checking"))
+            dlg.repaint()
+            result = get_latest_release_asset()
+            if result is None:
+                status_lbl.setText(t("update_no_asset"))
+                btn_install.setEnabled(True)
+                return
+            tag, url = result
+            dlg.accept()
+            UpdateDialog(tag, url, autostart=True, parent=self).exec()
+
+        btn_check.clicked.connect(_do_check)
+        btn_install.clicked.connect(_do_install)
+        dlg.exec()
 
     def _show_license(self) -> None:
         # Lizenzdialog mit scrollbarem Textfeld für den GPL-3.0-Lizenztext

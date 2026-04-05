@@ -320,6 +320,25 @@ TRANSLATIONS: dict[str, str] = {
         "Strg + Ziehen        →  In Auswahl zoomen\n"
         "Mittlere Maustaste   →  Ansicht verschieben"
     ),
+    "about_check_update":        "Nach Updates suchen",
+    "about_update_checking":     "Suche läuft…",
+    "about_update_available":    "Neue Release-Version verfügbar: {version}",
+    "about_update_current":      "Version aktuell – kein Update verfügbar.",
+    "settings_check_on_startup": "Beim Start automatisch nach Updates suchen",
+    # Update-Installations-Dialog
+    "update_btn_install":        "Update installieren",
+    "update_btn_retry":          "Erneut versuchen",
+    "update_btn_cancel":         "Abbrechen",
+    "update_btn_restart":        "Neu starten",
+    "update_dlg_title":          "Update installieren",
+    "update_dlg_info":           "Version {version} ist verfügbar (aktuell: {current}).",
+    "update_dry_run_hint":       "Test-Modus: --dry-run, es wird nichts installiert.",
+    "update_status_downloading": "Wird heruntergeladen…",
+    "update_status_installing":  "Wird installiert…",
+    "update_status_success":     "Installation abgeschlossen – bitte Anwendung neu starten.",
+    "update_status_error":       "Installation fehlgeschlagen. Bitte manuell ausführen:",
+    "update_dry_run_success":    "Test erfolgreich (--dry-run, nichts installiert).",
+    "update_no_asset":           "Kein Download-Asset für diese Version gefunden.",
     "license_title": "Lizenzinformationen",
     "license_msg": (
         "PDF QES Signer\n"
