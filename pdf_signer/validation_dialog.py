@@ -31,7 +31,7 @@ Double-click on a signed revision is reserved for the future detail window.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -148,26 +148,69 @@ def _is_self_signed_chain(chain: list) -> bool:
     return len(chain) == 1 and chain[0].is_root
 
 
-def _chain_label_tip(chain: list, status: ValidationStatus) -> tuple[str, str]:
-    """Return (label, tooltip) for a chain status row."""
+def _chain_label_tip(chain: list, status: ValidationStatus,
+                     signing_time: Optional[datetime] = None) -> tuple[str, str]:
+    """Return (label, tooltip) for a chain status row.
+
+    All issues are collected independently so that multiple problems
+    (e.g. expired cert *and* untrusted root) are shown together.
+    The colour is driven by *status* (caller's responsibility).
+    """
     if not chain or status == ValidationStatus.NOT_CHECKED:
         return t("val_chain_not_checked"), ""
     if status == ValidationStatus.VALID:
         return t("val_chain_valid"), t("val_chain_valid_tip")
-    if status == ValidationStatus.INVALID:
-        if any(c.source == CertSource.NOT_FOUND for c in chain):
-            return t("val_chain_incomplete"), t("val_chain_incomplete_tip")
-        ee = chain[0] if chain else None
-        if ee and ee.ocsp and ee.ocsp.cert_status == "revoked":
-            return t("val_chain_revoked"), t("val_chain_revoked_tip")
-        return t("val_chain_expired"), t("val_chain_expired_tip")
-    # UNKNOWN
-    if _is_self_signed_chain(chain):
-        return t("val_chain_self_signed"), t("val_chain_self_signed_tip")
+
+    labels: list[str] = []
+    tips:   list[str] = []
+
+    # 1. Incomplete chain
+    if any(c.source == CertSource.NOT_FOUND for c in chain):
+        labels.append(t("val_chain_incomplete"))
+        tips.append(t("val_chain_incomplete_tip"))
+
+    # 2. Revoked end-entity
+    ee = chain[0] if chain else None
+    if ee and ee.ocsp and ee.ocsp.cert_status == "revoked":
+        labels.append(t("val_chain_revoked"))
+        tips.append(t("val_chain_revoked_tip"))
+
+    # 3. Expired cert (checked at signing_time or now)
+    check_time = signing_time
+    if check_time is None:
+        check_time = datetime.now(tz=timezone.utc)
+    elif check_time.tzinfo is None:
+        check_time = check_time.replace(tzinfo=timezone.utc)
+    for c in chain:
+        if c.valid_from == datetime.min or c.valid_until == datetime.max:
+            continue   # placeholder – skip
+        vf = c.valid_from  if c.valid_from.tzinfo  else c.valid_from.replace(tzinfo=timezone.utc)
+        vu = c.valid_until if c.valid_until.tzinfo else c.valid_until.replace(tzinfo=timezone.utc)
+        if not (vf <= check_time <= vu):
+            labels.append(t("val_chain_expired"))
+            tips.append(t("val_chain_expired_tip"))
+            break
+
+    # 4. Root trust (only meaningful when chain is otherwise complete)
     root = chain[-1] if chain else None
-    if root and root.source == CertSource.CERTIFI:
-        return t("val_chain_unknown_revoc"), t("val_chain_unknown_revoc_tip")
-    return t("val_chain_unknown_root"), t("val_chain_unknown_root_tip")
+    if root is not None and root.source != CertSource.NOT_FOUND:
+        if _is_self_signed_chain(chain):
+            labels.append(t("val_chain_self_signed"))
+            tips.append(t("val_chain_self_signed_tip"))
+        elif root.source not in (CertSource.CERTIFI, CertSource.EU_TSL):
+            labels.append(t("val_chain_unknown_root"))
+            tips.append(t("val_chain_unknown_root_tip"))
+        elif status == ValidationStatus.UNKNOWN:
+            # Root trusted but revocation unconfirmed
+            labels.append(t("val_chain_unknown_revoc"))
+            tips.append(t("val_chain_unknown_revoc_tip"))
+
+    if not labels:
+        # Fallback – should not normally be reached
+        return (t("val_chain_expired") if status == ValidationStatus.INVALID
+                else t("val_chain_unknown_root")), ""
+
+    return " · ".join(labels), " · ".join(tips)
 
 
 def _extract_cn_from_chain(chain: list) -> str:
@@ -432,18 +475,21 @@ class ValidationDialog(QDialog):
         if sig.sig_type != "doc_timestamp":
             self._add_chain_sub(item, "val_detail_sig_chain",
                                  sig.cert_chain, sig.chain_status,
-                                 "cert_win_title_sig", status_owner=sig)
+                                 "cert_win_title_sig", status_owner=sig,
+                                 signing_time=sig.signing_time)
         if sig.timestamp is not None:
             tsa_chain  = sig.timestamp.cert_chain
             tsa_status = sig.timestamp.chain_status
             self._add_chain_sub(item, "val_detail_tsa_chain",
                                  tsa_chain, tsa_status,
-                                 "cert_win_title_tsa", status_owner=sig.timestamp)
+                                 "cert_win_title_tsa", status_owner=sig.timestamp,
+                                 signing_time=sig.timestamp.time)
         elif sig.sig_type == "doc_timestamp":
             # LTA doc timestamp: only TSA chain
             self._add_chain_sub(item, "val_detail_tsa_chain",
                                  sig.cert_chain, sig.chain_status,
-                                 "cert_win_title_tsa", status_owner=sig)
+                                 "cert_win_title_tsa", status_owner=sig,
+                                 signing_time=sig.signing_time)
 
         item.setExpanded(True)
 
@@ -482,9 +528,10 @@ class ValidationDialog(QDialog):
                        chain: list,
                        status: ValidationStatus,
                        title_key: str,
-                       status_owner=None) -> None:
+                       status_owner=None,
+                       signing_time: Optional[datetime] = None) -> None:
         """Add one chain summary row with status colour, tooltip, and Details button."""
-        text, tip = _chain_label_tip(chain, status)
+        text, tip = _chain_label_tip(chain, status, signing_time=signing_time)
         sub = self._add_sub(parent, t(label_key), text)
         if tip:
             sub.setToolTip(1, tip)

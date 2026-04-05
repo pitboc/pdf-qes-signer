@@ -306,18 +306,51 @@ def _validate_one(rev: RevisionInfo,
         except Exception:
             pass
 
-    # ── Step 2: LOTL confirmation for AIA certs ──────────────────────────
-    # National TSLs typically list Qualified Intermediate CAs, not roots.
-    # We therefore check ALL AIA-downloaded certs (intermediates + roots)
-    # against the trust store.  Any LOTL-confirmed cert – regardless of
-    # level – may serve as a trust anchor in the ValidationContext.
-    #
-    # SECURITY: only certs found in a nationally-published TSL (reachable
-    # via the EU LOTL over HTTPS/certifi) are allowed as extra_trust_roots.
+    # ── Step 1.5: Embedded CMS certs ─────────────────────────────────────
+    # Extract before the LOTL check so they can trigger TSL loading too.
+    # Certs without an AIA extension never appear in aia_other_der/aia_roots;
+    # without this step their country hint would never be evaluated.
+    # The asn1 objects are kept for Step 4 (other_certs / chain-building).
     from asn1crypto import x509 as asn1_x509
 
-    all_aia_ders: list[bytes] = (aia_other_der
-                                  + [r.dump() for r in aia_roots])
+    cms_certs: list = []
+    try:
+        for c in sig_obj.signed_data["certificates"]:
+            try:
+                cms_certs.append(c.chosen)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # ── Step 2: LOTL confirmation ─────────────────────────────────────────
+    # Check AIA-downloaded AND embedded CMS certs (deduplicated by SHA-256).
+    # Using embedded certs avoids redundant HTTP downloads for certs that are
+    # already present in the signature.
+    #
+    # SECURITY: embedding a cert in the CMS structure does NOT grant trust.
+    # A cert only becomes an extra_trust_root when LOTL explicitly confirms
+    # its fingerprint in a nationally-published TSL.  An attacker who embeds
+    # a self-signed cert gains nothing unless its fingerprint is in a TSL.
+    _seen_check: set[bytes] = set()
+    all_check_ders: list[bytes] = []
+
+    def _add_check(der: bytes) -> None:
+        fp = hashlib.sha256(der).digest()
+        if fp not in _seen_check:
+            _seen_check.add(fp)
+            all_check_ders.append(der)
+
+    for der in aia_other_der:
+        _add_check(der)
+    for r in aia_roots:
+        _add_check(r.dump())
+    for c in cms_certs:
+        try:
+            _add_check(c.dump())
+        except Exception:
+            pass
+
     confirmed_trusted: list = []   # LOTL-confirmed asn1 cert objects
     seen_confirmed: set[bytes] = set()
 
@@ -332,8 +365,9 @@ def _validate_one(rev: RevisionInfo,
             return True
         return False
 
-    _log.debug("certchain [signer LOTL]: checking %d AIA certs", len(all_aia_ders))
-    for cert_der in all_aia_ders:
+    _log.debug("certchain [signer LOTL]: checking %d certs (AIA+CMS)",
+               len(all_check_ders))
+    for cert_der in all_check_ders:
         _subj = asn1_x509.Certificate.load(cert_der).subject.human_friendly
         if _maybe_add_confirmed(cert_der):
             _log.debug("certchain [signer LOTL]: confirmed: %s", _subj[:70])
@@ -351,7 +385,7 @@ def _validate_one(rev: RevisionInfo,
             _log.debug("certchain [signer LOTL]: TSL[%s] cached but no match for: %s",
                        country, _subj[:70])
             continue
-        if not trust_store.has_lotl_urls():
+        if not trust_store.lotl_urls_valid():
             trust_store.fetch_lotl_urls()
         if trust_store.fetch_tsl(country):
             if _maybe_add_confirmed(cert_der):
@@ -389,8 +423,27 @@ def _validate_one(rev: RevisionInfo,
         if tsa_cert_der:
             try:
                 tsa_aia_other, tsa_aia_roots = _fetch_aia_chain(tsa_cert_der)
-                # LOTL confirmation for TSA chain certs (same as signer chain in Step 2)
-                tsa_all_ders = tsa_aia_other + [r.dump() for r in tsa_aia_roots]
+                # LOTL confirmation for TSA chain: AIA + TSA-embedded certs,
+                # deduplicated (same principle as signer chain in Step 2).
+                _tsa_seen: set[bytes] = set()
+                tsa_all_ders: list[bytes] = []
+                for _d in (tsa_aia_other + [r.dump() for r in tsa_aia_roots]):
+                    _fp = hashlib.sha256(_d).digest()
+                    if _fp not in _tsa_seen:
+                        _tsa_seen.add(_fp)
+                        tsa_all_ders.append(_d)
+                try:
+                    for _c in ts_sd["certificates"]:
+                        try:
+                            _d = _c.chosen.dump()
+                            _fp = hashlib.sha256(_d).digest()
+                            if _fp not in _tsa_seen:
+                                _tsa_seen.add(_fp)
+                                tsa_all_ders.append(_d)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
                 for cert_der in tsa_all_ders:
                     if _maybe_add_confirmed(cert_der):
                         continue
@@ -401,7 +454,7 @@ def _validate_one(rev: RevisionInfo,
                         continue
                     if trust_store.tsl_is_cached(country):
                         continue
-                    if not trust_store.has_lotl_urls():
+                    if not trust_store.lotl_urls_valid():
                         trust_store.fetch_lotl_urls()
                     if trust_store.fetch_tsl(country):
                         if _maybe_add_confirmed(cert_der):
@@ -416,18 +469,10 @@ def _validate_one(rev: RevisionInfo,
                 pass
 
     # ── Step 4: Build ValidationContext ──────────────────────────────────
-    cms_certs: list = []
-    try:
-        for c in sig_obj.signed_data["certificates"]:
-            try:
-                cms_certs.append(c.chosen)
-            except Exception:
-                pass
-    except Exception:
-        pass
-
+    # cms_certs already extracted in Step 1.5.
     # SECURITY: only certifi roots and LOTL-confirmed certs are trusted.
-    # AIA-downloaded certs not in LOTL go into other_certs (chain-building only).
+    # AIA-downloaded and embedded certs not in LOTL go into other_certs
+    # (chain-building only, never trusted as roots).
     all_other   = cms_certs + aia_as_asn1
     extra_roots = certifi_roots + confirmed_trusted
 
@@ -534,7 +579,9 @@ def _validate_one(rev: RevisionInfo,
             _update_chain(sig_info.timestamp.cert_chain)
             sig_info.timestamp.chain_status = ValidationStatus.VALID
     else:
-        sig_info.chain_status = ValidationStatus.UNKNOWN
+        # Never upgrade: if Phase 1 already found INVALID (e.g. expired cert),
+        # keep it – UNKNOWN must not overwrite a worse status.
+        sig_info.chain_status = _worst(sig_info.chain_status, ValidationStatus.UNKNOWN)
         if sig_info.revocation_status == ValidationStatus.NOT_CHECKED:
             sig_info.revocation_status = ValidationStatus.UNKNOWN
 
@@ -619,8 +666,8 @@ class ValidationWorker(QThread):
         from .lotl_trust import XmlCacheTrustStore
         trust_store = XmlCacheTrustStore()
 
-        # If auto-fetch is on and we have no LOTL URL list yet, load it now
-        if self._auto_fetch and not trust_store.has_lotl_urls():
+        # If auto-fetch is on and LOTL URL list is missing or expired, refresh it now
+        if self._auto_fetch and not trust_store.lotl_urls_valid():
             trust_store.fetch_lotl_urls()
 
         from .signer import _load_certifi_roots

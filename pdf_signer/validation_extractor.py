@@ -586,7 +586,8 @@ def _build_sig_info(sig, dss_pool: list,
     if chain and chain[0].ocsp is not None:
         rev_status = chain[0].ocsp.status
 
-    overall = _worst(crypto_status, ValidationStatus.NOT_CHECKED, rev_status)
+    chain_status = _compute_chain_status(chain, tsa_ts.time if tsa_ts else signing_time)
+    overall = _worst(crypto_status, chain_status, rev_status)
 
     return SignatureInfo(
         field_name=field_name,
@@ -596,7 +597,7 @@ def _build_sig_info(sig, dss_pool: list,
         timestamp=tsa_ts,
         cert_chain=chain,
         crypto_status=crypto_status,
-        chain_status=_compute_chain_status(chain, tsa_ts.time if tsa_ts else signing_time),
+        chain_status=chain_status,
         revocation_status=rev_status,
         status=overall,
     )
