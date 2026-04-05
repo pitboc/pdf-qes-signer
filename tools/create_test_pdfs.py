@@ -20,6 +20,10 @@ knows what the application should show.
 | 04_expired_ca_cert.pdf        | INVALID (red)        | Intermediate CA cert expired   |
 | 05_self_signed.pdf            | UNKNOWN (yellow)     | Leaf is self-signed            |
 | 06_tampered_content.pdf       | INVALID crypto (red) | Content changed after signing  |
+| 07_tampered_plus_post_sig.pdf | RED + YELLOW banner  | Crypto INVALID + post-sig annotation |
+| 08_two_yellow_warnings.pdf    | YELLOW + YELLOW banner | Between-sig + post-last-sig annotation |
+| 09_tsl_trigger_cms.pdf        | UNKNOWN (yellow)     | C=FI, kein AIA – TSL-Ladeversuch über CMS-Certs |
+| 10_no_country_hint.pdf        | UNKNOWN (yellow)     | Kein C= im Subject – kein TSL-Ladeversuch |
 
 ## Security note
 
@@ -27,6 +31,16 @@ knows what the application should show.
 validator does NOT classify a fake cert as trusted just because it has the
 same Subject DN as a real certifi root.  Trust confirmation MUST use the
 full certificate fingerprint (SHA-256 of DER bytes), not the DN alone.
+
+## TSL loading tests (09/10)
+
+09 tests the path where TSL loading is triggered via an embedded CMS
+intermediate certificate (no AIA extension in any cert).  The intermediate
+has C=LI in its Subject DN; country_hint() returns "LI" and fetch_tsl("LI")
+is called.  Since the fake root is not in any real TSL, the result is UNKNOWN.
+
+10 tests the negative case: all Subject DNs lack a C= attribute, so
+country_hint() returns None and no TSL fetch is attempted.
 """
 
 from __future__ import annotations
@@ -190,6 +204,31 @@ def _sign_pdf(pdf_bytes: bytes, p12_bytes: bytes, field_name: str,
     out = io.BytesIO()
     asyncio.run(signers.async_sign_pdf(writer, meta, signer=signer, output=out))
     return out.getvalue()
+
+
+def _add_unsigned_annotation(pdf_bytes: bytes) -> bytes:
+    """Append an unsigned incremental update containing a text annotation.
+
+    Adds a standalone /Annot object (not linked to any page).  It appears in
+    the new xref section and is classified as 'annotations' (suspicious) by
+    _classify_unsigned_revision because it has /Rect + /Subtype but no /FT.
+    """
+    from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
+    from pyhanko.pdf_utils import generic
+
+    writer = IncrementalPdfFileWriter(io.BytesIO(pdf_bytes))
+    writer.add_object(generic.DictionaryObject({
+        generic.NameObject('/Type'):     generic.NameObject('/Annot'),
+        generic.NameObject('/Subtype'):  generic.NameObject('/Text'),
+        generic.NameObject('/Rect'):     generic.ArrayObject([
+            generic.NumberObject(100), generic.NumberObject(700),
+            generic.NumberObject(200), generic.NumberObject(750),
+        ]),
+        generic.NameObject('/Contents'): generic.TextStringObject('Unsigned annotation'),
+    }))
+    buf = io.BytesIO()
+    writer.write(buf)
+    return buf.getvalue()
 
 
 def _tamper_pdf(pdf_bytes: bytes) -> bytes:
@@ -392,6 +431,146 @@ def gen_06_tampered_content(out_dir: Path) -> None:
     print("  06_tampered_content.pdf → crypto INVALID (content modified after signing)")
 
 
+def gen_07_tampered_plus_post_sig(out_dir: Path) -> None:
+    """Tampered content (crypto INVALID) AND unsigned post-signature annotation.
+
+    Structure: original → Sig1 [tampered] → unsigned annotation
+    Expected:  RED banner (crypto INVALID, count=1) + YELLOW (post-sig annotation).
+    Tests the multi-warning banner with mixed red/yellow severity.
+    """
+    root, intermediate, signer, key = _build_chain("Multi-Error Signer")
+    p12 = _to_p12(root, intermediate, signer, key)
+    signed = _sign_pdf(_BASE_PDF, p12, "Sig1")
+    tampered = _tamper_pdf(signed)
+    result = _add_unsigned_annotation(tampered)
+    (out_dir / "07_tampered_plus_post_sig.pdf").write_bytes(result)
+    print("  07_tampered_plus_post_sig.pdf → RED (crypto INVALID) + YELLOW (post-sig annotation)")
+
+
+def gen_08_two_yellow_warnings(out_dir: Path) -> None:
+    """Two unsigned annotation revisions in different positions.
+
+    Structure: original → Sig1 → unsigned annotation → Sig2 → unsigned annotation
+    The first annotation is between Sig1 and Sig2 (covered by Sig2 only).
+    The second annotation is after Sig2 (covered by no signature).
+    Expected:  TWO YELLOW warnings (between-sig + post-last-sig).
+    Tests the multi-warning banner with two yellow-only warnings (no red).
+    """
+    root, intermediate, signer, key = _build_chain("Two-Warning Signer")
+    p12 = _to_p12(root, intermediate, signer, key)
+    signed1   = _sign_pdf(_BASE_PDF, p12, "Sig1")
+    between   = _add_unsigned_annotation(signed1)
+    signed2   = _sign_pdf(between, p12, "Sig2")
+    post_last = _add_unsigned_annotation(signed2)
+    (out_dir / "08_two_yellow_warnings.pdf").write_bytes(post_last)
+    print("  08_two_yellow_warnings.pdf → TWO YELLOW warnings (between-sig + post-last-sig)")
+
+
+def gen_09_tsl_trigger_cms(out_dir: Path) -> None:
+    """C=FI chain, kein AIA – TSL-Laden wird via eingebettetem CMS-Cert ausgelöst.
+
+    Alle drei Zertifikate (Root, Intermediate, Signer) haben C=FI im Subject.
+    Keines enthält eine AIA-Extension.  Die Certs werden von pyhanko in die
+    CMS-Struktur der Signatur eingebettet.
+
+    Mit auto_fetch=True erkennt country_hint() "FI" im eingebetteten Intermediate
+    und ruft fetch_tsl("FI") auf – unabhängig davon, ob AIA vorhanden ist.
+    Da der Fake-Root nicht in der echten FI-TSL steht, bleibt das Ergebnis UNKNOWN.
+
+    Expected: chain UNKNOWN (gelb), aber TSL-Ladeversuch für FI nachweisbar.
+    """
+    root, intermediate, signer, key = _build_chain(
+        "FI TSL Trigger Signer",
+        org="Fake FI Org",
+        country="FI",
+        ca_name="Fake FI Root CA",
+        ca_org="Fake FI CA Org",
+    )
+    p12 = _to_p12(root, intermediate, signer, key)
+    signed = _sign_pdf(_BASE_PDF, p12, "Sig1")
+    (out_dir / "09_tsl_trigger_cms.pdf").write_bytes(signed)
+    from cryptography.hazmat.primitives.serialization import Encoding
+    int_fp = hashlib.sha256(intermediate.public_bytes(Encoding.DER)).hexdigest()[:16]
+    print(f"  09_tsl_trigger_cms.pdf → UNKNOWN chain + TSL-Ladeversuch für FI")
+    print(f"    Intermediate-Fingerprint (SHA-256, erste 16 Zeichen): {int_fp}")
+    print(f"    (kein AIA – TSL-Laden via eingebettetes CMS-Zertifikat)")
+
+
+def gen_10_no_country_hint(out_dir: Path) -> None:
+    """Kette ohne C= im Subject – country_hint() gibt None zurück, kein TSL-Laden.
+
+    Alle Subject-DNs enthalten nur O= und CN=, kein C=.  Damit liefert
+    country_hint() None für jedes Zertifikat in der Kette und fetch_tsl()
+    wird niemals aufgerufen, auch nicht mit auto_fetch=True.
+
+    Expected: chain UNKNOWN (gelb), kein TSL-Ladeversuch.
+    """
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    now = datetime.now(tz=timezone.utc)
+
+    def _key():
+        return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+    def _name(cn, o):
+        return x509.Name([
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, o),
+            x509.NameAttribute(NameOID.COMMON_NAME, cn),
+        ])
+
+    root_key = _key()
+    root_name = _name("No-Country Root CA", "No-Country CA Org")
+    root_cert = (
+        x509.CertificateBuilder()
+        .subject_name(root_name).issuer_name(root_name)
+        .public_key(root_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(days=1))
+        .not_valid_after(now + timedelta(days=3650))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .sign(root_key, hashes.SHA256())
+    )
+
+    int_key = _key()
+    int_name = _name("No-Country Intermediate CA", "No-Country CA Org")
+    int_cert = (
+        x509.CertificateBuilder()
+        .subject_name(int_name).issuer_name(root_name)
+        .public_key(int_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(days=1))
+        .not_valid_after(now + timedelta(days=3650))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .sign(root_key, hashes.SHA256())
+    )
+
+    signer_key = _key()
+    signer_name = _name("No-Country Signer", "No-Country Org")
+    signer_cert = (
+        x509.CertificateBuilder()
+        .subject_name(signer_name).issuer_name(int_name)
+        .public_key(signer_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(days=1))
+        .not_valid_after(now + timedelta(days=365))
+        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        .sign(int_key, hashes.SHA256())
+    )
+
+    from cryptography.hazmat.primitives.serialization import pkcs12
+    p12 = pkcs12.serialize_key_and_certificates(
+        name=b"test", key=signer_key, cert=signer_cert,
+        cas=[int_cert, root_cert],
+        encryption_algorithm=_best_encryption(b"test"),
+    )
+    signed = _sign_pdf(_BASE_PDF, p12, "Sig1")
+    (out_dir / "10_no_country_hint.pdf").write_bytes(signed)
+    print("  10_no_country_hint.pdf → UNKNOWN chain, kein TSL-Ladeversuch (kein C= im Subject)")
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -412,6 +591,10 @@ def main() -> None:
         gen_04_expired_ca_cert,
         gen_05_self_signed,
         gen_06_tampered_content,
+        gen_07_tampered_plus_post_sig,
+        gen_08_two_yellow_warnings,
+        gen_09_tsl_trigger_cms,
+        gen_10_no_country_hint,
     ]:
         try:
             gen_fn(out_dir)
@@ -435,6 +618,10 @@ def main() -> None:
         print("  04 → Signaturprüfung: INVALID (rot), Zwischenzertifikat abgelaufen")
         print("  05 → Signaturprüfung: UNKNOWN (gelb), selbstsigniert")
         print("  06 → Signaturprüfung: INVALID (rot), Inhalt nach Signatur verändert")
+        print("  07 → Hauptfenster: ROTES Banner (Integritätsfehler) + GELBES Banner (Annotation nach Sig)")
+        print("  08 → Hauptfenster: ZWEI GELBE Banner (Annotation zwischen Sigs + nach letzter Sig)")
+        print("  09 → Signaturprüfung: UNKNOWN (gelb), TSL-Ladeversuch für LI")
+        print("  10 → Signaturprüfung: UNKNOWN (gelb), kein TSL-Ladeversuch (kein C= im Subject)")
 
 
 if __name__ == "__main__":
