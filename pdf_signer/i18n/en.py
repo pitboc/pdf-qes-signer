@@ -166,6 +166,9 @@ TRANSLATIONS: dict[str, str] = {
         "Full traceback in console (stderr)."
     ),
     "dlg_field_already_signed": "This field is already signed and cannot be used again.",
+    "warn_crypto_invalid_short": "⚠  Cryptographic integrity check failed ({count}) –"
+                                " content may be tampered or file corrupted."
+                                "  Please check the signatures.",
     "warn_docmdp_p1":     "Document locked – no changes allowed (docMDP P=1)",
     "warn_docmdp_p2":     "Document restricted – form fields & signatures only (docMDP P=2)",
     "dlg_docmdp_title":   "Document Restriction",
@@ -350,6 +353,22 @@ TRANSLATIONS: dict[str, str] = {
 
     # ── Signature validation ──────────────────────────────────────────────
     "menu_check_sigs":          "Check Signatures…",
+    "menu_trust_cache":              "Trust Store Cache…",
+    "trust_cache_title":             "Trust Store Cache (LOTL/TSL)",
+    "trust_cache_lotl_header":       "EU List of Trusted Lists (LOTL)",
+    "trust_cache_lotl_explain":      "Directory of all national trust lists – required for QES validation.",
+    "trust_cache_lotl_urls_valid":   "  URL list:  {count} entries  ({size} KB)  –  valid until {date}",
+    "trust_cache_lotl_urls_expired": "  URL list:  {count} entries  ({size} KB)  –  EXPIRED on {date}",
+    "trust_cache_lotl_urls_no_date": "  URL list:  {count} entries  ({size} KB)  –  validity unknown",
+    "trust_cache_no_lotl_urls":      "  URL list:  not present",
+    "trust_cache_tsl_section":       "National Trust Service Lists (TSL)",
+    "trust_cache_tsl_explain":       "Certificate fingerprints of officially recognised QES trust service providers.",
+    "trust_cache_tsl_header":        "Cached countries:",
+    "trust_cache_no_tsl":            "  (No TSL cache present)",
+    "trust_cache_tsl_valid":         "  {country}  –  valid until {date}  ({size} KB)",
+    "trust_cache_tsl_expired":       "  {country}  –  expired on {date}  ({size} KB)",
+    "trust_cache_btn_clear_tsl":     "Delete TSL files",
+    "trust_cache_btn_clear_all":     "Delete all",
     "val_dlg_title":            "Signature Validation",
     "val_col_item":             "Item",
     "val_col_source":           "Origin",

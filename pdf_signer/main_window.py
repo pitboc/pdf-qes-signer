@@ -69,7 +69,7 @@ from PyQt6.QtGui import QAction, QFont, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow,
-    QMessageBox, QPushButton, QScrollArea, QStackedWidget,
+    QMessageBox, QPushButton, QScrollArea, QSizePolicy, QStackedWidget,
     QSplitter, QVBoxLayout, QWidget, QCheckBox,
 )
 
@@ -184,6 +184,10 @@ class PDFSignerApp(QMainWindow):
         self._act_check_sigs = QAction(self)
         self._act_check_sigs.triggered.connect(self.check_signatures)
         self._menu_sign.addAction(self._act_check_sigs)
+        self._menu_sign.addSeparator()
+        self._act_trust_cache = QAction(self)
+        self._act_trust_cache.triggered.connect(self.open_trust_cache_dialog)
+        self._menu_sign.addAction(self._act_trust_cache)
 
         self._menu_settings  = self.menuBar().addMenu("")
         self._act_pkcs11     = QAction(self)
@@ -302,12 +306,10 @@ class PDFSignerApp(QMainWindow):
         _central_layout.setSpacing(0)
 
         self._warn_main_label = QLabel()
-        self._warn_main_label.setContentsMargins(8, 2, 8, 2)
-        self._warn_main_label.setMaximumHeight(24)
-        self._warn_main_label.setStyleSheet(
-            "background-color: #fff3cd; color: #6a4200;"
-            " border-bottom: 1px solid #e0a800;"
-        )
+        self._warn_main_label.setContentsMargins(8, 4, 8, 4)
+        self._warn_main_label.setWordWrap(True)
+        self._warn_main_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self._warn_main_label.hide()
         _central_layout.addWidget(self._warn_main_label)
 
@@ -463,6 +465,7 @@ class PDFSignerApp(QMainWindow):
         self._menu_sign.setTitle(t("menu_sign"))
         self._act_sign.setText(t("menu_sign_document"))
         self._act_check_sigs.setText(t("menu_check_sigs"))
+        self._act_trust_cache.setText(t("menu_trust_cache"))
         self._menu_settings.setTitle(t("menu_settings"))
         self._act_pkcs11.setText(t("menu_settings_pkcs11"))
         self._act_profile.setText(t("menu_profile"))
@@ -1671,10 +1674,15 @@ class PDFSignerApp(QMainWindow):
     def _update_main_warning(self) -> None:
         """Warnbanner im Hauptfenster ein- oder ausblenden; docMDP-Sperre anwenden.
 
-        docMDP P=1: alle Änderungs-Aktionen deaktivieren, Banner zeigen.
-        docMDP P=2: nur Informationsbanner (Signieren weiterhin erlaubt).
-        Post-Signatur-Warnung: Banner wenn verdächtige Änderungen nach Signatur.
+        docMDP P=1: alle Änderungs-Aktionen deaktivieren, Banner zeigen (rot).
+        Alle anderen Warnungen werden gesammelt und zusammen angezeigt.
+        Farbe: Rot wenn mindestens eine rote Warnung vorliegt, sonst Gelb.
         """
+        _STYLE_RED    = ("background-color: #f8d7da; color: #721c24;"
+                         " border-bottom: 1px solid #f5c6cb;")
+        _STYLE_YELLOW = ("background-color: #fff3cd; color: #6a4200;"
+                         " border-bottom: 1px solid #e0a800;")
+
         if self._doc_validation is None:
             self._warn_main_label.hide()
             self._set_doc_edit_enabled(True)
@@ -1684,7 +1692,10 @@ class PDFSignerApp(QMainWindow):
 
         if level == 1:
             # P=1: vollständige Sperre – keine Signatur, kein Feld-Zeichnen, kein Speichern
+            self._warn_main_label.setStyleSheet(_STYLE_RED)
             self._warn_main_label.setText(t("warn_docmdp_p1"))
+            line_h = self._warn_main_label.fontMetrics().height()
+            self._warn_main_label.setMaximumHeight(line_h + 10)
             self._warn_main_label.show()
             self._set_doc_edit_enabled(False)
             return
@@ -1692,18 +1703,37 @@ class PDFSignerApp(QMainWindow):
         # P=2 oder keine MDP-Einschränkung: Aktionen freigeben
         self._set_doc_edit_enabled(True)
 
+        warnings: list[tuple[str, str]] = []  # (severity, text)  severity: "red"|"yellow"
+
+        # 1. Kryptografische Integritätsfehler (Manipulation oder Dateidefekt)
+        from .validation_result import ValidationStatus
+        broken = [rev.signed_by for rev in self._doc_validation.revisions
+                  if rev.signed_by is not None
+                  and rev.signed_by.crypto_status == ValidationStatus.INVALID]
+        if broken:
+            warnings.append(("red", t("warn_crypto_invalid_short", count=len(broken))))
+
+        # 2. Verdächtige unsignierte Revisionen nach/zwischen Signaturen
         from .validation_dialog import check_post_sig_warnings
         post_last, between = check_post_sig_warnings(self._doc_validation.revisions)
         if post_last:
             labels = ", ".join(t(f"val_rev_type_{ct}") for ct in sorted(post_last))
-            self._warn_main_label.setText(t("val_warn_post_sig_short", types=labels))
-            self._warn_main_label.show()
-        elif between:
+            warnings.append(("yellow", t("val_warn_post_sig_short", types=labels)))
+        if between:
             labels = ", ".join(t(f"val_rev_type_{ct}") for ct in sorted(between))
-            self._warn_main_label.setText(t("val_warn_between_sig_short", types=labels))
-            self._warn_main_label.show()
-        else:
+            warnings.append(("yellow", t("val_warn_between_sig_short", types=labels)))
+
+        if not warnings:
             self._warn_main_label.hide()
+            return
+
+        has_red = any(sev == "red" for sev, _ in warnings)
+        self._warn_main_label.setStyleSheet(_STYLE_RED if has_red else _STYLE_YELLOW)
+        self._warn_main_label.setText("\n".join(msg for _, msg in warnings))
+        # Fix height to content: one font line per warning + vertical margins.
+        line_h = self._warn_main_label.fontMetrics().height()
+        self._warn_main_label.setMaximumHeight(len(warnings) * line_h + 10)
+        self._warn_main_label.show()
 
     def check_signatures(self) -> None:
         """Signaturprüfungs-Dialog öffnen (nicht-modal, Phase 1 offline).
@@ -1748,3 +1778,9 @@ class PDFSignerApp(QMainWindow):
             self._on_validation_dialog_finished)
         self._set_modifying_actions_enabled(False)
         self._validation_dialog.show()
+
+    def open_trust_cache_dialog(self) -> None:
+        """Vertrauensspeicher-Cache-Dialog öffnen (modal)."""
+        from .dialogs import TrustStoreCacheDialog
+        dlg = TrustStoreCacheDialog(parent=self)
+        dlg.exec()

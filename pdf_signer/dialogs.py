@@ -2313,4 +2313,107 @@ class CertChainDetailWindow(QWidget):
             self._config.save()
         except Exception:
             pass
-        super().closeEvent(event)
+
+
+# ── TrustStoreCacheDialog ─────────────────────────────────────────────────────
+
+class TrustStoreCacheDialog(QDialog):
+    """Status und Verwaltung des lokalen LOTL/TSL-Caches.
+
+    Zeigt welche nationalen TSL-Dateien gecacht sind, wann sie ablaufen,
+    und bietet Schaltflächen zum Löschen des Caches.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(t("trust_cache_title"))
+        self.setMinimumWidth(460)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(8)
+
+        self._info_label = QLabel()
+        self._info_label.setTextFormat(Qt.TextFormat.PlainText)
+        self._info_label.setWordWrap(True)
+        self._info_label.setAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self._info_label.setStyleSheet("font-family: monospace;")
+        layout.addWidget(self._info_label)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(6)
+        self._btn_clear_tsl = QPushButton(t("trust_cache_btn_clear_tsl"))
+        self._btn_clear_tsl.clicked.connect(self._clear_tsl)
+        self._btn_clear_all = QPushButton(t("trust_cache_btn_clear_all"))
+        self._btn_clear_all.clicked.connect(self._clear_all)
+        btn_layout.addWidget(self._btn_clear_tsl)
+        btn_layout.addWidget(self._btn_clear_all)
+        btn_layout.addStretch()
+        close_btn = QPushButton(t("dlg_token_close"))
+        close_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+
+        self._refresh()
+
+    def _refresh(self) -> None:
+        from .lotl_trust import XmlCacheTrustStore
+        from datetime import timezone as _tz
+        info = XmlCacheTrustStore().cache_info()
+        lines: list[str] = []
+
+        # ── LOTL section ──────────────────────────────────────────────────
+        lines.append(t("trust_cache_lotl_header"))
+        lines.append(t("trust_cache_lotl_explain"))
+        if info["has_lotl_urls"]:
+            nu = info["lotl_next_update"]
+            if nu is not None:
+                nu_aware = nu if nu.tzinfo else nu.replace(tzinfo=_tz.utc)
+                date_str = nu_aware.strftime("%d.%m.%Y")
+                key = ("trust_cache_lotl_urls_valid" if info["lotl_urls_valid"]
+                       else "trust_cache_lotl_urls_expired")
+                lines.append(t(key,
+                               count=info["lotl_url_count"],
+                               size=f"{info['lotl_urls_size_kb']:.1f}",
+                               date=date_str))
+            else:
+                lines.append(t("trust_cache_lotl_urls_no_date",
+                               count=info["lotl_url_count"],
+                               size=f"{info['lotl_urls_size_kb']:.1f}"))
+        else:
+            lines.append(t("trust_cache_no_lotl_urls"))
+
+        # ── TSL section ───────────────────────────────────────────────────
+        lines.append("")
+        lines.append(t("trust_cache_tsl_section"))
+        lines.append(t("trust_cache_tsl_explain"))
+        tsls = info["tsls"]
+        if not tsls:
+            lines.append(t("trust_cache_no_tsl"))
+        else:
+            lines.append(t("trust_cache_tsl_header"))
+            for tsl in tsls:
+                nu = tsl["next_update"]
+                if nu is not None:
+                    nu_aware = nu if nu.tzinfo else nu.replace(tzinfo=_tz.utc)
+                    date_str = nu_aware.strftime("%d.%m.%Y")
+                else:
+                    date_str = "?"
+                key = ("trust_cache_tsl_valid" if tsl["valid"]
+                       else "trust_cache_tsl_expired")
+                lines.append(t(key, country=tsl["country"],
+                               date=date_str, size=f"{tsl['size_kb']:.0f}"))
+
+        self._info_label.setText("\n".join(lines))
+        self._btn_clear_tsl.setEnabled(bool(tsls))
+        self._btn_clear_all.setEnabled(info["has_lotl_urls"] or bool(tsls))
+
+    def _clear_tsl(self) -> None:
+        from .lotl_trust import XmlCacheTrustStore
+        XmlCacheTrustStore().clear_cache(keep_urls=True)
+        self._refresh()
+
+    def _clear_all(self) -> None:
+        from .lotl_trust import XmlCacheTrustStore
+        XmlCacheTrustStore().clear_cache(keep_urls=False)
+        self._refresh()

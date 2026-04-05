@@ -47,6 +47,22 @@ den SHA-256-Fingerprint gegen *alle* gecachten TSL-XMLs.  Trifft es zu, ist
 das Zertifikat LOTL-bestätigt und darf als ``extra_trust_root`` verwendet
 werden.  Andernfalls bleibt es in ``other_certs`` (nur Kettenaufbau, kein
 Vertrauen).
+
+## Bekannte Einschränkung: keine XMLDSig-Prüfung
+
+LOTL und nationale TSLs sind nach ETSI TS 119 612 mit einer
+**XML Digital Signature (XMLDSig)** signiert – ein Format, das grundlegend
+anders aufgebaut ist als die CMS/PKCS#7-Signaturen in PDFs.  Die Prüfung
+erfordert XML-Kanonisierung (C14N) und XMLDSig-Envelope-Parsing; beides
+deckt der vorhandene Stack (pyhanko + asn1crypto) nicht ab.  Eine
+vollständige Implementierung würde ``xmlsec`` + ``lxml`` (native C-Bibliothek
+``libxmlsec1``) erfordern.
+
+Beim **Download** ist die Integrität durch TLS gesichert (Anker: certifi).
+Im **Disk-Cache** besteht ohne XMLDSig-Prüfung kein kryptografischer Schutz
+gegen nachträgliche Manipulation der TSL-Dateien.  Da dafür Schreibzugriff
+auf ``~/.config/pdf-signer/tsl_cache/`` nötig wäre, ist das Risiko in der
+Praxis gering.
 """
 
 from __future__ import annotations
@@ -86,7 +102,11 @@ class QesTrustStore(ABC):
 
     @abstractmethod
     def has_lotl_urls(self) -> bool:
-        """True wenn die LOTL-URL-Liste lokal vorhanden ist."""
+        """True wenn die LOTL-URL-Liste lokal vorhanden ist (auch wenn abgelaufen)."""
+
+    @abstractmethod
+    def lotl_urls_valid(self) -> bool:
+        """True wenn die LOTL-URL-Liste vorhanden *und* noch nicht abgelaufen ist."""
 
     @abstractmethod
     def fetch_lotl_urls(self, timeout: int = 10) -> bool:
@@ -107,6 +127,32 @@ class QesTrustStore(ABC):
     @abstractmethod
     def cached_countries(self) -> list[str]:
         """Liste der Länderkürzel mit lokal gecachten TSLs."""
+
+    @abstractmethod
+    def cache_info(self) -> dict:
+        """Status-Informationen über den lokalen Cache.
+
+        Returns a dict with:
+        - ``has_lotl_urls`` (bool)
+        - ``lotl_urls_valid`` (bool)
+        - ``lotl_next_update`` (datetime or None)
+        - ``lotl_url_count`` (int)
+        - ``lotl_urls_size_kb`` (float)
+        - ``tsls`` (list of dicts, one per cached TSL file):
+            - ``country`` (str)
+            - ``next_update`` (datetime or None)
+            - ``valid`` (bool)
+            - ``size_kb`` (float)
+        """
+
+    @abstractmethod
+    def clear_cache(self, keep_urls: bool = False) -> None:
+        """Lokalen Cache leeren.
+
+        Args:
+            keep_urls: Wenn True, wird ``lotl_urls.json`` behalten;
+                       nur die TSL-XML-Dateien werden gelöscht.
+        """
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -135,24 +181,51 @@ class XmlCacheTrustStore(QesTrustStore):
     """
 
     def __init__(self) -> None:
-        self._cache_dir  = _CACHE_DIR
-        self._urls_file  = self._cache_dir / "lotl_urls.json"
+        self._cache_dir       = _CACHE_DIR
+        self._urls_file       = self._cache_dir / "lotl_urls.json"
         self._urls: list[dict] = []          # [{country, url}, ...]
+        self._lotl_next_update: Optional[datetime] = None
         self._fp_cache: dict[bytes, bool] = {}  # fingerprint → trusted (in-process)
         self._load_urls()
 
     # ── LOTL URL list ─────────────────────────────────────────────────────
 
     def _load_urls(self) -> None:
-        if self._urls_file.exists():
-            try:
-                self._urls = json.loads(
-                    self._urls_file.read_text(encoding="utf-8"))
-            except Exception:
-                self._urls = []
+        if not self._urls_file.exists():
+            return
+        try:
+            raw = json.loads(self._urls_file.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        # Support both old list format [{country,url},...] and new dict format
+        # {"next_update": "...", "urls": [{country,url},...]}
+        if isinstance(raw, list):
+            self._urls = raw
+            self._lotl_next_update = None
+        elif isinstance(raw, dict):
+            self._urls = raw.get("urls", [])
+            nu_str = raw.get("next_update")
+            if nu_str:
+                try:
+                    self._lotl_next_update = datetime.fromisoformat(
+                        nu_str.replace("Z", "+00:00"))
+                except Exception:
+                    self._lotl_next_update = None
 
     def has_lotl_urls(self) -> bool:
         return len(self._urls) > 0
+
+    def lotl_urls_valid(self) -> bool:
+        if not self._urls:
+            return False
+        if self._lotl_next_update is not None:
+            return self._lotl_next_update > datetime.now(timezone.utc)
+        # Fallback: accept if file is younger than 30 days
+        if self._urls_file.exists():
+            age = datetime.now(timezone.utc) - datetime.fromtimestamp(
+                self._urls_file.stat().st_mtime, tz=timezone.utc)
+            return age < timedelta(days=30)
+        return False
 
     def fetch_lotl_urls(self, timeout: int = 10) -> bool:
         text = _fetch_url(LOTL_URL, timeout)
@@ -180,11 +253,32 @@ class XmlCacheTrustStore(QesTrustStore):
         if not urls:
             return False
 
+        # Extract <NextUpdate><dateTime> from LOTL SchemeInformation
+        next_update: Optional[datetime] = None
+        try:
+            nu_elem = root.find(
+                f".//{_tag('SchemeInformation')}/{_tag('NextUpdate')}/{_tag('dateTime')}")
+            if nu_elem is None:
+                # Some LOTL versions place NextUpdate directly under root
+                nu_elem = root.find(
+                    f".//{_tag('NextUpdate')}/{_tag('dateTime')}")
+            if nu_elem is not None and nu_elem.text:
+                next_update = datetime.fromisoformat(
+                    nu_elem.text.strip().replace("Z", "+00:00"))
+                _log.info("LOTL: next update: %s", next_update.isoformat())
+        except Exception as exc:
+            _log.debug("LOTL: could not parse NextUpdate: %s", exc)
+
         self._urls = urls
+        self._lotl_next_update = next_update
+        data = {
+            "next_update": next_update.isoformat() if next_update else None,
+            "urls": urls,
+        }
         try:
             self._cache_dir.mkdir(parents=True, exist_ok=True)
             self._urls_file.write_text(
-                json.dumps(urls, indent=2, ensure_ascii=False),
+                json.dumps(data, indent=2, ensure_ascii=False),
                 encoding="utf-8")
         except Exception as exc:
             _log.debug("LOTL: could not save URL list: %s", exc)
@@ -313,3 +407,43 @@ class XmlCacheTrustStore(QesTrustStore):
 
     def cached_countries(self) -> list[str]:
         return sorted(p.stem[4:] for p in self._cache_dir.glob("tsl_*.xml"))
+
+    def cache_info(self) -> dict:
+        tsls = []
+        for path in sorted(self._cache_dir.glob("tsl_*.xml")):
+            country = path.stem[4:]
+            next_update = self._tsl_next_update(path)
+            valid = self.tsl_is_cached(country)
+            size_kb = path.stat().st_size / 1024
+            tsls.append({
+                "country":     country,
+                "next_update": next_update,
+                "valid":       valid,
+                "size_kb":     size_kb,
+            })
+        has_urls = self._urls_file.exists()
+        url_count = len(self._urls)
+        urls_size_kb = (self._urls_file.stat().st_size / 1024
+                        if has_urls else 0.0)
+        return {
+            "has_lotl_urls":     has_urls,
+            "lotl_urls_valid":   self.lotl_urls_valid(),
+            "lotl_next_update":  self._lotl_next_update,
+            "lotl_url_count":    url_count,
+            "lotl_urls_size_kb": urls_size_kb,
+            "tsls":              tsls,
+        }
+
+    def clear_cache(self, keep_urls: bool = False) -> None:
+        for path in self._cache_dir.glob("tsl_*.xml"):
+            try:
+                path.unlink()
+            except Exception:
+                pass
+        if not keep_urls and self._urls_file.exists():
+            try:
+                self._urls_file.unlink()
+            except Exception:
+                pass
+            self._urls = []
+        self._fp_cache.clear()

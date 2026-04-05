@@ -166,6 +166,9 @@ TRANSLATIONS: dict[str, str] = {
         "Vollständiger Traceback in der Konsole (stderr)."
     ),
     "dlg_field_already_signed": "Dieses Feld ist bereits signiert und kann nicht erneut verwendet werden.",
+    "warn_crypto_invalid_short": "⚠  Kryptografische Integritätsprüfung fehlgeschlagen ({count}) –"
+                                " Inhalt möglicherweise manipuliert oder Datei beschädigt."
+                                "  Signaturen prüfen.",
     "warn_docmdp_p1":     "Dokument gesperrt – keine Änderungen erlaubt (docMDP P=1)",
     "warn_docmdp_p2":     "Dokument eingeschränkt – nur Formularfelder & Signaturen erlaubt (docMDP P=2)",
     "dlg_docmdp_title":   "Dokument-Einschränkung",
@@ -350,6 +353,22 @@ TRANSLATIONS: dict[str, str] = {
 
     # ── Signaturprüfung ───────────────────────────────────────────────────
     "menu_check_sigs":          "Signaturen prüfen…",
+    "menu_trust_cache":              "Vertrauensspeicher-Cache…",
+    "trust_cache_title":             "Vertrauensspeicher-Cache (LOTL/TSL)",
+    "trust_cache_lotl_header":       "EU List of Trusted Lists (LOTL)",
+    "trust_cache_lotl_explain":      "Verzeichnis aller nationalen Vertrauenslisten – wird für QES-Validierung benötigt.",
+    "trust_cache_lotl_urls_valid":   "  URL-Liste:  {count} Einträge  ({size} KB)  –  gültig bis {date}",
+    "trust_cache_lotl_urls_expired": "  URL-Liste:  {count} Einträge  ({size} KB)  –  ABGELAUFEN am {date}",
+    "trust_cache_lotl_urls_no_date": "  URL-Liste:  {count} Einträge  ({size} KB)  –  Gültigkeit unbekannt",
+    "trust_cache_no_lotl_urls":      "  URL-Liste:  nicht vorhanden",
+    "trust_cache_tsl_section":       "Nationale Trust Service Lists (TSL)",
+    "trust_cache_tsl_explain":       "Zertifikat-Fingerabdrücke offiziell anerkannter QES-Vertrauensdiensteanbieter.",
+    "trust_cache_tsl_header":        "Gespeicherte Länder:",
+    "trust_cache_no_tsl":            "  (Kein TSL-Cache vorhanden)",
+    "trust_cache_tsl_valid":         "  {country}  –  gültig bis {date}  ({size} KB)",
+    "trust_cache_tsl_expired":       "  {country}  –  abgelaufen am {date}  ({size} KB)",
+    "trust_cache_btn_clear_tsl":     "TSL-Dateien löschen",
+    "trust_cache_btn_clear_all":     "Alles löschen",
     "val_dlg_title":            "Signaturprüfung",
     "val_col_item":             "Element",
     "val_col_source":           "Ursprung",
