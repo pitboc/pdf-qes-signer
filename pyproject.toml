@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pdf-qes-signer"
-version = "0.3.2.dev0"
+version = "0.3.2"
 description = "GUI tool for visually placing signature fields in PDFs and applying qualified electronic signatures (QES) via PKCS#11 / smartcard, specifically developed for Telesec TCOS 3.0 SigG cards"
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }
@@ -20,14 +20,14 @@ classifiers = [
     "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Office/Business",
     "Topic :: Security :: Cryptography",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
     "pymupdf>=1.23",
     "Pillow>=10.0",
@@ -63,3 +63,6 @@ Repository = "https://codeberg.org/pitbo/pdf-qes-signer.git"
 
 [tool.setuptools.packages.find]
 include = ["pdf_signer*"]
+
+[tool.setuptools.package-data]
+"pdf_signer.icons" = ["*.png", "*.ico", "*.svg"]

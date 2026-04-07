@@ -131,7 +131,7 @@ pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
 
 ## Requirements
 
-- Python ≥ 3.9
+- Python ≥ 3.11
 - [pymupdf](https://pymupdf.readthedocs.io/) (`fitz` / `pymupdf`)
 - [Pillow](https://pillow.readthedocs.io/)
 - [PyQt6](https://pypi.org/project/PyQt6/)
@@ -143,7 +143,10 @@ pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
 
 ### Windows: additional prerequisites
 
-- **Python 3.9+** – install from [python.org](https://www.python.org/downloads/);
+The Windows installer (`setup_pdf_signer.bat`) handles these automatically.
+If you prefer to install manually:
+
+- **Python 3.11+** – install from [python.org](https://www.python.org/downloads/);
   check *"Add python.exe to PATH"* during installation
 - **Microsoft Visual C++ Redistributable 2015–2022 (x64)** – required by PyMuPDF;
   download from Microsoft:
@@ -171,6 +174,9 @@ cd pdf-qes-signer
 2. Extract the archive (right-click → *Extract All…*)
 3. Open the extracted folder and double-click `setup_pdf_signer.bat`
 
+The Windows installer opens a graphical setup wizard (no admin rights required).
+See [Windows installer](#windows-installer) for details.
+
 ### Option B – Clone with Git
 
 ```bash
@@ -195,6 +201,33 @@ setup_pdf_signer.bat
 
 The setup script creates a `.venv/` virtual environment, installs all
 dependencies, and generates a launcher script.
+
+### Windows installer
+
+`setup_pdf_signer.bat` is a self-contained GUI installer that requires no admin
+rights and no pre-installed tools beyond a standard Windows 10/11 installation.
+
+**What the installer does:**
+
+- Checks whether Python ≥ 3.11 and the Microsoft Visual C++ Redistributable
+  (≥ 14.30) are present; if not, it downloads and installs them silently
+  (user-mode installation, no elevation required).
+- Creates a Python virtual environment in the chosen install directory and
+  installs PDF QES Signer plus all dependencies via pip.
+- Optionally creates a Desktop shortcut and/or a Start Menu entry.
+- Optionally adds a *"Sign with PDF QES Signer"* entry to the Windows Explorer
+  context menu for `.pdf` files (available via *Shift+Right-click → Show more
+  options* on Windows 11; appears in the top-level context menu on Windows 10).
+- Registers the application in *Apps & Features* (Settings → Apps) with a
+  proper uninstaller entry.
+- Writes an install log to `%TEMP%\pdf_signer_install.log`.
+
+**Upgrade:** running the installer again on an existing installation shows an
+*Update* dialog — the GPL acceptance step is skipped and the previous install
+directory is pre-filled.
+
+**Uninstall:** use *Settings → Apps → PDF QES Signer → Uninstall*, or run
+`uninstall.bat` in the install directory directly.
 
 ## Usage
 

@@ -1619,7 +1619,8 @@ class PDFSignerApp(QMainWindow):
         vl = QVBoxLayout(dlg)
         vl.setSpacing(12)
 
-        lbl = QLabel(t("about_msg", version=__version__, commit=__commit__))
+        commit_str = f"  (commit: {__commit__})" if __commit__ != "unknown" else ""
+        lbl = QLabel(t("about_msg", version=__version__, commit=commit_str))
         lbl.setTextFormat(Qt.TextFormat.PlainText)
         lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         vl.addWidget(lbl)

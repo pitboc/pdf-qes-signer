@@ -52,6 +52,8 @@ def main() -> None:
     # Check required dependencies before importing Qt modules
     _check_imports()
 
+    from pathlib import Path
+    from PyQt6.QtGui import QIcon
     from PyQt6.QtWidgets import QApplication
     from .config import AppConfig
     from .i18n import i18n
@@ -64,6 +66,10 @@ def main() -> None:
         app.setStyle("Fusion")
     except Exception:
         pass
+
+    _icon_path = Path(__file__).parent / "icons" / "app.png"
+    if _icon_path.exists():
+        app.setWindowIcon(QIcon(str(_icon_path)))
 
     config   = AppConfig()
     i18n.lang = config.get("app", "language")

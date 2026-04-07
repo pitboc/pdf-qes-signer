@@ -307,7 +307,7 @@ TRANSLATIONS: dict[str, str] = {
     # About / License
     "about_title": "About PDF QES Signer",
     "about_msg": (
-        "PDF QES Signer  v{version}  (commit: {commit})\n\n"
+        "PDF QES Signer  v{version}{commit}\n\n"
         "Visual placement of signature fields\n"
         "and qualified electronic signature (QES)\n"
         "via PKCS#11 / Smartcard.\n\n"
