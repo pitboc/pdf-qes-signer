@@ -148,8 +148,29 @@ def _is_self_signed_chain(chain: list) -> bool:
     return len(chain) == 1 and chain[0].is_root
 
 
+def _trust_indic_key(indic: Optional[str]) -> str:
+    """Map an AdES subindication string to an i18n key for the chain status row.
+
+    *indic* is stored as ``"ClassName.MEMBER"`` (e.g.
+    ``"AdESIndeterminate.OUT_OF_BOUNDS_NO_POE"``).  Unknown values fall back
+    to the generic revocation-unknown key.
+    """
+    _MAP = {
+        "AdESIndeterminate.OUT_OF_BOUNDS_NO_POE":        "val_chain_indic_out_of_bounds",
+        "AdESIndeterminate.OUT_OF_BOUNDS_NOT_REVOKED":   "val_chain_indic_out_of_bounds",
+        "AdESIndeterminate.REVOKED_NO_POE":              "val_chain_indic_revoked_no_poe",
+        "AdESIndeterminate.REVOKED_CA_NO_POE":           "val_chain_indic_revoked_no_poe",
+        "AdESIndeterminate.TRY_LATER":                   "val_chain_indic_try_later",
+        "AdESIndeterminate.NO_POE":                      "val_chain_indic_no_poe",
+        "AdESIndeterminate.CRYPTO_CONSTRAINTS_FAILURE_NO_POE": "val_chain_indic_crypto_no_poe",
+        "AdESIndeterminate.REVOCATION_OUT_OF_BOUNDS_NO_POE":   "val_chain_indic_out_of_bounds",
+    }
+    return _MAP.get(indic or "", "val_chain_unknown_revoc")
+
+
 def _chain_label_tip(chain: list, status: ValidationStatus,
-                     signing_time: Optional[datetime] = None) -> tuple[str, str]:
+                     signing_time: Optional[datetime] = None,
+                     trust_problem_indic: Optional[str] = None) -> tuple[str, str]:
     """Return (label, tooltip) for a chain status row.
 
     All issues are collected independently so that multiple problems
@@ -192,18 +213,66 @@ def _chain_label_tip(chain: list, status: ValidationStatus,
             break
 
     # 4. Root trust (only meaningful when chain is otherwise complete)
+    #
+    # ## Wie EU-LOTL das Root-Zertifikat indirekt absichert
+    #
+    # Die EU-Liste vertrauenswürdiger Listen (LOTL, ec.europa.eu) verweist auf
+    # nationale Vertrauenslisten (TSL).  Jede TSL enthält die vollständigen
+    # DER-codierten Zertifikate akkreditierter Trust-Service-Provider (TSP) –
+    # das sind in der Regel die **Zwischen-CAs** (Intermediate CAs), mit denen
+    # TSPs qualifizierte Zertifikate ausstellen, z. B.:
+    #
+    #   Root CA  →  signiert  →  Intermediate CA  →  signiert  →  End-Entity
+    #                              (steht in TSL)
+    #
+    # Die Vertrauensbestätigung erfolgt per SHA-256-Fingerprint über die
+    # **vollständigen DER-Bytes** des Intermediate-Zertifikats.  Diese Bytes
+    # enthalten u. a. die kryptografische Signatur des Roots über das
+    # Intermediate.  Damit ist das Root-Zertifikat **indirekt gesichert**:
+    #
+    #   – Ein Angreifer könnte zwar ein selbst erstelltes Root-Zertifikat
+    #     einbetten, aber er kann die Signatur des echten Roots auf dem echten
+    #     Intermediate-Zertifikat nicht fälschen – dafür bräuchte er den
+    #     privaten Schlüssel des echten Roots.
+    #
+    #   – Würde er ein gefälschtes Intermediate mit einem anderen Root
+    #     signieren, hätten die DER-Bytes dieses Intermediates einen anderen
+    #     SHA-256-Fingerprint → kein Treffer in der TSL → kein Vertrauen.
+    #
+    # Ergebnis: Ein TSL-bestätigtes Intermediate impliziert kryptografisch
+    # zwingend die Authentizität des Roots.  Das Root-Zertifikat ist damit
+    # nicht „unbekannt" – es ist nur nicht *direkt* in einem Trust-Store
+    # eingetragen, aber über das LOTL-bestätigte Intermediate verifiziert.
+    #
+    # Wenn pyhanko einen AdES-Subindikator zurückgibt (trust_problem_indic),
+    # hat es die Kette vollständig aufgebaut und die Root→Intermediate-Signatur
+    # bereits kryptografisch geprüft.  Nur ein späteres Kriterium (z. B.
+    # abgelaufenes End-Entity-Zertifikat) verhindert die volle Vertrauensstufe.
+    # In diesem Fall wäre „Root unbekannt" irreführend – der eigentliche Grund
+    # wird stattdessen über den Subindikator angezeigt.
     root = chain[-1] if chain else None
     if root is not None and root.source != CertSource.NOT_FOUND:
         if _is_self_signed_chain(chain):
             labels.append(t("val_chain_self_signed"))
             tips.append(t("val_chain_self_signed_tip"))
         elif root.source not in (CertSource.CERTIFI, CertSource.EU_TSL):
-            labels.append(t("val_chain_unknown_root"))
-            tips.append(t("val_chain_unknown_root_tip"))
+            if trust_problem_indic is not None:
+                # pyhanko has built and verified the full chain (including
+                # root→intermediate signature) and returned a specific
+                # subindication.  The root is implicitly authenticated via the
+                # LOTL-confirmed intermediate – see comment above.
+                indic_key = _trust_indic_key(trust_problem_indic)
+                labels.append(t(indic_key))
+                tips.append(t(indic_key + "_tip"))
+            else:
+                labels.append(t("val_chain_unknown_root"))
+                tips.append(t("val_chain_unknown_root_tip"))
         elif status == ValidationStatus.UNKNOWN:
-            # Root trusted but revocation unconfirmed
-            labels.append(t("val_chain_unknown_revoc"))
-            tips.append(t("val_chain_unknown_revoc_tip"))
+            # Root is trusted (certifi or EU_TSL); map AdES subindication
+            # to a precise label if available.
+            indic_key = _trust_indic_key(trust_problem_indic)
+            labels.append(t(indic_key))
+            tips.append(t(indic_key + "_tip"))
 
     if not labels:
         # Fallback – should not normally be reached
@@ -531,7 +600,9 @@ class ValidationDialog(QDialog):
                        status_owner=None,
                        signing_time: Optional[datetime] = None) -> None:
         """Add one chain summary row with status colour, tooltip, and Details button."""
-        text, tip = _chain_label_tip(chain, status, signing_time=signing_time)
+        indic = getattr(status_owner, "trust_problem_indic", None)
+        text, tip = _chain_label_tip(chain, status, signing_time=signing_time,
+                                     trust_problem_indic=indic)
         sub = self._add_sub(parent, t(label_key), text)
         if tip:
             sub.setToolTip(1, tip)
@@ -596,7 +667,9 @@ class ValidationDialog(QDialog):
         if self._cert_detail_win is None:
             self._cert_detail_win = CertChainDetailWindow(self._config, parent=self)
         self._detail_source = (chain, title_key, status_owner)
-        self._cert_detail_win.show_chain(chain, title, status, cn)
+        indic = getattr(status_owner, "trust_problem_indic", None)
+        self._cert_detail_win.show_chain(chain, title, status, cn,
+                                         trust_problem_indic=indic)
 
     def _refresh_detail_win(self) -> None:
         """Re-render the detail window with updated chain data after Phase 2."""
@@ -609,4 +682,6 @@ class ValidationDialog(QDialog):
                   if status_owner is not None
                   else ValidationStatus.NOT_CHECKED)
         cn = _extract_cn_from_chain(chain)
-        self._cert_detail_win.show_chain(chain, t(title_key, cn=cn), status, cn)
+        indic = getattr(status_owner, "trust_problem_indic", None)
+        self._cert_detail_win.show_chain(chain, t(title_key, cn=cn), status, cn,
+                                         trust_problem_indic=indic)

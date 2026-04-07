@@ -328,7 +328,28 @@ def _validate_one(rev: RevisionInfo,
     # Using embedded certs avoids redundant HTTP downloads for certs that are
     # already present in the signature.
     #
-    # SECURITY: embedding a cert in the CMS structure does NOT grant trust.
+    # ## Trust model: EU-LOTL bestätigt Intermediate, Root ist indirekt gesichert
+    #
+    # Die nationalen TSLs (erreichbar über die EU-LOTL) enthalten die
+    # vollständigen DER-Bytes der akkreditierten Dienstezertifikate der TSPs.
+    # Das sind typischerweise Intermediate-CAs, nicht Root-CAs – Roots sind
+    # technische Infrastruktur, Intermediates sind die akkreditierten Dienste.
+    #
+    # Der SHA-256-Fingerprint in der TSL wird über die kompletten DER-Bytes
+    # des Intermediate-Zertifikats berechnet.  Diese Bytes enthalten die
+    # kryptografische Signatur des Roots über das Intermediate.
+    # Deshalb ist das Root-Zertifikat **indirekt gesichert**:
+    #
+    #   • Ein gefälschtes Root kann die Signaturprüfung auf dem echten
+    #     Intermediate nicht bestehen (falscher öffentlicher Schlüssel).
+    #   • Ein gefälschtes Intermediate (mit anderem Root signiert) hätte
+    #     andere DER-Bytes → anderen SHA-256-Fingerprint → kein TSL-Treffer.
+    #
+    # Damit impliziert ein TSL-bestätigtes Intermediate kryptografisch die
+    # Authentizität des zugehörigen Roots – auch wenn der Root selbst nicht
+    # direkt in der TSL oder in certifi eingetragen ist.
+    #
+    # SECURITY: Embedding a cert in the CMS structure does NOT grant trust.
     # A cert only becomes an extra_trust_root when LOTL explicitly confirms
     # its fingerprint in a nationally-published TSL.  An attacker who embeds
     # a self-signed cert gains nothing unless its fingerprint is in a TSL.
@@ -584,6 +605,16 @@ def _validate_one(rev: RevisionInfo,
         sig_info.chain_status = _worst(sig_info.chain_status, ValidationStatus.UNKNOWN)
         if sig_info.revocation_status == ValidationStatus.NOT_CHECKED:
             sig_info.revocation_status = ValidationStatus.UNKNOWN
+        # Capture the AdES subindication so the UI can show a precise reason.
+        # OUT_OF_BOUNDS_NO_POE, REVOKED_NO_POE, TRY_LATER etc. imply that
+        # pyhanko successfully built and verified the chain; only a subsequent
+        # check failed.  _chain_label_tip uses this to suppress "root unknown".
+        try:
+            indic = status.trust_problem_indic
+            if indic is not None:
+                sig_info.trust_problem_indic = type(indic).__name__ + "." + indic.name
+        except Exception:
+            pass
 
     if sig_info.crypto_status == ValidationStatus.NOT_CHECKED:
         sig_info.crypto_status = (ValidationStatus.VALID if status.valid

@@ -4,6 +4,7 @@ Qt dialogs for PDF QES Signer.
 
 Provides:
   - TokenInfoDialog       – displays token contents; lets user select a key label
+  - KeygenDialog          – generate a self-signed certificate (PKCS#12)
   - Pkcs11ConfigDialog    – configure PKCS#11 library path and key label
   - AppearanceConfigDialog – standalone dialog for signature appearance settings
   - ProfileSelectDialog   – choose and activate a profile
@@ -703,6 +704,424 @@ class PfxInfoDialog(QDialog):
         self.accept()
 
 
+# ── Self-signed certificate generation dialog ─────────────────────────────────
+
+class KeygenDialog(QDialog):
+    """Dialog zum Erzeugen eines selbstsignierten Zertifikats (PKCS#12).
+
+    Erzeugt mit der ``cryptography``-Bibliothek einen privaten Schlüssel sowie
+    ein selbstsigniertes X.509-Zertifikat und schreibt beides als PKCS#12-Datei
+    (.p12) auf die Festplatte.
+
+    Das Zertifikat enthält:
+      - Basic Constraints: CA=False (kein CA-Zertifikat)
+      - Key Usage: digitalSignature + nonRepudiation (critical)
+      - Extended Key Usage: emailProtection
+      - Subject Key Identifier
+      - Subject Alternative Name: Email (wenn angegeben)
+
+    **Einschränkung selbstsignierter Zertifikate:** Das Zertifikat ist in keinem
+    öffentlichen Trust Store (certifi, EU-TSL) enthalten. Signaturen werden
+    deshalb nur innerhalb der eigenen Organisation als vertrauenswürdig erkannt,
+    wenn das Zertifikat manuell im Vertrauensspeicher eingetragen wird.
+    PAdES-LTA (Langzeitarchivierung) ist ohne OCSP-Dienst nicht möglich.
+
+    Signal:
+        pfx_generated(str): Pfad der erzeugten .p12-Datei nach erfolgreicher
+                            Erzeugung.
+    """
+
+    pfx_generated = pyqtSignal(str)
+
+    # Verfügbare Schlüsselkonfigurationen: (Anzeige, Typ, Parameter, Hash)
+    # "Typ" ist "ec" oder "rsa"; "Parameter" ist Kurvenname für EC, Bitlänge für RSA.
+    # Der Hash wird automatisch auf den Schlüsseltyp abgestimmt:
+    #   P-256 / RSA → SHA-256, P-384 → SHA-384, P-521 → SHA-512
+    _KEY_CHOICES: list[tuple[str, str, object, str]] = [
+        ("EC P-256  (256 Bit, SHA-256)",      "ec",  "P-256", "SHA-256"),
+        ("EC P-384  (384 Bit, SHA-384)",      "ec",  "P-384", "SHA-384"),
+        ("EC P-521  (521 Bit, SHA-512)  ★",  "ec",  "P-521", "SHA-512"),
+        ("RSA 3072  (SHA-256)",               "rsa", 3072,    "SHA-256"),
+        ("RSA 4096  (SHA-256)",               "rsa", 4096,    "SHA-256"),
+    ]
+
+    _VALIDITY_YEARS = [1, 2, 3, 5, 10]
+    # Voreinstellung: EC P-521 (Index 2), 3 Jahre (Index 2 in _VALIDITY_YEARS)
+    _DEFAULT_KEY_IDX      = 2
+    _DEFAULT_VALIDITY_IDX = 2
+
+    def __init__(self, parent=None, save_dir: str = "") -> None:
+        super().__init__(parent)
+        self._save_dir = save_dir or str(Path.home())
+        self.setWindowTitle(t("keygen_title"))
+        self.setMinimumWidth(540)
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        lay = QVBoxLayout(self)
+        lay.setSpacing(10)
+
+        # ── Schlüssel-Parameter ───────────────────────────────────────────
+        key_box = QGroupBox(t("keygen_section_key"))
+        key_form = QFormLayout(key_box)
+        key_form.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
+        self._key_combo = QComboBox()
+        for label, *_ in self._KEY_CHOICES:
+            self._key_combo.addItem(label)
+        self._key_combo.setCurrentIndex(self._DEFAULT_KEY_IDX)
+        self._key_combo.setToolTip(t("keygen_keytype_tip"))
+        key_form.addRow(t("keygen_keytype_label"), self._key_combo)
+
+        self._validity_combo = QComboBox()
+        for y in self._VALIDITY_YEARS:
+            self._validity_combo.addItem(t("keygen_validity_years", n=y), y)
+        self._validity_combo.setCurrentIndex(self._DEFAULT_VALIDITY_IDX)
+        self._validity_combo.setToolTip(t("keygen_validity_tip"))
+        key_form.addRow(t("keygen_validity_label"), self._validity_combo)
+
+        # S/MIME-Verschlüsselung
+        self._smime_enc_chk = QCheckBox(t("keygen_smime_enc_label"))
+        self._smime_enc_chk.setToolTip(t("keygen_smime_enc_tip"))
+        key_form.addRow("", self._smime_enc_chk)
+
+        # Info-Hinweis zu den fest gesetzten Zertifikatsattributen
+        key_usage_lbl = QLabel(t("keygen_fixed_attrs"))
+        key_usage_lbl.setStyleSheet("color: gray; font-size: 10px;")
+        key_usage_lbl.setWordWrap(True)
+        key_usage_lbl.setToolTip(t("keygen_fixed_attrs_tip"))
+        key_form.addRow("", key_usage_lbl)
+
+        lay.addWidget(key_box)
+
+        # ── Zertifikatsinhaber ────────────────────────────────────────────
+        subject_box = QGroupBox(t("keygen_section_subject"))
+        subj_form = QFormLayout(subject_box)
+        subj_form.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
+        self._cn_edit = QLineEdit()
+        self._cn_edit.setPlaceholderText("Max Mustermann")
+        self._cn_edit.setToolTip(t("keygen_cn_tip"))
+        subj_form.addRow(t("keygen_cn_label"), self._cn_edit)
+
+        self._org_edit = QLineEdit()
+        self._org_edit.setPlaceholderText("Musterfirma GmbH")
+        self._org_edit.setToolTip(t("keygen_org_tip"))
+        subj_form.addRow(t("keygen_org_label"), self._org_edit)
+
+        country_widget = QWidget()
+        country_lay = QHBoxLayout(country_widget)
+        country_lay.setContentsMargins(0, 0, 0, 0)
+        self._country_edit = QLineEdit()
+        self._country_edit.setPlaceholderText("DE")
+        self._country_edit.setMaxLength(2)
+        self._country_edit.setFixedWidth(48)
+        self._country_edit.setToolTip(t("keygen_country_tip"))
+        self._country_lbl = QLabel("")
+        self._country_lbl.setStyleSheet("color: gray; font-size: 10px;")
+        self._country_edit.textChanged.connect(self._on_country_changed)
+        country_lay.addWidget(self._country_edit)
+        country_lay.addWidget(self._country_lbl)
+        country_lay.addStretch()
+        subj_form.addRow(t("keygen_country_label"), country_widget)
+
+        self._email_edit = QLineEdit()
+        self._email_edit.setPlaceholderText("max@example.de")
+        self._email_edit.setToolTip(t("keygen_email_tip"))
+        subj_form.addRow(t("keygen_email_label"), self._email_edit)
+
+        lay.addWidget(subject_box)
+
+        # ── Datei & Passwortschutz ────────────────────────────────────────
+        file_box = QGroupBox(t("keygen_section_file"))
+        file_form = QFormLayout(file_box)
+        file_form.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
+        path_row = QHBoxLayout()
+        self._path_edit = QLineEdit()
+        self._path_edit.setPlaceholderText("mein-schluessel.p12")
+        self._path_edit.setToolTip(t("keygen_path_tip"))
+        browse_btn = QPushButton(t("cfg_lib_browse"))
+        browse_btn.setFixedWidth(36)
+        browse_btn.clicked.connect(self._browse_path)
+        path_row.addWidget(self._path_edit)
+        path_row.addWidget(browse_btn)
+        path_widget = QWidget()
+        path_widget.setLayout(path_row)
+        file_form.addRow(t("keygen_path_label"), path_widget)
+
+        self._pw_edit = QLineEdit()
+        self._pw_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self._pw_edit.setPlaceholderText(t("keygen_password_placeholder"))
+        self._pw_edit.setToolTip(t("keygen_password_tip"))
+        file_form.addRow(t("keygen_password_label"), self._pw_edit)
+
+        self._pw2_edit = QLineEdit()
+        self._pw2_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self._pw2_edit.setPlaceholderText(t("keygen_password2_placeholder"))
+        self._pw2_edit.setToolTip(t("keygen_password2_tip"))
+        file_form.addRow(t("keygen_password2_label"), self._pw2_edit)
+
+        lay.addWidget(file_box)
+
+        # ── Buttons ───────────────────────────────────────────────────────
+        btn_row = QHBoxLayout()
+        self._btn_generate = QPushButton(t("keygen_btn_generate"))
+        self._btn_generate.setDefault(True)
+        self._btn_generate.clicked.connect(self._generate)
+        btn_cancel = QPushButton(t("btn_cancel"))
+        btn_cancel.clicked.connect(self.reject)
+        btn_row.addStretch()
+        btn_row.addWidget(self._btn_generate)
+        btn_row.addWidget(btn_cancel)
+        lay.addLayout(btn_row)
+
+    def _on_country_changed(self, text: str) -> None:
+        """Zeigt Ländername in Echtzeit neben dem Code-Feld an."""
+        from .iso3166 import COUNTRIES
+        code = text.strip().upper()
+        if not code:
+            self._country_lbl.setText("")
+        elif code in COUNTRIES:
+            self._country_lbl.setText(COUNTRIES[code])
+            self._country_lbl.setStyleSheet("color: gray; font-size: 10px;")
+        else:
+            self._country_lbl.setText(t("keygen_country_invalid"))
+            self._country_lbl.setStyleSheet("color: red; font-size: 10px;")
+        # Code in Großbuchstaben umwandeln ohne Cursor-Sprung
+        if text != text.upper():
+            self._country_edit.blockSignals(True)
+            self._country_edit.setText(text.upper())
+            self._country_edit.blockSignals(False)
+
+    @staticmethod
+    def _default_ext() -> str:
+        """Plattformabhängige Standard-Dateiendung: .pfx auf Windows, .p12 sonst."""
+        return ".pfx" if sys.platform == "win32" else ".p12"
+
+    def _browse_path(self) -> None:
+        ext = self._default_ext()
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            t("keygen_save_title"),
+            str(Path(self._save_dir) / f"mein-schluessel{ext}"),
+            t("keygen_save_filter"),
+        )
+        if path:
+            if not path.lower().endswith((".p12", ".pfx")):
+                path += ext
+            self._path_edit.setText(path)
+
+    def _generate(self) -> None:
+        """Validiert Eingaben und ruft _do_generate auf."""
+        cn = self._cn_edit.text().strip()
+        if not cn:
+            QMessageBox.warning(self, t("keygen_error_title"),
+                                t("keygen_error_cn_empty"))
+            self._cn_edit.setFocus()
+            return
+
+        path_str = self._path_edit.text().strip()
+        if not path_str:
+            QMessageBox.warning(self, t("keygen_error_title"),
+                                t("keygen_error_path_empty"))
+            self._path_edit.setFocus()
+            return
+
+        pw1 = self._pw_edit.text()
+        pw2 = self._pw2_edit.text()
+        if pw1 != pw2:
+            QMessageBox.warning(self, t("keygen_error_title"),
+                                t("keygen_error_pw_mismatch"))
+            self._pw_edit.setFocus()
+            return
+
+        country = self._country_edit.text().strip().upper()
+        if country and len(country) != 2:
+            QMessageBox.warning(self, t("keygen_error_title"),
+                                t("keygen_error_country_len"))
+            self._country_edit.setFocus()
+            return
+
+        path = Path(path_str)
+        if not path.suffix:
+            path = path.with_suffix(self._default_ext())
+
+        key_idx = self._key_combo.currentIndex()
+        _, key_type, key_param, hash_name = self._KEY_CHOICES[key_idx]
+        validity_years: int = self._validity_combo.currentData()
+        email     = self._email_edit.text().strip()
+        org       = self._org_edit.text().strip()
+        smime_enc = self._smime_enc_chk.isChecked()
+
+        try:
+            KeygenDialog._do_generate(
+                path=path,
+                key_type=key_type,
+                key_param=key_param,
+                hash_name=hash_name,
+                validity_years=validity_years,
+                cn=cn,
+                org=org,
+                country=country,
+                email=email,
+                smime_enc=smime_enc,
+                password=pw1.encode("utf-8") if pw1 else None,
+            )
+        except Exception as exc:
+            traceback.print_exc(file=sys.stderr)
+            QMessageBox.critical(self, t("keygen_error_title"),
+                                 t("keygen_error_failed", error=str(exc)))
+            return
+
+        self.pfx_generated.emit(str(path))
+        QMessageBox.information(self, t("keygen_success_title"),
+                                t("keygen_success_msg", path=str(path)))
+        self.accept()
+
+    @staticmethod
+    def _do_generate(*, path: Path, key_type: str, key_param,
+                     hash_name: str, validity_years: int,
+                     cn: str, org: str, country: str, email: str,
+                     smime_enc: bool = False,
+                     password: bytes | None) -> None:
+        """Erzeugt Schlüssel + selbstsigniertes Zertifikat und schreibt PKCS#12.
+
+        Verwendet ausschließlich die ``cryptography``-Bibliothek (kein Subprocess,
+        kein openssl-Aufruf). Dadurch ist die Funktion auf allen Plattformen
+        portabel und benötigt keine externen Werkzeuge.
+
+        Zertifikatsinhalt:
+          - Subject = Issuer (selbstsigniert)
+          - Basic Constraints: CA=False, critical
+          - Key Usage: digitalSignature + nonRepudiation, critical
+            + keyAgreement (EC) / keyEncipherment (RSA) wenn smime_enc=True
+          - Extended Key Usage: emailProtection (für PDF-Signaturen geeignet)
+          - Subject Key Identifier
+          - Subject Alternative Name: rfc822Name (wenn email angegeben)
+          - Gültigkeit: validity_years Jahre (mit Schaltjahr-Korrektur)
+          - Seriennummer: kryptografisch zufällig, 127 Bit positiv
+
+        Der Passwortschutz nutzt die beste verfügbare Verschlüsselung
+        (serialization.BestAvailableEncryption), bei fehlendem Passwort
+        NoEncryption.
+        """
+        import datetime
+        import os as _os
+        from cryptography.hazmat.primitives.asymmetric import ec as _ec, rsa as _rsa
+        from cryptography.hazmat.primitives import hashes as _hashes, serialization
+        from cryptography.hazmat.primitives.serialization import pkcs12
+        from cryptography import x509
+        from cryptography.x509.oid import NameOID, ExtendedKeyUsageOID
+
+        # ── Schlüsselerzeugung ─────────────────────────────────────────────
+        if key_type == "ec":
+            _curves = {
+                "P-256": _ec.SECP256R1(),
+                "P-384": _ec.SECP384R1(),
+                "P-521": _ec.SECP521R1(),
+            }
+            private_key = _ec.generate_private_key(_curves[key_param])
+        else:  # rsa
+            private_key = _rsa.generate_private_key(
+                public_exponent=65537,
+                key_size=int(key_param),
+            )
+
+        # ── Hash-Algorithmus ───────────────────────────────────────────────
+        _hash_map = {
+            "SHA-256": _hashes.SHA256(),
+            "SHA-384": _hashes.SHA384(),
+            "SHA-512": _hashes.SHA512(),
+        }
+        hash_alg = _hash_map[hash_name]
+
+        # ── Subject-DN ────────────────────────────────────────────────────
+        name_attrs = [x509.NameAttribute(NameOID.COMMON_NAME, cn)]
+        if org:
+            name_attrs.append(x509.NameAttribute(NameOID.ORGANIZATION_NAME, org))
+        if country:
+            name_attrs.append(x509.NameAttribute(NameOID.COUNTRY_NAME, country))
+        subject = x509.Name(name_attrs)
+
+        # ── Gültigkeitszeitraum ───────────────────────────────────────────
+        # Schaltjahr-Korrektur: +1 Tag pro 4 Jahre, damit Gültigkeitsende
+        # nicht zufällig einen Tag zu früh liegt.
+        now = datetime.datetime.now(datetime.timezone.utc)
+        not_valid_after = now + datetime.timedelta(
+            days=365 * validity_years + validity_years // 4)
+
+        # ── Seriennummer: kryptografisch zufällig ─────────────────────────
+        serial = int.from_bytes(_os.urandom(16), "big") >> 1  # positiv, 127 Bit
+
+        # ── Zertifikat aufbauen ───────────────────────────────────────────
+        builder = (
+            x509.CertificateBuilder()
+            .subject_name(subject)
+            .issuer_name(subject)          # selbstsigniert: Aussteller = Inhaber
+            .public_key(private_key.public_key())
+            .serial_number(serial)
+            .not_valid_before(now)
+            .not_valid_after(not_valid_after)
+            # Basic Constraints: kein CA-Zertifikat
+            .add_extension(
+                x509.BasicConstraints(ca=False, path_length=None), critical=True)
+            # Key Usage: für qualifizierte elektronische Signaturen.
+            # keyAgreement (EC) / keyEncipherment (RSA) nur wenn S/MIME-
+            # Verschlüsselung gewünscht – dasselbe Schlüsselpaar wie GnuPG.
+            .add_extension(
+                x509.KeyUsage(
+                    digital_signature=True,
+                    content_commitment=True,              # nonRepudiation (eIDAS)
+                    key_encipherment=smime_enc and key_type == "rsa",
+                    data_encipherment=False,
+                    key_agreement=smime_enc and key_type == "ec",
+                    key_cert_sign=False,
+                    crl_sign=False,
+                    encipher_only=False,
+                    decipher_only=False,
+                ),
+                critical=True,
+            )
+            # Extended Key Usage: emailProtection deckt PDF-Signaturen ab
+            .add_extension(
+                x509.ExtendedKeyUsage([ExtendedKeyUsageOID.EMAIL_PROTECTION]),
+                critical=False,
+            )
+            .add_extension(
+                x509.SubjectKeyIdentifier.from_public_key(private_key.public_key()),
+                critical=False,
+            )
+        )
+
+        if email:
+            builder = builder.add_extension(
+                x509.SubjectAlternativeName([x509.RFC822Name(email)]),
+                critical=False,
+            )
+
+        cert = builder.sign(private_key, hash_alg)
+
+        # ── PKCS#12-Export ────────────────────────────────────────────────
+        # Der friendly_name (Label) wird auf den CN gesetzt, damit die Datei
+        # in PKCS#11-Werkzeugen und Zertifikatsbetrachtern sinnvoll angezeigt wird.
+        enc = (serialization.BestAvailableEncryption(password)
+               if password else serialization.NoEncryption())
+        p12_data = pkcs12.serialize_key_and_certificates(
+            name=cn.encode("utf-8"),
+            key=private_key,
+            cert=cert,
+            cas=None,
+            encryption_algorithm=enc,
+        )
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(p12_data)
+
+
 # ── PKCS#11 configuration dialog ──────────────────────────────────────────────
 
 class Pkcs11ConfigDialog(QDialog):
@@ -836,6 +1255,10 @@ class Pkcs11ConfigDialog(QDialog):
         self._pfx_show_cert_btn = QPushButton(t("cfg_pfx_show_cert_btn"))
         self._pfx_show_cert_btn.clicked.connect(self._show_pfx_cert)
         pfx_action_row.addWidget(self._pfx_show_cert_btn)
+        self._pfx_keygen_btn = QPushButton(t("cfg_pfx_keygen_btn"))
+        self._pfx_keygen_btn.setToolTip(t("cfg_pfx_keygen_tip"))
+        self._pfx_keygen_btn.clicked.connect(self._open_keygen)
+        pfx_action_row.addWidget(self._pfx_keygen_btn)
         pfx_action_row.addStretch()
         stab_lay.addWidget(self._pfx_action_widget)
 
@@ -1032,6 +1455,19 @@ class Pkcs11ConfigDialog(QDialog):
         dlg = PfxInfoDialog(self, info=self._pfx_info)
         dlg.cn_selected.connect(self.cert_cn_edit.setText)
         dlg.exec()
+
+    def _open_keygen(self) -> None:
+        """Öffnet KeygenDialog; übernimmt den erzeugten Pfad in das PFX-Feld."""
+        last_dir = self.config.get("paths", "last_open_dir")
+        dlg = KeygenDialog(self, save_dir=last_dir)
+        dlg.pfx_generated.connect(self._on_pfx_generated)
+        dlg.exec()
+
+    def _on_pfx_generated(self, path: str) -> None:
+        """Callback nach erfolgreicher Schlüsselerzeugung."""
+        self.pfx_edit.setText(path)
+        self._pfx_info = None       # Cache leeren – neue Datei
+        self._on_pfx_path_changed(path)
 
     def _save_and_close(self) -> None:
         mode = self._mode_combo.currentData() or "pfx"
@@ -2124,10 +2560,14 @@ class CertChainDetailWindow(QWidget):
 
         self._tree = QTreeWidget()
         self._tree.setColumnCount(2)
-        self._tree.header().hide()
+        self._tree.setHeaderLabels(["", ""])
+        self._tree.header().setStretchLastSection(True)
+        from PyQt6.QtWidgets import QHeaderView
+        self._tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        self._tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self._tree.header().sectionResized.connect(self._on_col_resized)
         self._tree.setAlternatingRowColors(True)
         self._tree.setSelectionMode(QTreeWidget.SelectionMode.NoSelection)
-        self._tree.header().setStretchLastSection(True)
         lay.addWidget(self._tree)
 
         bot = QHBoxLayout()
@@ -2143,7 +2583,8 @@ class CertChainDetailWindow(QWidget):
     # ── Public API ────────────────────────────────────────────────────────
 
     def show_chain(self, chain: list, title: str,
-                   overall_status, cn: str) -> None:
+                   overall_status, cn: str,
+                   trust_problem_indic: str = None) -> None:
         """Replace displayed chain and update the window title."""
         from .validation_result import ValidationStatus, CertSource
         self.setWindowTitle(title)
@@ -2153,11 +2594,12 @@ class CertChainDetailWindow(QWidget):
         for cert in chain:
             self._add_cert_item(cert, chain_len)
 
-        self._tree.resizeColumnToContents(0)
+        self._restore_col0_width()
         self._tree.expandAll()
 
         # Overall status line
-        label, color = self._status_label_color(overall_status, chain)
+        label, color = self._status_label_color(overall_status, chain,
+                                                trust_problem_indic)
         txt = f"{t('cert_win_label_overall')}:  {label}"
         self._overall_lbl.setText(txt)
         self._overall_lbl.setStyleSheet(
@@ -2200,6 +2642,10 @@ class CertChainDetailWindow(QWidget):
                       self._fmt_validity(cert))
         self._add_sub(top, t("cert_win_label_source"),
                       self._source_text(cert.source))
+        if cert.cert_fingerprint is not None:
+            fp = cert.cert_fingerprint.hex().upper()
+            fp_display = " ".join(fp[i:i+2] for i in range(0, len(fp), 2))
+            self._add_sub(top, t("cert_win_label_fingerprint"), fp_display)
         if cert.ocsp is not None:
             self._add_sub(top, t("cert_win_label_ocsp"),
                           self._ocsp_text(cert.ocsp))
@@ -2269,12 +2715,13 @@ class CertChainDetailWindow(QWidget):
         return label
 
     @staticmethod
-    def _status_label_color(status, chain) -> tuple[str, str]:
+    def _status_label_color(status, chain,
+                            trust_problem_indic: str = None) -> tuple[str, str]:
         from .validation_result import ValidationStatus, CertSource
+        from .validation_dialog import _trust_indic_key
         if status == ValidationStatus.VALID:
             return t("val_chain_valid"), "#1a7a1a"
         if status == ValidationStatus.INVALID:
-            # Determine reason
             if any(c.source == CertSource.NOT_FOUND for c in chain):
                 return t("val_chain_incomplete"), "#9a0000"
             ee = chain[0] if chain else None
@@ -2285,9 +2732,13 @@ class CertChainDetailWindow(QWidget):
             if len(chain) == 1 and chain[0].is_root:
                 return t("val_chain_self_signed"), "#8a6000"
             root = chain[-1] if chain else None
-            if root and root.source == CertSource.CERTIFI:
-                return t("val_chain_unknown_revoc"), "#8a6000"
-            return t("val_chain_unknown_root"), "#8a6000"
+            if root and root.source not in (CertSource.CERTIFI, CertSource.EU_TSL):
+                if trust_problem_indic is not None:
+                    key = _trust_indic_key(trust_problem_indic)
+                    return t(key), "#8a6000"
+                return t("val_chain_unknown_root"), "#8a6000"
+            key = _trust_indic_key(trust_problem_indic)
+            return t(key), "#8a6000"
         return t("val_chain_not_checked"), ""
 
     # ── Geometry persistence ──────────────────────────────────────────────
@@ -2298,11 +2749,26 @@ class CertChainDetailWindow(QWidget):
             y = int(self._config.get("cert_detail_window", "y"))
             w = int(self._config.get("cert_detail_window", "width"))
             h = int(self._config.get("cert_detail_window", "height"))
-            self.resize(max(300, w), max(200, h))
+            self.resize(max(700, w), max(200, h))
             if x >= 0 and y >= 0:
                 self.move(x, y)
         except Exception:
-            self.resize(520, 420)
+            self.resize(700, 420)
+
+    def _restore_col0_width(self) -> None:
+        try:
+            w = int(self._config.get("cert_detail_window", "col0_width"))
+            self._tree.setColumnWidth(0, max(80, w))
+        except Exception:
+            self._tree.resizeColumnToContents(0)
+
+    def _on_col_resized(self, logical_index: int, _old: int, new_size: int) -> None:
+        if logical_index == 0:
+            try:
+                self._config.set("cert_detail_window", "col0_width", str(new_size))
+                self._config.save()
+            except Exception:
+                pass
 
     def closeEvent(self, event) -> None:
         try:

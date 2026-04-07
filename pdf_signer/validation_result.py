@@ -165,6 +165,12 @@ class SignatureInfo:
     # For doc_timestamp entries this is always LTA by convention.
     pades_profile: PadesProfile = PadesProfile.B
 
+    # AdES subindication from pyhanko when trust validation failed (Phase 2).
+    # Stored as string (enum name) to avoid a hard dependency on pyhanko in
+    # display code.  Examples: "OUT_OF_BOUNDS_NO_POE", "TRY_LATER", "NO_POE",
+    # "REVOKED_NO_POE".  None when trusted or not yet checked.
+    trust_problem_indic: Optional[str] = None
+
 
 @dataclass
 class RevisionInfo:

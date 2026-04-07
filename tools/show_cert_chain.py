@@ -15,12 +15,19 @@ from pyhanko.pdf_utils.reader import PdfFileReader
 
 
 def _cert_summary(c) -> str:
+    import hashlib
     nb = c['tbs_certificate']['validity']['not_before'].native
     na = c['tbs_certificate']['validity']['not_after'].native
+    try:
+        fp_raw = hashlib.sha256(c.dump()).digest().hex().upper()
+        fp = " ".join(fp_raw[i:i+2] for i in range(0, len(fp_raw), 2))
+    except Exception:
+        fp = "(nicht berechenbar)"
     return (f"{c.subject.human_friendly}\n"
             f"      Aussteller : {c.issuer.human_friendly}\n"
             f"      Gültig     : {nb.strftime('%d.%m.%Y')} – "
-            f"{na.strftime('%d.%m.%Y')}")
+            f"{na.strftime('%d.%m.%Y')}\n"
+            f"      SHA-256    : {fp}")
 
 
 def show_cert_chain(pdf_path: str) -> None:

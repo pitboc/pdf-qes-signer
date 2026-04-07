@@ -217,6 +217,12 @@ TRANSLATIONS: dict[str, str] = {
     "cfg_pfx_browse_title":  "Choose P12/PFX file",
     "cfg_pfx_filter":        "P12/PFX Files (*.p12 *.pfx);;All Files (*)",
     "cfg_pfx_show_cert_btn": "Show Certificate",
+    "cfg_pfx_keygen_btn":   "Generate Key…",
+    "cfg_pfx_keygen_tip":   (
+        "Opens the dialog to generate a self-signed certificate.\n"
+        "The generated key will be saved as a P12/PFX file and\n"
+        "automatically inserted into this field."
+    ),
     "cfg_pfx_encrypted_yes": "Password protected",
     "cfg_pfx_encrypted_no":  "Not password protected",
     "cfg_pfx_no_file":        "No P12/PFX file selected.",
@@ -505,8 +511,21 @@ TRANSLATIONS: dict[str, str] = {
     "val_chain_incomplete_tip":     "The certificate chain is broken – an intermediate CA certificate is missing.",
     "val_chain_expired_tip":        "At least one certificate in the chain was outside its validity period at signing time.",
     "val_chain_revoked_tip":        "The signing certificate was revoked according to the embedded OCSP response.",
-    "val_chain_unknown_root_tip":   "The chain is complete but the root certificate is only embedded in the document and not found in a known trust store (certifi/Mozilla bundle).",
+    "val_chain_unknown_root_tip":   "The chain is complete but the root certificate was not found in the certifi/Mozilla bundle or the EU trust list (LOTL/TSL).",
     "val_chain_unknown_revoc_tip":  "The root certificate is trusted (certifi/Mozilla bundle) but the revocation status of the signing certificate has not been checked.",
+
+    # AdES subindication labels (shown instead of generic "Revocation unknown")
+    "val_chain_indic_out_of_bounds":            "Complete · Certificate expired, no proof of existence",
+    "val_chain_indic_out_of_bounds_tip":        "The signing certificate had expired by the time of online validation. Without an embedded OCSP response (PAdES-LT/LTA) it cannot be proven that the certificate was still valid at the time of signing.",
+    "val_chain_indic_revoked_no_poe":           "Complete · Revoked, no proof of existence",
+    "val_chain_indic_revoked_no_poe_tip":       "The certificate is revoked, but without a proof of existence (PAdES-LT/LTA) it cannot be determined whether the revocation occurred before or after the signature.",
+    "val_chain_indic_try_later":                "Complete · OCSP service unavailable",
+    "val_chain_indic_try_later_tip":            "The issuer's OCSP service was unreachable at validation time. A later check may succeed.",
+    "val_chain_indic_no_poe":                   "Complete · No proof of existence",
+    "val_chain_indic_no_poe_tip":               "A cryptographic proof of existence for the signing time is missing (e.g. an RFC-3161 timestamp).",
+    "val_chain_indic_crypto_no_poe":            "Complete · Cryptographic constraint, no proof of existence",
+    "val_chain_indic_crypto_no_poe_tip":        "An algorithm used no longer meets current requirements and there is no proof of existence confirming its use at signing time.",
+
     "val_chain_self_signed":        "Self-signed · no CA trust",
     "val_chain_self_signed_tip":    "The certificate is self-issued – there is no issuing certificate authority. The certificate is embedded in the document but is not present in any known trust store.",
 
@@ -521,6 +540,7 @@ TRANSLATIONS: dict[str, str] = {
     "cert_win_label_issuer":        "Issuer",
     "cert_win_label_valid":         "Valid",
     "cert_win_label_source":        "Source",
+    "cert_win_label_fingerprint":   "Fingerprint (SHA-256)",
     "cert_win_label_ocsp":          "OCSP",
     "cert_win_label_overall":       "Overall status",
     "cert_win_source_embedded":     "Embedded (PDF)",
@@ -535,4 +555,158 @@ TRANSLATIONS: dict[str, str] = {
     "cert_win_ocsp_unknown":        "unknown",
     "cert_win_ocsp_not_checked":    "not checked",
     "cert_win_close":               "Close",
+
+    # ── KeygenDialog – generate self-signed certificate ───────────────────────
+    "keygen_title":             "Generate Key & Certificate",
+    "keygen_section_key":       "Key Parameters",
+    "keygen_section_subject":   "Certificate Subject",
+    "keygen_section_file":      "Output File & Password Protection",
+
+    # Key parameters
+    "keygen_keytype_label": "Key type:",
+    "keygen_keytype_tip": (
+        "Cryptographic algorithm and key size.\n\n"
+        "EC P-521 ★ (default)\n"
+        "  Highest EC security level (≈ 260 bits). From 2027 the BSI minimum\n"
+        "  is P-384 – P-521 permanently exceeds it. Software signing with\n"
+        "  P-521 is significantly faster than any smart card.\n\n"
+        "EC P-384\n"
+        "  BSI minimum standard from 2027 (TR-02102-1). Good choice when\n"
+        "  compatibility with slightly older software is important.\n\n"
+        "EC P-256\n"
+        "  Fastest option, but BSI-compliant only until end of 2026 for new\n"
+        "  signatures. Not sufficient from 2027 onward (BSI TR-02102-1).\n\n"
+        "RSA 3072 / 4096\n"
+        "  Classic algorithm; maximum compatibility with legacy software.\n"
+        "  BSI minimum: 3000 bits. Generation takes a few seconds longer than EC."
+    ),
+    "keygen_smime_enc_label": "Also use for S/MIME encryption",
+    "keygen_smime_enc_tip": (
+        "Sets additional Key Usage bits for S/MIME e-mail encryption:\n"
+        "  EC key:  keyAgreement (ECDH key exchange)\n"
+        "  RSA key: keyEncipherment (direct key transport)\n\n"
+        "This allows the same key pair to be used for both signing and\n"
+        "encryption – analogous to GnuPG/OpenPGP.\n\n"
+        "Not needed for PDF signatures only."
+    ),
+    "keygen_fixed_attrs": (
+        "Fixed: Key Usage = digitalSignature + nonRepudiation  ·  "
+        "Extended Key Usage = emailProtection  ·  Basic Constraints: CA=No"
+    ),
+    "keygen_fixed_attrs_tip": (
+        "These certificate attributes are always set:\n\n"
+        "Key Usage:\n"
+        "  digitalSignature – signing documents and data\n"
+        "  nonRepudiation   – non-repudiation (eIDAS: binding commitment)\n"
+        "  + keyAgreement / keyEncipherment when S/MIME encryption is enabled\n\n"
+        "Extended Key Usage:\n"
+        "  emailProtection  – S/MIME and PDF signatures\n\n"
+        "Basic Constraints: CA=No\n"
+        "  This certificate may not issue other certificates."
+    ),
+    "keygen_validity_label":  "Validity:",
+    "keygen_validity_years":  "{n} year(s)",
+    "keygen_validity_tip": (
+        "How long the certificate will be valid.\n\n"
+        "Note: Self-signed certificates cannot be used for new signatures\n"
+        "after expiry. Existing signatures remain cryptographically valid\n"
+        "as long as they were created within the validity period.\n\n"
+        "Recommendations:\n"
+        "• 3 years for general use\n"
+        "• 10 years for archive documents with long statutory retention\n\n"
+        "For qualified electronic signatures (QES) under eIDAS, a certificate\n"
+        "from an accredited trust service provider (TSP) is required."
+    ),
+
+    # Subject fields
+    "keygen_cn_label": "Name (CN):",
+    "keygen_cn_tip": (
+        "Common Name (CN) – the primary name in the certificate.\n\n"
+        "This name appears in PDF viewers as the signer and in the\n"
+        "signature field appearance (when 'Name from certificate' is selected).\n\n"
+        "Examples:\n"
+        "  Max Mustermann\n"
+        "  Dr. Anna Example\n"
+        "  Example Corp – Management\n\n"
+        "Required field – cannot be left empty."
+    ),
+    "keygen_org_label": "Organization (O):",
+    "keygen_org_tip": (
+        "Organization (O) – optional company or authority name.\n\n"
+        "Shown in the certificate details view and helps associate\n"
+        "the certificate with an organization.\n\n"
+        "Examples:\n"
+        "  Example Corp Ltd.\n"
+        "  Federal Office for Examples\n\n"
+        "Can be left empty."
+    ),
+    "keygen_country_label":   "Country (C):",
+    "keygen_country_invalid": "invalid code",
+    "keygen_country_tip": (
+        "Country code (C) – two-letter ISO 3166-1 alpha-2 code.\n\n"
+        "Examples: DE, AT, CH, FR, US\n\n"
+        "The country code is a required field in many PKI infrastructures\n"
+        "and certificate validators. Leaving it empty is possible but may\n"
+        "cause compatibility issues with some software.\n\n"
+        "Upper/lower case is automatically converted to uppercase."
+    ),
+    "keygen_email_label": "E-Mail:",
+    "keygen_email_tip": (
+        "E-mail address as Subject Alternative Name (SAN, rfc822Name).\n\n"
+        "The e-mail is not placed in the Subject DN but as a SAN extension,\n"
+        "which follows the current standard.\n\n"
+        "Relevance:\n"
+        "• Makes it easier to associate the certificate with a person\n"
+        "• Required by some e-mail clients (S/MIME)\n"
+        "• Optional for pure PDF signatures\n\n"
+        "Can be left empty."
+    ),
+
+    # File & password
+    "keygen_path_label": "Save path:",
+    "keygen_path_tip": (
+        "File path for the PKCS#12 file (.p12 or .pfx).\n\n"
+        "PKCS#12 is a container format that bundles the private key and\n"
+        "certificate in a single file. This file is then selected in the\n"
+        "signing configuration as the 'P12/PFX file'.\n\n"
+        "Recommendation: Store the file in a secure, backed-up location.\n"
+        "The private key is the core element of your signature.\n"
+        "Loss means no new signatures can be created.\n"
+        "Copy the file to a backup medium."
+    ),
+    "keygen_password_label":       "Password:",
+    "keygen_password_placeholder": "Password to protect the private key",
+    "keygen_password_tip": (
+        "Password to protect the private key in the P12 file.\n\n"
+        "The private key is encrypted with AES-256 when a password is given.\n\n"
+        "Recommendation: Always set a strong password!\n"
+        "Anyone who obtains the P12 file without password protection can\n"
+        "immediately create signatures in your name.\n\n"
+        "Without password (leave blank): file is unencrypted.\n"
+        "Only advisable if the file resides on an encrypted drive."
+    ),
+    "keygen_password2_label":       "Password (repeat):",
+    "keygen_password2_placeholder": "Repeat password to confirm",
+    "keygen_password2_tip": (
+        "Repeat the password to confirm.\n\n"
+        "Must match the password in the 'Password' field."
+    ),
+
+    # Buttons & messages
+    "keygen_btn_generate":      "Generate",
+    "keygen_save_title":        "Save key file as…",
+    "keygen_save_filter":       "PKCS#12 Files (*.p12 *.pfx);;All Files (*)",
+    "keygen_error_title":       "Input Error",
+    "keygen_error_cn_empty":    "Please enter a name (CN).",
+    "keygen_error_path_empty":  "Please specify a save path.",
+    "keygen_error_pw_mismatch": "The passwords do not match.",
+    "keygen_error_country_len": "The country code must be exactly 2 letters (e.g. DE).",
+    "keygen_error_failed":      "Key generation failed:\n\n{error}",
+    "keygen_success_title":     "Key generated ✓",
+    "keygen_success_msg": (
+        "Key and self-signed certificate were generated successfully.\n\n"
+        "File: {path}\n\n"
+        "The path has been automatically applied to the configuration.\n"
+        "Click 'Save' to store the settings."
+    ),
 }

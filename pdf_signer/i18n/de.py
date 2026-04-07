@@ -218,6 +218,12 @@ TRANSLATIONS: dict[str, str] = {
     "cfg_pfx_browse_title":  "P12/PFX-Datei wählen",
     "cfg_pfx_filter":        "P12/PFX-Dateien (*.p12 *.pfx);;Alle Dateien (*)",
     "cfg_pfx_show_cert_btn": "Zertifikat anzeigen",
+    "cfg_pfx_keygen_btn":   "Schlüssel erzeugen…",
+    "cfg_pfx_keygen_tip":   (
+        "Öffnet den Dialog zur Erzeugung eines selbstsignierten Zertifikats.\n"
+        "Der erzeugte Schlüssel wird als P12/PFX-Datei gespeichert und\n"
+        "automatisch in dieses Feld übernommen."
+    ),
     "cfg_pfx_encrypted_yes": "Passwortgeschützt",
     "cfg_pfx_encrypted_no":  "Nicht passwortgeschützt",
     "cfg_pfx_no_file":        "Keine P12/PFX-Datei ausgewählt.",
@@ -507,8 +513,21 @@ TRANSLATIONS: dict[str, str] = {
     "val_chain_incomplete_tip":     "Die Zertifikatskette bricht ab – ein Intermediate-Zertifikat fehlt.",
     "val_chain_expired_tip":        "Mindestens ein Zertifikat der Kette war zum Signierzeitpunkt außerhalb seiner Gültigkeitsdauer.",
     "val_chain_revoked_tip":        "Laut eingebetteter OCSP-Antwort wurde das Signaturzertifikat gesperrt.",
-    "val_chain_unknown_root_tip":   "Die Kette ist vollständig, aber das Root-Zertifikat ist nur im Dokument eingebettet und nicht in einem bekannten Vertrauensspeicher (certifi/Mozilla-Bundle).",
+    "val_chain_unknown_root_tip":   "Die Kette ist vollständig, aber das Root-Zertifikat wurde weder im certifi/Mozilla-Bundle noch in der EU-Vertrauensliste (LOTL/TSL) gefunden.",
     "val_chain_unknown_revoc_tip":  "Das Root-Zertifikat ist vertrauenswürdig (certifi/Mozilla-Bundle), aber der Widerrufsstatus des Signaturzertifikats wurde nicht geprüft.",
+
+    # AdES subindication labels (shown instead of generic "Widerruf unbekannt")
+    "val_chain_indic_out_of_bounds":            "Vollständig · Zertifikat abgelaufen, kein Zeitnachweis",
+    "val_chain_indic_out_of_bounds_tip":        "Das Signaturzertifikat war zum Online-Prüfzeitpunkt abgelaufen. Ohne eingebettete OCSP-Antwort (PAdES-LT/LTA) kann nicht nachgewiesen werden, dass es zum Signierdatum noch gültig war.",
+    "val_chain_indic_revoked_no_poe":           "Vollständig · Widerruf ohne Zeitnachweis",
+    "val_chain_indic_revoked_no_poe_tip":       "Das Zertifikat ist widerrufen, aber ohne Zeitnachweis (PAdES-LT/LTA) kann nicht bestimmt werden, ob der Widerruf vor oder nach der Signatur erfolgte.",
+    "val_chain_indic_try_later":                "Vollständig · OCSP-Dienst nicht erreichbar",
+    "val_chain_indic_try_later_tip":            "Der OCSP-Dienst des Ausstellers war zum Prüfzeitpunkt nicht erreichbar. Eine spätere Prüfung könnte erfolgreich sein.",
+    "val_chain_indic_no_poe":                   "Vollständig · Kein Existenznachweis",
+    "val_chain_indic_no_poe_tip":               "Für den Signierdatum fehlt ein kryptografischer Existenznachweis (z. B. ein RFC-3161-Zeitstempel).",
+    "val_chain_indic_crypto_no_poe":            "Vollständig · Kryptografische Einschränkung ohne Zeitnachweis",
+    "val_chain_indic_crypto_no_poe_tip":        "Ein verwendeter Algorithmus entspricht nicht mehr den aktuellen Anforderungen und es fehlt ein Zeitnachweis, der die Verwendung zum Signierdatum belegt.",
+
     "val_chain_self_signed":        "Selbstsigniert · kein CA-Vertrauen",
     "val_chain_self_signed_tip":    "Das Zertifikat ist selbst ausgestellt – es gibt keine übergeordnete Zertifizierungsstelle. Das Zertifikat ist eingebettet, aber nicht in einem bekannten Vertrauensspeicher vorhanden.",
 
@@ -523,6 +542,7 @@ TRANSLATIONS: dict[str, str] = {
     "cert_win_label_issuer":        "Aussteller",
     "cert_win_label_valid":         "Gültig",
     "cert_win_label_source":        "Quelle",
+    "cert_win_label_fingerprint":   "Fingerabdruck (SHA-256)",
     "cert_win_label_ocsp":          "OCSP",
     "cert_win_label_overall":       "Gesamtstatus",
     "cert_win_source_embedded":     "Eingebettet (PDF)",
@@ -537,4 +557,162 @@ TRANSLATIONS: dict[str, str] = {
     "cert_win_ocsp_unknown":        "unbekannt",
     "cert_win_ocsp_not_checked":    "nicht geprüft",
     "cert_win_close":               "Schließen",
+
+    # ── KeygenDialog – Schlüssel & selbstsigniertes Zertifikat erzeugen ───────
+    "keygen_title":             "Schlüssel & Zertifikat erzeugen",
+    "keygen_section_key":       "Schlüsselparameter",
+    "keygen_section_subject":   "Zertifikatsinhaber",
+    "keygen_section_file":      "Ausgabedatei & Passwortschutz",
+
+    # Schlüsselparameter
+    "keygen_keytype_label": "Schlüsseltyp:",
+    "keygen_keytype_tip": (
+        "Kryptografischer Algorithmus und Schlüssellänge.\n\n"
+        "EC P-521 ★ (Voreinstellung)\n"
+        "  Höchste EC-Sicherheitsstufe (≈ 260 Bit). Ab 2027 BSI-Mindeststandard\n"
+        "  ist P-384 – P-521 liegt dauerhaft darüber. Softwaresignatur mit\n"
+        "  P-521 ist deutlich schneller als jede Smartcard.\n\n"
+        "EC P-384\n"
+        "  Ab 2027 BSI-Mindeststandard (TR-02102-1). Gute Wahl wenn maximale\n"
+        "  Kompatibilität mit etwas älterer Software wichtig ist.\n\n"
+        "EC P-256\n"
+        "  Schnellste Option, aber nur bis Ende 2026 BSI-konform für neue\n"
+        "  Signaturen. Ab 2027 nicht mehr ausreichend (BSI TR-02102-1).\n\n"
+        "RSA 3072 / 4096\n"
+        "  Klassischer Algorithmus; maximal kompatibel mit alter Software.\n"
+        "  BSI-Minimum: 3000 Bit. Erzeugung dauert einige Sekunden länger als EC."
+    ),
+    "keygen_smime_enc_label": "Auch für S/MIME-Verschlüsselung verwenden",
+    "keygen_smime_enc_tip": (
+        "Setzt zusätzliche Key-Usage-Bits für S/MIME-E-Mail-Verschlüsselung:\n"
+        "  EC-Schlüssel:  keyAgreement (ECDH-Schlüsselaustausch)\n"
+        "  RSA-Schlüssel: keyEncipherment (direkter Schlüsseltransport)\n\n"
+        "Damit kann dasselbe Schlüsselpaar für Signatur und Verschlüsselung\n"
+        "verwendet werden – analog zu GnuPG/OpenPGP.\n\n"
+        "Für reine PDF-Signaturen nicht benötigt."
+    ),
+    "keygen_fixed_attrs": (
+        "Fest gesetzt: Key Usage = digitalSignature + nonRepudiation  ·  "
+        "Extended Key Usage = emailProtection  ·  Basic Constraints: CA=Nein"
+    ),
+    "keygen_fixed_attrs_tip": (
+        "Diese Zertifikatsattribute werden immer gesetzt:\n\n"
+        "Key Usage (Schlüsselverwendung):\n"
+        "  digitalSignature – Signatur von Dokumenten und Daten\n"
+        "  nonRepudiation   – Nicht-Abstreitbarkeit (eIDAS: Verbindlichkeit)\n"
+        "  + keyAgreement / keyEncipherment wenn S/MIME-Verschlüsselung aktiv\n\n"
+        "Extended Key Usage:\n"
+        "  emailProtection  – S/MIME und PDF-Signaturen\n\n"
+        "Basic Constraints: CA=Nein\n"
+        "  Das Zertifikat darf keine anderen Zertifikate ausstellen."
+    ),
+    "keygen_validity_label": "Gültigkeit:",
+    "keygen_validity_tip": (
+        "Wie lange das Zertifikat gültig ist.\n\n"
+        "Hinweis: Selbstsignierte Zertifikate können nach Ablauf nicht mehr\n"
+        "für neue Signaturen verwendet werden. Bestehende Signaturen bleiben\n"
+        "jedoch weiterhin kryptografisch gültig – sofern sie zum Zeitpunkt\n"
+        "der Signatur innerhalb der Gültigkeitsdauer lagen.\n\n"
+        "Empfehlung:\n"
+        "• 3 Jahre für allgemeinen Gebrauch\n"
+        "• 10 Jahre für Archivdokumente mit langer Aufbewahrungspflicht\n\n"
+        "Für qualifizierte Signaturen (QES) nach eIDAS ist ein Zertifikat\n"
+        "einer akkreditierten Vertrauensdienstleisterin (TSP) erforderlich."
+    ),
+    # Die eigentlichen Jahrestexte werden per Format-String erzeugt:
+    # keygen_validity_years wird mit n=1..10 aufgerufen
+    "keygen_validity_years": "{n} Jahr(e)",
+
+    # Zertifikatsinhaber
+    "keygen_cn_label": "Name (CN):",
+    "keygen_cn_tip": (
+        "Common Name (CN) – der Hauptname im Zertifikat.\n\n"
+        "Dieser Name erscheint in PDF-Betrachtern als Unterzeichner und\n"
+        "in der Signaturfeld-Darstellung (sofern 'Name aus Zertifikat' gewählt).\n\n"
+        "Beispiele:\n"
+        "  Max Mustermann\n"
+        "  Dr. Anna Beispiel\n"
+        "  Musterfirma GmbH – Geschäftsführung\n\n"
+        "Pflichtfeld – kann nicht leer bleiben."
+    ),
+    "keygen_org_label": "Organisation (O):",
+    "keygen_org_tip": (
+        "Organisation (O) – optionaler Firmen- oder Behördenname.\n\n"
+        "Wird in der Zertifikats-Detailansicht angezeigt und kann helfen,\n"
+        "das Zertifikat einer Organisation zuzuordnen.\n\n"
+        "Beispiele:\n"
+        "  Musterfirma GmbH\n"
+        "  Bundesbehörde für Beispielwesen\n\n"
+        "Kann leer gelassen werden."
+    ),
+    "keygen_country_label":   "Land (C):",
+    "keygen_country_invalid": "ungültiger Code",
+    "keygen_country_tip": (
+        "Ländercode (C) – zweistelliger ISO-3166-1-Alpha-2-Code.\n\n"
+        "Beispiele: DE, AT, CH, FR, US\n\n"
+        "Der Ländercode ist in vielen PKI-Infrastrukturen und Zertifikatsprüfern\n"
+        "ein Pflichtfeld. Leer lassen ist möglich, kann aber Kompatibilitätsprobleme\n"
+        "mit mancher Software verursachen.\n\n"
+        "Groß-/Kleinschreibung wird automatisch in Großbuchstaben umgewandelt."
+    ),
+    "keygen_email_label": "E-Mail:",
+    "keygen_email_tip": (
+        "E-Mail-Adresse als Subject Alternative Name (SAN, rfc822Name).\n\n"
+        "Die E-Mail wird nicht im Subject-DN eingetragen, sondern als\n"
+        "SAN-Extension, was dem aktuellen Standard entspricht.\n\n"
+        "Bedeutung:\n"
+        "• Erleichtert die Zuordnung des Zertifikats zu einer Person\n"
+        "• Wird von einigen E-Mail-Clients (S/MIME) als Pflichtfeld erwartet\n"
+        "• Für reine PDF-Signaturen optional\n\n"
+        "Kann leer gelassen werden."
+    ),
+
+    # Datei & Passwort
+    "keygen_path_label": "Speicherpfad:",
+    "keygen_path_tip": (
+        "Dateipfad für die PKCS#12-Datei (.p12 oder .pfx).\n\n"
+        "PKCS#12 ist ein Containerformat, das den privaten Schlüssel und das\n"
+        "Zertifikat in einer einzigen Datei bündelt. Diese Datei wird dann\n"
+        "in der Signatur-Konfiguration als 'P12/PFX-Datei' angegeben.\n\n"
+        "Empfehlung: Datei an einem sicheren, gesicherten Ort speichern.\n"
+        "Der private Schlüssel ist das Kernelement Ihrer Signatur.\n"
+        "Verlust bedeutet, dass keine neuen Signaturen erstellt werden können.\n"
+        "Kopieren Sie die Datei auf ein Backup-Medium."
+    ),
+    "keygen_password_label":       "Passwort:",
+    "keygen_password_placeholder": "Passwort für den privaten Schlüssel",
+    "keygen_password_tip": (
+        "Passwort zum Schutz des privaten Schlüssels in der P12-Datei.\n\n"
+        "Der private Schlüssel wird mit AES-256 verschlüsselt, wenn ein\n"
+        "Passwort angegeben wird.\n\n"
+        "Empfehlung: Immer ein starkes Passwort vergeben!\n"
+        "Wer die P12-Datei ohne Passwortschutz erlangt, kann sofort\n"
+        "Signaturen in Ihrem Namen erstellen.\n\n"
+        "Ohne Passwort (Feld leer lassen): Datei ist unverschlüsselt.\n"
+        "Nur sinnvoll wenn die Datei auf einem verschlüsselten Laufwerk liegt."
+    ),
+    "keygen_password2_label":       "Passwort (wdh.):",
+    "keygen_password2_placeholder": "Passwort zur Bestätigung wiederholen",
+    "keygen_password2_tip": (
+        "Wiederholung des Passworts zur Bestätigung.\n\n"
+        "Muss mit dem Passwort im Feld 'Passwort' übereinstimmen."
+    ),
+
+    # Buttons & Meldungen
+    "keygen_btn_generate":      "Erzeugen",
+    "keygen_save_title":        "Schlüsseldatei speichern unter…",
+    "keygen_save_filter":       "PKCS#12-Dateien (*.p12 *.pfx);;Alle Dateien (*)",
+    "keygen_error_title":       "Eingabefehler",
+    "keygen_error_cn_empty":    "Bitte einen Namen (CN) eingeben.",
+    "keygen_error_path_empty":  "Bitte einen Speicherpfad angeben.",
+    "keygen_error_pw_mismatch": "Die Passwörter stimmen nicht überein.",
+    "keygen_error_country_len": "Der Ländercode muss genau 2 Buchstaben lang sein (z.B. DE).",
+    "keygen_error_failed":      "Schlüsselerzeugung fehlgeschlagen:\n\n{error}",
+    "keygen_success_title":     "Schlüssel erzeugt ✓",
+    "keygen_success_msg": (
+        "Schlüssel und selbstsigniertes Zertifikat wurden erfolgreich erzeugt.\n\n"
+        "Datei: {path}\n\n"
+        "Der Pfad wurde automatisch in die Konfiguration übernommen.\n"
+        "Klicken Sie auf 'Speichern', um die Einstellungen zu sichern."
+    ),
 }

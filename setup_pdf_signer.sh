@@ -1,132 +1,304 @@
 #!/usr/bin/env bash
-# =============================================================
-#  PDF QES Signer – Setup Script
-#  Creates a Python venv and installs all dependencies.
-# =============================================================
+# PDF QES Signer – Linux Installer
+#
+# Downloads and installs pdf-qes-signer from Codeberg into a Python venv.
+# Does not require root – everything goes into ~/.local/share/pdf-signer/.
+#
+# Usage:  bash setup_pdf_signer.sh
 
-set -e
+set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV_DIR="$SCRIPT_DIR/.venv"
-PYTHON="${PYTHON:-python3}"
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+INSTALL_DIR="$HOME/.local/share/pdf-signer"
+VENV_DIR="$INSTALL_DIR/.venv"
+CONFIG_DIR="$HOME/.config/pdf-signer"
+CONFIG_FILE="$CONFIG_DIR/install.conf"
+DESKTOP_DIR="$HOME/.local/share/applications"
+DESKTOP_FILE="$DESKTOP_DIR/pdf-signer.desktop"
+BIN_DIR="$HOME/.local/bin"
+SYMLINK="$BIN_DIR/pdf-signer"
+STARTER="$INSTALL_DIR/pdf-signer.sh"
+UNINSTALLER="$INSTALL_DIR/uninstall.sh"
+API_URL="https://codeberg.org/api/v1/repos/pitbo/pdf-qes-signer/releases/latest"
 
-# ── Colour helpers ─────────────────────────────────────────────────────────
-GREEN="\e[32m"; YELLOW="\e[33m"; RED="\e[31m"; RESET="\e[0m"
-info()  { echo -e "${GREEN}[✓]${RESET} $*"; }
-warn()  { echo -e "${YELLOW}[!]${RESET} $*"; }
-error() { echo -e "${RED}[✗]${RESET} $*"; exit 1; }
+# ---------------------------------------------------------------------------
+# Colour helpers
+# ---------------------------------------------------------------------------
+bold()  { printf '\033[1m%s\033[0m' "$*"; }
+green() { printf '\033[32m%s\033[0m' "$*"; }
+yellow(){ printf '\033[33m%s\033[0m' "$*"; }
+red()   { printf '\033[31m%s\033[0m' "$*"; }
 
-echo ""
-echo "  ╔══════════════════════════════════════╗"
-echo "  ║       PDF QES Signer – Setup         ║"
-echo "  ╚══════════════════════════════════════╝"
-echo ""
+ok()   { echo "  $(green "✓") $*"; }
+warn() { echo "  $(yellow "!") $*"; }
+fail() { echo "  $(red   "✗") $*"; }
 
-# ── Check Python ───────────────────────────────────────────────────────────
-command -v "$PYTHON" &>/dev/null \
-    || error "python3 not found. Please install: sudo apt install python3"
+die() { fail "$*"; exit 1; }
 
-PY_VER=$("$PYTHON" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-info "Python $PY_VER found: $($PYTHON -c 'import sys; print(sys.executable)')"
+header() {
+    echo
+    echo "$(bold "=== $* ===")"
+    echo
+}
 
-"$PYTHON" -c "import sys; sys.exit(0 if sys.version_info >= (3,9) else 1)" \
-    || error "Python 3.9 or newer required (found: $PY_VER)."
-
-# ── Create venv ────────────────────────────────────────────────────────────
-if [ -d "$VENV_DIR" ]; then
-    warn "Existing venv found: $VENV_DIR"
-    read -rp "      Recreate? [y/N] " ans
-    if [[ "$ans" =~ ^[yYjJ]$ ]]; then
-        rm -rf "$VENV_DIR"
-        info "Old venv removed."
-    else
-        info "Using existing venv."
-    fi
+# ---------------------------------------------------------------------------
+# Detect update vs. fresh install
+# ---------------------------------------------------------------------------
+IS_UPGRADE=false
+if [[ -f "$CONFIG_FILE" && -x "$VENV_DIR/bin/python" ]]; then
+    IS_UPGRADE=true
 fi
 
-if [ ! -d "$VENV_DIR" ]; then
-    info "Creating venv in: $VENV_DIR"
-    "$PYTHON" -m venv "$VENV_DIR"
+# ---------------------------------------------------------------------------
+# Header
+# ---------------------------------------------------------------------------
+clear
+echo
+echo "$(bold "PDF QES Signer – Linux Installer")"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+if $IS_UPGRADE; then
+    echo "An existing installation was detected – this will update pdf-signer."
+else
+    echo "This installer will set up PDF QES Signer in:"
+    echo "  $INSTALL_DIR"
 fi
+echo
 
-# ── Upgrade pip ────────────────────────────────────────────────────────────
-PIP="$VENV_DIR/bin/pip"
-info "Upgrading pip…"
-"$PIP" install --upgrade pip --quiet
+# ---------------------------------------------------------------------------
+# GPL notice + confirmation
+# ---------------------------------------------------------------------------
+echo "$(bold "License")"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+cat <<'EOF'
 
-# ── Install dependencies ───────────────────────────────────────────────────
-PACKAGES=(
-    "pymupdf"
-    "Pillow"
-    "pyhanko"
-    "pyhanko-certvalidator"
-    "python-pkcs11"
-    "PyQt6"
-    "cryptography"
-)
+PDF QES Signer is free software, distributed under the terms of the
+GNU General Public License, version 3 or later (GPL-3.0-or-later).
 
-echo ""
-echo "  Installing packages:"
-for pkg in "${PACKAGES[@]}"; do
-    echo -n "    • $pkg … "
-    if "$PIP" install "$pkg" --quiet 2>/dev/null; then
-        echo -e "${GREEN}OK${RESET}"
-    else
-        echo -e "${YELLOW}WARNING (optional)${RESET}"
-        warn "$pkg could not be installed – QES functionality may be limited."
+You may use, copy, modify and distribute this software under the
+conditions of the GPL. The full license text is available at:
+
+  https://www.gnu.org/licenses/gpl-3.0.html
+
+EOF
+read -rp "Press Enter to accept the license and continue, or Ctrl+C to abort ... "
+echo
+
+# ---------------------------------------------------------------------------
+# Check prerequisites
+# ---------------------------------------------------------------------------
+header "Checking prerequisites"
+
+# Python
+PYTHON=""
+for cmd in python3.13 python3.12 python3.11 python3; do
+    if command -v "$cmd" &>/dev/null; then
+        major=$("$cmd" -c 'import sys; print(sys.version_info.major)')
+        minor=$("$cmd" -c 'import sys; print(sys.version_info.minor)')
+        if [[ "$major" -ge 3 && "$minor" -ge 11 ]]; then
+            PYTHON="$cmd"
+            ok "Python $major.$minor found ($cmd)"
+            break
+        fi
     fi
 done
 
-# ── Install the package itself (registers metadata for importlib.metadata) ──
-echo -n "    • setuptools … "
-"$PIP" install --upgrade setuptools wheel --quiet 2>/dev/null \
-    && echo -e "${GREEN}OK${RESET}" || echo -e "${YELLOW}WARNING${RESET}"
-echo -n "    • pdf-qes-signer (package) … "
-if "$PIP" install -e "$SCRIPT_DIR" --quiet 2>/dev/null; then
-    echo -e "${GREEN}OK${RESET}"
-else
-    echo -e "${YELLOW}WARNING${RESET}"
-    warn "Package install failed – version will show as 0.0.0+dev."
+if [[ -z "$PYTHON" ]]; then
+    fail "Python 3.11 or newer not found."
+    echo
+    echo "  Please install Python using your package manager:"
+    echo
+    echo "    Debian / Ubuntu:   sudo apt install python3 python3-venv"
+    echo "    Fedora / RHEL:     sudo dnf install python3"
+    echo "    Arch Linux:        sudo pacman -S python"
+    echo "    openSUSE:          sudo zypper install python3"
+    echo
+    die "Aborting. Re-run this installer after installing Python."
 fi
 
-# ── Create launcher script ─────────────────────────────────────────────────
-LAUNCHER="$SCRIPT_DIR/start_signer.sh"
-cat > "$LAUNCHER" <<'EOF'
+# python3-venv (separate package on Debian/Ubuntu)
+if ! "$PYTHON" -c "import venv" &>/dev/null; then
+    fail "Python module 'venv' not found."
+    echo
+    echo "  Please install it using your package manager:"
+    echo
+    echo "    Debian / Ubuntu:   sudo apt install python3-venv"
+    echo "    Fedora / RHEL:     (included with python3)"
+    echo "    Arch Linux:        (included with python)"
+    echo "    openSUSE:          sudo zypper install python3-venv"
+    echo
+    die "Aborting. Re-run this installer after installing python3-venv."
+fi
+
+# Downloader
+if command -v curl &>/dev/null; then
+    DOWNLOADER="curl"
+    ok "curl found"
+elif command -v wget &>/dev/null; then
+    DOWNLOADER="wget"
+    ok "wget found"
+else
+    die "Neither curl nor wget found. Please install one of them."
+fi
+
+# ---------------------------------------------------------------------------
+# Fetch latest release info
+# ---------------------------------------------------------------------------
+header "Fetching release information"
+
+echo "  Contacting Codeberg API ..."
+
+if [[ "$DOWNLOADER" == "curl" ]]; then
+    release_json=$(curl -fsSL "$API_URL") || die "Failed to contact Codeberg API."
+else
+    release_json=$(wget -qO- "$API_URL") || die "Failed to contact Codeberg API."
+fi
+
+VERSION=$(echo "$release_json" | python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'])")
+WHL_URL=$(echo "$release_json" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+assets = data.get('assets', [])
+whl = next((a['browser_download_url'] for a in assets if a['name'].endswith('.whl')), None)
+if not whl:
+    raise SystemExit('No .whl asset found in latest release.')
+print(whl)
+")
+
+ok "Latest release: $VERSION"
+ok "Package: $(basename "$WHL_URL")"
+
+if $IS_UPGRADE; then
+    installed_version=$(grep '^version=' "$CONFIG_FILE" 2>/dev/null | cut -d= -f2 || echo "unknown")
+    if [[ "$installed_version" == "$VERSION" ]]; then
+        echo
+        warn "Version $VERSION is already installed."
+        read -rp "  Reinstall anyway? [y/N] " answer
+        [[ "${answer,,}" == "y" ]] || { echo "  Aborted."; exit 0; }
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Install
+# ---------------------------------------------------------------------------
+header "Installing"
+
+echo "  Creating directories ..."
+mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$DESKTOP_DIR" "$BIN_DIR"
+ok "Directories ready"
+
+# venv
+if $IS_UPGRADE; then
+    echo "  Updating existing venv ..."
+else
+    echo "  Creating Python virtual environment ..."
+    "$PYTHON" -m venv "$VENV_DIR"
+fi
+ok "venv ready"
+
+# pip install
+echo "  Installing pdf-qes-signer $VERSION ..."
+"$VENV_DIR/bin/pip" install --quiet --upgrade "$WHL_URL" \
+    || die "pip install failed."
+ok "pdf-qes-signer $VERSION installed"
+
+# Detect Python version inside venv (for icon path)
+VENV_PY_VER=$("$VENV_DIR/bin/python" -c \
+    "import sys; print(f'python{sys.version_info.major}.{sys.version_info.minor}')")
+ICON_PATH="$VENV_DIR/lib/$VENV_PY_VER/site-packages/pdf_signer/icons/app.png"
+
+# Starter script
+echo "  Writing starter script ..."
+cat > "$STARTER" <<STARTER_SCRIPT
 #!/usr/bin/env bash
-# Start PDF QES Signer inside the venv
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/.venv/bin/activate"
-exec python -m pdf_signer "$@"
-EOF
-chmod +x "$LAUNCHER"
-info "Launcher created: $LAUNCHER"
+exec "$VENV_DIR/bin/python" -m pdf_signer "\$@"
+STARTER_SCRIPT
+chmod +x "$STARTER"
+ok "Starter script: $STARTER"
 
-# ── Desktop entry (optional) ───────────────────────────────────────────────
-DESKTOP_DIR="$HOME/.local/share/applications"
-DESKTOP_FILE="$DESKTOP_DIR/pdf-qes-signer.desktop"
-mkdir -p "$DESKTOP_DIR"
-cat > "$DESKTOP_FILE" <<EOF
+# Symlink
+echo "  Creating symlink in $BIN_DIR ..."
+ln -sf "$STARTER" "$SYMLINK"
+ok "Symlink: $SYMLINK → pdf-signer"
+
+# Ensure ~/.local/bin is in PATH
+if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
+    if ! grep -qF '.local/bin' "$HOME/.bashrc" 2>/dev/null; then
+        {
+            echo ''
+            echo '# Added by pdf-signer installer'
+            echo 'export PATH="$HOME/.local/bin:$PATH"'
+        } >> "$HOME/.bashrc"
+        warn "$BIN_DIR added to PATH in ~/.bashrc"
+        warn "Restart your shell or run: source ~/.bashrc"
+    fi
+fi
+
+# .desktop file
+echo "  Writing desktop entry ..."
+cat > "$DESKTOP_FILE" <<DESKTOP
 [Desktop Entry]
-Version=1.0
-Type=Application
 Name=PDF QES Signer
-Comment=Place signature fields and apply QES signatures to PDF documents
-Exec=$LAUNCHER
-Icon=application-pdf
-Terminal=false
+Comment=Place signature fields in PDFs and apply qualified electronic signatures
+Exec=$STARTER %f
+Icon=$ICON_PATH
+Type=Application
+MimeType=application/pdf;
 Categories=Office;
-EOF
-info "Desktop entry created: $DESKTOP_FILE"
+StartupNotify=true
+DESKTOP
+ok "Desktop entry: $DESKTOP_FILE"
 
-# ── Done ───────────────────────────────────────────────────────────────────
-echo ""
-echo "  ╔══════════════════════════════════════╗"
-echo "  ║  Setup complete! ✓                   ║"
-echo "  ╚══════════════════════════════════════╝"
-echo ""
-echo "  Start with:"
-echo -e "    ${GREEN}./start_signer.sh${RESET}"
-echo ""
-echo "  Or manually:"
-echo -e "    ${GREEN}source .venv/bin/activate && python -m pdf_signer${RESET}"
-echo ""
+if command -v update-desktop-database &>/dev/null; then
+    update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
+fi
+
+# Uninstaller
+echo "  Writing uninstaller ..."
+cat > "$UNINSTALLER" <<UNINSTALL_SCRIPT
+#!/usr/bin/env bash
+# PDF QES Signer – Uninstaller
+set -euo pipefail
+
+echo "Removing PDF QES Signer ..."
+
+rm -rf  "$INSTALL_DIR"
+rm -f   "$DESKTOP_FILE"
+rm -f   "$SYMLINK"
+rm -rf  "$CONFIG_DIR"
+
+if command -v update-desktop-database &>/dev/null; then
+    update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
+fi
+
+echo "Done. PDF QES Signer has been removed."
+echo "Note: Python and system packages were not removed."
+UNINSTALL_SCRIPT
+chmod +x "$UNINSTALLER"
+ok "Uninstaller: $UNINSTALLER"
+
+# install.conf
+cat > "$CONFIG_FILE" <<CONF
+# PDF QES Signer – installation metadata
+version=$VERSION
+install_dir=$INSTALL_DIR
+installed_at=$(date -Iseconds)
+CONF
+ok "Config saved: $CONFIG_FILE"
+
+# ---------------------------------------------------------------------------
+# Done
+# ---------------------------------------------------------------------------
+echo
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  $(green "$(bold "Installation complete!")") PDF QES Signer $VERSION"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
+echo "  Start from terminal:   pdf-signer [file.pdf]"
+echo "  Start from launcher:   search for 'PDF QES Signer'"
+echo "  Open PDF with:         right-click → Open With → PDF QES Signer"
+echo
+echo "  To uninstall:          $UNINSTALLER"
+echo
