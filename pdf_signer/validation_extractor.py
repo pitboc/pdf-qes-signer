@@ -12,6 +12,10 @@
     ``ValidationStatus``.
   - Certificate chains are reconstructed from the CMS container and the
     DSS dictionary by following issuer/subject links.
+  - For each embedded chain link where the issuer cert is present,
+    the issuer signature is verified cryptographically (no network).
+    ``issuer_verified`` is set immediately so fingerprints are shown
+    without waiting for Phase 2.
   - Missing chain steps and absent revocation data are left as
     ``NOT_CHECKED`` so the UI can show them with a neutral icon.
 
@@ -245,6 +249,42 @@ def _cert_to_info(cert,
         )
 
 
+def _verify_issuer_sig_p1(cert_asn1, issuer_asn1) -> bool:
+    """Return True if issuer_asn1's public key verifies cert_asn1's signature.
+
+    Phase 1 variant – uses only embedded cert objects, no network access.
+    Mirrors the logic of ``_verify_issuer_sig`` in validation_worker.py;
+    kept here to avoid a circular import.
+    """
+    try:
+        from cryptography.x509 import load_der_x509_certificate
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives.asymmetric import padding, ec
+        from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
+        from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        from cryptography.hazmat.primitives.asymmetric.ed448 import Ed448PublicKey
+        cert   = load_der_x509_certificate(cert_asn1.dump())
+        issuer = load_der_x509_certificate(issuer_asn1.dump())
+        pub = issuer.public_key()
+        sig = cert.signature
+        tbs = cert.tbs_certificate_bytes
+        alg = cert.signature_hash_algorithm
+        if isinstance(pub, RSAPublicKey):
+            pub.verify(sig, tbs, padding.PKCS1v15(), alg)
+        elif isinstance(pub, EllipticCurvePublicKey):
+            pub.verify(sig, tbs, ec.ECDSA(alg))
+        elif isinstance(pub, (Ed25519PublicKey, Ed448PublicKey)):
+            pub.verify(sig, tbs)
+        else:
+            return False
+        return True
+    except InvalidSignature:
+        return False
+    except Exception:
+        return False
+
+
 def _build_chain(signer_cert,
                  pool: list,
                  ocsp_by_serial: dict[int, OCSPInfo],
@@ -257,8 +297,14 @@ def _build_chain(signer_cert,
                         asn1crypto Certificate objects.
         ocsp_by_serial: Mapping serial-number → OCSPInfo for quick lookup.
         crl_info:       CRLInfo to attach to the signing cert (or None).
+
+    For each cert where the issuer is present in the pool, the issuer
+    signature is verified cryptographically (Phase 1, no network).
+    ``cert_info.issuer_verified`` is set to ``True`` or ``False``
+    immediately, so the UI can show fingerprints without waiting for
+    Phase 2.  Phase 2 Step 7 skips already-verified entries.
     """
-    # Build issuer lookup: subject.hashable → cert
+    # Build issuer lookup: subject.hashable → cert (asn1crypto object)
     by_subject: dict = {}
     for c in pool:
         try:
@@ -267,6 +313,8 @@ def _build_chain(signer_cert,
             pass
 
     chain: list[CertInfo] = []
+    # Keep parallel list of asn1crypto objects so we can verify after building
+    chain_asn1: list = []
     current = signer_cert
     seen: set = set()
 
@@ -291,6 +339,7 @@ def _build_chain(signer_cert,
 
         chain.append(_cert_to_info(current, source=CertSource.EMBEDDED,
                                    ocsp=ocsp, crl=crl))
+        chain_asn1.append(current)
 
         try:
             if current.subject == current.issuer:
@@ -324,8 +373,24 @@ def _build_chain(signer_cert,
                 is_ca=True,
                 subject_hashable=issuer_hashable,
             ))
+            chain_asn1.append(None)   # placeholder has no asn1 object
             break
         current = issuer
+
+    # Phase 1 issuer signature verification: check each embedded link now
+    # so the UI can show fingerprints immediately, without waiting for Phase 2.
+    # NOT_FOUND placeholders (asn1=None) and roots are skipped.
+    for idx, cert_info in enumerate(chain):
+        if cert_info.is_root or cert_info.source == CertSource.NOT_FOUND:
+            continue
+        issuer_asn1 = chain_asn1[idx + 1] if idx + 1 < len(chain_asn1) else None
+        if issuer_asn1 is None:
+            continue   # issuer is NOT_FOUND placeholder
+        try:
+            cert_info.issuer_verified = _verify_issuer_sig_p1(
+                chain_asn1[idx], issuer_asn1)
+        except Exception:
+            pass
 
     return chain
 
