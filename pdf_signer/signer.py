@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import io
 import sys
+import threading
 import traceback
 from pathlib import Path
 
@@ -372,6 +373,10 @@ class SignWorker(QThread):
     # warning: OCSP-Einbettung fehlgeschlagen; Signatur+Zeitstempel wurden trotzdem
     # eingefügt. Wird vor finished emittiert damit das Popup vor dem Erfolgsdialog erscheint.
     warning  = pyqtSignal(str)
+    # root_fetch_needed: Root-CA fehlt im Cache; UI soll Nutzer befragen.
+    # Argument: Subject-String des Root-Zertifikats (für Anzeige im Dialog).
+    # Nach dem Emit wartet der Worker-Thread auf allow_root_fetch()/deny_root_fetch().
+    root_fetch_needed = pyqtSignal(str)
 
     def __init__(self, pdf_bytes: bytes, out_path: str, fdef,
                  lib_path: str, pin: str, key_id: str, cert_cn: str = "",
@@ -379,7 +384,8 @@ class SignWorker(QThread):
                  tsa_url: str = "", field_name: str = "Signature",
                  mode: str = "pkcs11", pfx_path: str = "",
                  embed_validation_info: bool = False,
-                 docmdp: str = "none") -> None:
+                 docmdp: str = "none",
+                 chain_complete_via_aia: bool = True) -> None:
         super().__init__()
         # pdf_bytes: Arbeitskopie des PDFs (ohne freie Signaturfelder);
         # Workers re-embedden sig_fields vor dem Signieren
@@ -416,6 +422,22 @@ class SignWorker(QThread):
         # docmdp: Document Modification Detection and Prevention für die erste Signatur.
         # "none" → kein certify-Flag; "p2" → Formularfelder + Signaturen; "p1" → keine Änderungen
         self.docmdp = docmdp
+        # chain_complete_via_aia: Root-CA via AIA nachladen und einbetten (PAdES-LT).
+        # True → Nutzer wird beim ersten Mal gefragt; Zertifikat wird gecacht.
+        self._chain_complete_via_aia = chain_complete_via_aia
+        # Threading-Event für Root-Cert-Bestätigung: wird vom UI-Thread gesetzt.
+        self._root_fetch_event = threading.Event()
+        self._root_fetch_ok    = False
+
+    def allow_root_fetch(self) -> None:
+        """Call from UI thread: user approved downloading the root cert."""
+        self._root_fetch_ok = True
+        self._root_fetch_event.set()
+
+    def deny_root_fetch(self) -> None:
+        """Call from UI thread: user declined downloading the root cert."""
+        self._root_fetch_ok = False
+        self._root_fetch_event.set()
 
     # ── Shared helpers ────────────────────────────────────────────────────────
 
@@ -696,25 +718,33 @@ class SignWorker(QThread):
     def _inject_chain_into_signer(self, signer,
                                    chain_certs: list[bytes] | None,
                                    signing_cert_der: bytes | None) -> None:
-        """Register intermediate CA certs in the signer so they are embedded
-        in the CMS ``certificates`` field of the signature.
+        """Register CA certs (intermediates + optionally root) in the signer.
+
+        Embeds them in the CMS ``certificates`` field of the signature.
 
         Sources (in order):
         1. *chain_certs* from the token or PFX file.
         2. AIA caIssuers download for *signing_cert_der*.
 
-        The root CA is intentionally excluded (``embed_roots=False``) because
-        it is present in certifi / the LOTL trust store on the verifier's side
-        and does not need to travel with the document.
+        Root CA embedding (``chain_complete_via_aia``):
+        - If enabled and root is found via AIA, the root cert is embedded too.
+        - First time: the user is asked via ``root_fetch_needed`` signal.
+        - Subsequent times: the root is served silently from the AIA cert cache.
+        - Recommended for PAdES-LT / ETSI EN 319 132 long-term archival.
         """
+        import hashlib
         from asn1crypto import x509 as asn1_x509
 
         intermediates: list = []
+        root_der: bytes | None = None
 
         for der in (chain_certs or []):
             try:
                 cert = asn1_x509.Certificate.load(der)
-                if cert.subject != cert.issuer:     # skip self-signed roots
+                if cert.subject == cert.issuer:
+                    if root_der is None:
+                        root_der = der   # root from token/PFX chain
+                else:
                     intermediates.append(cert)
             except Exception:
                 pass
@@ -725,7 +755,10 @@ class SignWorker(QThread):
                 for der in aia_other:
                     try:
                         cert = asn1_x509.Certificate.load(der)
-                        if cert.subject != cert.issuer:
+                        if cert.subject == cert.issuer:
+                            if root_der is None:
+                                root_der = der   # root from AIA download
+                        else:
                             intermediates.append(cert)
                     except Exception:
                         pass
@@ -737,7 +770,41 @@ class SignWorker(QThread):
                 signer._cert_registry.register_multiple(intermediates)
             except Exception:
                 pass
-        signer.embed_roots = False
+
+        # ── Root cert embedding ──────────────────────────────────────────────
+        embed_root: bytes | None = None
+        if self._chain_complete_via_aia and root_der is not None:
+            from .lotl_trust import AiaCertCache
+            cache  = AiaCertCache()
+            root_fp = hashlib.sha256(root_der).digest()
+
+            if cache.contains(root_fp):
+                # Already approved in a previous session → embed silently.
+                embed_root = cache.get(root_fp)
+            else:
+                # First time: ask the user.
+                try:
+                    root_subject = (asn1_x509.Certificate.load(root_der)
+                                    .subject.human_friendly)
+                except Exception:
+                    root_subject = "?"
+                self._root_fetch_event.clear()
+                self._root_fetch_ok = False
+                self.root_fetch_needed.emit(root_subject)
+                self._root_fetch_event.wait(timeout=60)
+                if self._root_fetch_ok:
+                    cache.put(root_fp, root_der)
+                    embed_root = root_der
+
+        if embed_root is not None:
+            try:
+                root_asn1 = asn1_x509.Certificate.load(embed_root)
+                signer._cert_registry.register_multiple([root_asn1])
+                signer.embed_roots = True
+            except Exception:
+                signer.embed_roots = False
+        else:
+            signer.embed_roots = False
 
     def _do_sign(self, signer, field_name: str, cert_cn: str, stamp_style,
                  chain_certs: list[bytes] | None = None,

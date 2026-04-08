@@ -1534,15 +1534,18 @@ class PDFSignerApp(QMainWindow):
         # SignWorker im Hintergrund-Thread starten.
         # all_fields=list(self.sig_fields): alle freien Felder werden vor dem
         # Signieren eingebettet; locked_fields sind bereits in _working_bytes.
+        chain_aia = self.config.getbool("signing", "chain_complete_via_aia")
         self._sign_worker = SignWorker(
             self._working_bytes, out, fdef, lib, pin, key_id, cert_cn,
             self.appearance, all_fields=list(self.sig_fields), tsa_url=tsa_url,
             field_name=invis_name, mode=mode, pfx_path=pfx_path,
-            embed_validation_info=embed_vi, docmdp=docmdp)
+            embed_validation_info=embed_vi, docmdp=docmdp,
+            chain_complete_via_aia=chain_aia)
         # finished-Signal: signiertes PDF als neues Arbeitsdokument laden
         self._sign_worker.finished.connect(self._on_sign_done)
         self._sign_worker.error.connect(self._on_sign_error)
         self._sign_worker.warning.connect(self._on_sign_warning)
+        self._sign_worker.root_fetch_needed.connect(self._on_root_fetch_needed)
         self._sign_worker.start()
 
     def _on_sign_done(self, path: str) -> None:
@@ -1584,6 +1587,25 @@ class PDFSignerApp(QMainWindow):
         QMessageBox.warning(
             self, t("dlg_ocsp_warning_title"),
             t("dlg_ocsp_warning_msg", error=msg))
+
+    def _on_root_fetch_needed(self, root_subject: str) -> None:
+        """Zeigt Rückfrage ob Root-CA-Zertifikat via AIA nachgeladen werden soll.
+
+        Wird vom SignWorker aus dem Worker-Thread via Qt-Signal (Queued Connection)
+        aufgerufen.  Der Worker-Thread wartet auf allow_root_fetch()/deny_root_fetch().
+        """
+        mb = QMessageBox(self)
+        mb.setWindowTitle(t("dlg_root_fetch_title"))
+        mb.setText(t("dlg_root_fetch_msg", subject=root_subject))
+        mb.setIcon(QMessageBox.Icon.Question)
+        yes_btn = mb.addButton(t("btn_yes"), QMessageBox.ButtonRole.YesRole)
+        no_btn  = mb.addButton(t("btn_no"),  QMessageBox.ButtonRole.NoRole)
+        mb.setDefaultButton(yes_btn)
+        mb.exec()
+        if mb.clickedButton() == yes_btn:
+            self._sign_worker.allow_root_fetch()
+        else:
+            self._sign_worker.deny_root_fetch()
 
     def _toggle_update_check(self, checked: bool) -> None:
         self.config.setbool("update", "check_on_startup", checked)

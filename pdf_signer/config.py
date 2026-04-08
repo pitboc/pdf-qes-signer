@@ -124,6 +124,12 @@ class AppConfig:
             # "p2"   – Formularfelder + weitere Signaturen erlaubt (PAdES-empfohlen)
             # "p1"   – keine Änderungen nach der Signatur
             "docmdp": "none",
+            # chain_complete_via_aia: Root-CA-Zertifikat beim Signieren via AIA
+            # nachladen und in der Signatur einbetten (empfohlen für PAdES-LT /
+            # ETSI EN 319 132).  Das Zertifikat wird nach Nutzerbestätigung lokal
+            # gecacht; spätere Signaturen betten es ohne Rückfrage ein.
+            # "1" – aktiv (Standard), "0" – deaktiviert
+            "chain_complete_via_aia": "1",
         },
         "appearance": {
             "image_path":    "",

@@ -469,6 +469,7 @@ def _validate_one(rev: RevisionInfo,
         sig_info.cert_chain, aia_other_der, aia_roots, certifi_hashes, trust_store)
 
     # Also extend the TSA timestamp cert chain via AIA if present
+    tsa_all_ders: list[bytes] = []   # TSA cert DER bytes, made available for Step 7
     if sig_info.timestamp and sig_info.timestamp.cert_chain:
         tsa_cert_der: Optional[bytes] = None
         try:
@@ -669,6 +670,13 @@ def _validate_one(rev: RevisionInfo,
         # all_check_ders: original DER bytes used during LOTL step (covers intermediate)
         for _der in all_check_ders:
             fp_to_der[hashlib.sha256(_der).digest()] = _der
+        # tsa_all_ders: TSA cert DER bytes (AIA-downloaded + embedded in timestamp token).
+        # Required so Step 7 can verify the TSA intermediate→root signature in Rev 1
+        # signatures (where the TSA root is not in the signer's AIA chain).
+        for _der in tsa_all_ders:
+            _fp = hashlib.sha256(_der).digest()
+            if _fp not in fp_to_der:
+                fp_to_der[_fp] = _der
         # Fallback: re-encoded from asn1crypto objects (lower priority, may differ)
         for _c in aia_roots + cms_certs + confirmed_trusted:
             try:

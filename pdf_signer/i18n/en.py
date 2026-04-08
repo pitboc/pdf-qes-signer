@@ -6,6 +6,8 @@ TRANSLATIONS: dict[str, str] = {
     "btn_ok":     "OK",
     "btn_cancel": "Cancel",
     "btn_close":  "Close",
+    "btn_yes":    "Yes",
+    "btn_no":     "No",
 
     # Profile menu
     "menu_profile":        "Profiles…",
@@ -190,6 +192,23 @@ TRANSLATIONS: dict[str, str] = {
     "dlg_choose_field_label": "Sign with which field?",
     "dlg_invisible_field": "✦ Signature without field (invisible)",
     "tsa_enabled_label":   "🕐 Enable Timestamp (TSA)",
+    "cfg_chain_aia_label": "Complete certificate chain when signing (AIA)",
+    "cfg_chain_aia_hint": (
+        "Downloads a missing root CA certificate via AIA (Authority Information "
+        "Access) and embeds it in the signature. "
+        "Recommended for long-term archival (PAdES-LT / ETSI EN 319 132). "
+        "A confirmation is shown the first time; the certificate is then cached "
+        "locally and embedded without prompting in future signings."
+    ),
+    "dlg_root_fetch_title": "Embed root CA certificate",
+    "dlg_root_fetch_msg": (
+        "The signature does not contain a root CA certificate.\n\n"
+        "Should it be downloaded from the internet (AIA) and embedded now?\n\n"
+        "Root CA: {subject}\n\n"
+        "The certificate will be stored locally. Future signings will embed it "
+        "without prompting.\n\n"
+        "Note: This prompt can be disabled in the signature configuration."
+    ),
     "cfg_ocsp_lta_label":  "Embed revocation status for long-term archival (OCSP/PAdES-LTA)",
     "cfg_ocsp_lta_hint": (
         "Embeds the current revocation status of all certificates and adds an "
@@ -394,6 +413,11 @@ TRANSLATIONS: dict[str, str] = {
     "trust_cache_tsl_expired":       "  {country}  –  expired on {date}  ({size} KB)",
     "trust_cache_btn_clear_tsl":     "Delete TSL files",
     "trust_cache_btn_clear_all":     "Delete all",
+    "trust_cache_btn_clear_aia":     "Delete root certificates",
+    "trust_cache_aia_section":       "Root CA certificates (AIA cache)",
+    "trust_cache_aia_explain":       "Root CA certificates downloaded during signing for embedding in future signatures.",
+    "trust_cache_aia_empty":         "  (No root certificates cached)",
+    "trust_cache_aia_entry":         "  {subject}  ·  {fp}  ({size} KB)",
     "val_dlg_title":            "Signature Validation",
     "val_col_item":             "Item",
     "val_col_source":           "Origin",

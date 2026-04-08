@@ -1532,6 +1532,14 @@ class Pkcs11ConfigDialog(QDialog):
         pfx_action_row.addStretch()
         stab_lay.addWidget(self._pfx_action_widget)
 
+        # Zertifikatskette vervollständigen (AIA) – gilt für pkcs11 und pfx
+        self.chain_aia_chk = QCheckBox(t("cfg_chain_aia_label"))
+        chain_aia_hint = QLabel(t("cfg_chain_aia_hint"))
+        chain_aia_hint.setWordWrap(True)
+        chain_aia_hint.setStyleSheet("color: gray; font-size: 10px;")
+        stab_lay.addWidget(self.chain_aia_chk)
+        stab_lay.addWidget(chain_aia_hint)
+
         # Status-Label (beide Modi)
         self.status_lbl = QLabel("")
         self.status_lbl.setWordWrap(True)
@@ -1608,6 +1616,8 @@ class Pkcs11ConfigDialog(QDialog):
         self.pfx_edit.blockSignals(False)
         self.tsa_url_edit.setText(self.config.get("tsa", "url"))
         self.ocsp_lta_chk.setChecked(self.config.getbool("tsa", "embed_validation_info"))
+        self.chain_aia_chk.setChecked(
+            self.config.getbool("signing", "chain_complete_via_aia"))
         self._on_mode_changed()
         self._update_pfx_hint()
         # Infos für bereits gespeicherten Pfad vorladen (ohne Passwort-Prompt)
@@ -1749,6 +1759,8 @@ class Pkcs11ConfigDialog(QDialog):
         self.config.set("tsa", "url", self.tsa_url_edit.text().strip())
         self.config.setbool("tsa", "embed_validation_info",
                             self.ocsp_lta_chk.isChecked())
+        self.config.setbool("signing", "chain_complete_via_aia",
+                            self.chain_aia_chk.isChecked())
         self.config.save()
         self.accept()
 
@@ -3134,8 +3146,11 @@ class TrustStoreCacheDialog(QDialog):
         self._btn_clear_tsl.clicked.connect(self._clear_tsl)
         self._btn_clear_all = QPushButton(t("trust_cache_btn_clear_all"))
         self._btn_clear_all.clicked.connect(self._clear_all)
+        self._btn_clear_aia = QPushButton(t("trust_cache_btn_clear_aia"))
+        self._btn_clear_aia.clicked.connect(self._clear_aia)
         btn_layout.addWidget(self._btn_clear_tsl)
         btn_layout.addWidget(self._btn_clear_all)
+        btn_layout.addWidget(self._btn_clear_aia)
         btn_layout.addStretch()
         close_btn = QPushButton(t("dlg_token_close"))
         close_btn.clicked.connect(self.accept)
@@ -3192,9 +3207,26 @@ class TrustStoreCacheDialog(QDialog):
                 lines.append(t(key, country=tsl["country"],
                                date=date_str, size=f"{tsl['size_kb']:.0f}"))
 
+        # ── AIA root cert cache section ───────────────────────────────────
+        from .lotl_trust import AiaCertCache
+        aia_certs = AiaCertCache().list_certs()
+        lines.append("")
+        lines.append(t("trust_cache_aia_section"))
+        lines.append(t("trust_cache_aia_explain"))
+        if not aia_certs:
+            lines.append(t("trust_cache_aia_empty"))
+        else:
+            for c in aia_certs:
+                fp_abbrev = c["fp_hex"][:8] + " " + c["fp_hex"][8:16] + "…"
+                lines.append(t("trust_cache_aia_entry",
+                               subject=c["subject"],
+                               fp=fp_abbrev,
+                               size=f"{c['size_bytes'] / 1024:.1f}"))
+
         self._info_label.setText("\n".join(lines))
         self._btn_clear_tsl.setEnabled(bool(tsls))
         self._btn_clear_all.setEnabled(info["has_lotl_urls"] or bool(tsls))
+        self._btn_clear_aia.setEnabled(bool(aia_certs))
 
     def _clear_tsl(self) -> None:
         from .lotl_trust import XmlCacheTrustStore
@@ -3204,6 +3236,11 @@ class TrustStoreCacheDialog(QDialog):
     def _clear_all(self) -> None:
         from .lotl_trust import XmlCacheTrustStore
         XmlCacheTrustStore().clear_cache(keep_urls=False)
+        self._refresh()
+
+    def _clear_aia(self) -> None:
+        from .lotl_trust import AiaCertCache
+        AiaCertCache().clear()
         self._refresh()
 
 

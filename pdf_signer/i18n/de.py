@@ -6,6 +6,8 @@ TRANSLATIONS: dict[str, str] = {
     "btn_ok":     "OK",
     "btn_cancel": "Abbrechen",
     "btn_close":  "Schließen",
+    "btn_yes":    "Ja",
+    "btn_no":     "Nein",
 
     # Profile menu
     "menu_profile":        "Profile…",
@@ -190,6 +192,23 @@ TRANSLATIONS: dict[str, str] = {
     "dlg_choose_field_label": "Mit welchem Feld signieren?",
     "dlg_invisible_field": "✦ Signatur ohne Feld (unsichtbar)",
     "tsa_enabled_label":   "🕐 Zeitstempel (TSA) aktivieren",
+    "cfg_chain_aia_label": "Zertifikatskette beim Signieren vervollständigen (AIA)",
+    "cfg_chain_aia_hint": (
+        "Lädt fehlendes Root-CA-Zertifikat beim Signieren über AIA (Authority "
+        "Information Access) nach und bettet es in die Signatur ein. "
+        "Empfohlen für Langzeitarchivierung (PAdES-LT / ETSI EN 319 132). "
+        "Beim ersten Signieren wird eine Bestätigung angefragt; das Zertifikat "
+        "wird dann lokal gespeichert und zukünftig ohne Rückfrage eingebettet."
+    ),
+    "dlg_root_fetch_title": "Root-CA-Zertifikat einbetten",
+    "dlg_root_fetch_msg": (
+        "Die Signatur enthält kein Root-CA-Zertifikat.\n\n"
+        "Soll es jetzt über das Internet (AIA) nachgeladen und eingebettet werden?\n\n"
+        "Root-CA: {subject}\n\n"
+        "Das Zertifikat wird lokal gespeichert. Beim nächsten Signieren "
+        "wird es ohne Rückfrage eingebettet.\n\n"
+        "Hinweis: Diese Frage kann in der Signatur-Konfiguration deaktiviert werden."
+    ),
     "cfg_ocsp_lta_label":  "Widerrufsstatus für Langzeitarchivierung einbetten (OCSP/PAdES-LTA)",
     "cfg_ocsp_lta_hint": (
         "Bettet den aktuellen Widerrufsstatus aller Zertifikate ein und fügt "
@@ -394,6 +413,11 @@ TRANSLATIONS: dict[str, str] = {
     "trust_cache_tsl_expired":       "  {country}  –  abgelaufen am {date}  ({size} KB)",
     "trust_cache_btn_clear_tsl":     "TSL-Dateien löschen",
     "trust_cache_btn_clear_all":     "Alles löschen",
+    "trust_cache_btn_clear_aia":     "Root-Zertifikate löschen",
+    "trust_cache_aia_section":       "Root-CA-Zertifikate (AIA-Cache)",
+    "trust_cache_aia_explain":       "Beim Signieren nachgeladene Root-CA-Zertifikate für Einbettung in zukünftige Signaturen.",
+    "trust_cache_aia_empty":         "  (Kein Root-Zertifikat im Cache)",
+    "trust_cache_aia_entry":         "  {subject}  ·  {fp}  ({size} KB)",
     "val_dlg_title":            "Signaturprüfung",
     "val_col_item":             "Element",
     "val_col_source":           "Ursprung",

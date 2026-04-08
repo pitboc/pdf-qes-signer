@@ -88,7 +88,82 @@ _log = logging.getLogger(__name__)
 
 LOTL_URL  = "https://ec.europa.eu/tools/lotl/eu-lotl.xml"
 _TSL_NS   = "http://uri.etsi.org/02231/v2#"
-_CACHE_DIR = CONFIG_DIR / "tsl_cache"
+_CACHE_DIR     = CONFIG_DIR / "tsl_cache"
+_AIA_CERT_DIR  = CONFIG_DIR / "aia_cert_cache"
+
+
+# ── AIA root cert cache ───────────────────────────────────────────────────────
+
+class AiaCertCache:
+    """Local disk cache for root CA certificates embedded in signatures via AIA.
+
+    Root certificates downloaded via AIA (Authority Information Access) during
+    signing are stored here so that the user is asked only once per root CA.
+    Subsequent signings find the cert in this cache and embed it silently.
+
+    Cache key: SHA-256 fingerprint of the DER bytes (64 hex chars → filename
+    ``<fp_hex>.der``).  Root certs are stable (20–25 year validity) and
+    essentially never change, so no expiry is needed.
+
+    Location: ``~/.config/pdf-signer/aia_cert_cache/``
+    """
+
+    def __init__(self) -> None:
+        self._dir = _AIA_CERT_DIR
+
+    def _path(self, fp: bytes) -> "Path":
+        from pathlib import Path as _Path
+        return _Path(self._dir) / (fp.hex() + ".der")
+
+    def contains(self, fp: bytes) -> bool:
+        """True if a cert with this SHA-256 fingerprint is cached."""
+        return self._path(fp).exists()
+
+    def get(self, fp: bytes) -> "bytes | None":
+        """Return cached DER bytes, or None if not present."""
+        p = self._path(fp)
+        try:
+            return p.read_bytes() if p.exists() else None
+        except OSError:
+            return None
+
+    def put(self, fp: bytes, der: bytes) -> None:
+        """Store *der* in the cache under *fp*."""
+        self._dir.mkdir(parents=True, exist_ok=True)
+        self._path(fp).write_bytes(der)
+
+    def list_certs(self) -> "list[dict]":
+        """Return metadata for all cached certs (for UI display).
+
+        Each entry: ``{subject, fp_hex, size_bytes}``.
+        """
+        result = []
+        if not self._dir.exists():
+            return result
+        from asn1crypto import x509 as asn1_x509
+        for f in sorted(self._dir.glob("*.der")):
+            try:
+                der = f.read_bytes()
+                cert = asn1_x509.Certificate.load(der)
+                subject = cert.subject.human_friendly
+            except Exception:
+                subject = "?"
+            result.append({
+                "subject":    subject,
+                "fp_hex":     f.stem,
+                "size_bytes": f.stat().st_size,
+            })
+        return result
+
+    def clear(self) -> None:
+        """Delete all cached root certificates."""
+        if not self._dir.exists():
+            return
+        for f in self._dir.glob("*.der"):
+            try:
+                f.unlink()
+            except OSError:
+                pass
 
 
 # ── Abstract interface ────────────────────────────────────────────────────────
