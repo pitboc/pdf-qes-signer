@@ -1759,7 +1759,11 @@ class Pkcs11ConfigDialog(QDialog):
         self.config.set("pkcs11", "key_id",   self.key_id_edit.text().strip())
         self.config.set("pkcs11", "cert_cn",  self.cert_cn_edit.text().strip())
         self.config.set("pkcs11", "pfx_path", self.pfx_edit.text().strip())
-        self.config.set("tsa", "url", self.tsa_url_edit.text().strip())
+        tsa_url = self.tsa_url_edit.text().strip()
+        if not tsa_url:
+            tsa_url = self.tsa_url_edit.placeholderText()  # restore default
+            self.tsa_url_edit.setText(tsa_url)
+        self.config.set("tsa", "url", tsa_url)
         self.config.setbool("tsa", "embed_validation_info",
                             self.ocsp_lta_chk.isChecked())
         self.config.setbool("signing", "chain_complete_via_aia",

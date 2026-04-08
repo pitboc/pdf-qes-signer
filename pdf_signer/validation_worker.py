@@ -334,6 +334,61 @@ def _validate_one(rev: RevisionInfo,
                         are NOT used as validation trust anchors.
         trust_store:    QesTrustStore instance for LOTL confirmation.
         auto_fetch:     If True, fetch missing TSLs from the network.
+
+    ## Processing steps
+
+    Step 1 – AIA chain download (signer)
+        Follow caIssuers URLs in the signing cert to collect intermediate and
+        root DER bytes (``aia_other_der``, ``aia_roots``).
+
+    Step 1.5 – Embedded CMS certs
+        Extract all certificates from the outer CMS ``certificates`` field
+        (``cms_certs``).  Needed for LOTL confirmation and ValidationContext;
+        certs without an AIA extension would otherwise never be evaluated.
+
+    Step 2 – LOTL confirmation
+        Check AIA-downloaded + CMS-embedded certs (deduplicated) against the
+        EU LOTL and national TSLs.  LOTL-confirmed certs go into
+        ``confirmed_trusted`` and are passed as ``extra_trust_roots`` to
+        pyhanko.  National TSLs are fetched on demand.  The same check is
+        repeated for the TSA chain (AIA from the TSA signing cert +
+        certs embedded in the timestamp token).
+
+    Step 3 – Chain annotation
+        ``_append_downloaded_certs`` replaces NOT_FOUND placeholders in
+        ``sig_info.cert_chain`` and ``sig_info.timestamp.cert_chain`` with
+        real CertInfo objects (including ``cert_fingerprint``).  Root DER
+        bytes are included so that root placeholders are replaced too –
+        required for Step 7 issuer verification.
+
+    Step 4 – ValidationContext
+        Build the pyhanko ValidationContext with ``other_certs`` (all
+        collected certs for chain-building) and ``extra_trust_roots`` (only
+        LOTL-confirmed).  certifi roots are NOT trust anchors for QES.
+
+    Step 5 – pyhanko validation
+        Call ``validate_pdf_signature`` / ``validate_pdf_timestamp``.
+        pyhanko builds the chain to the LOTL anchor, verifies all signatures
+        from the end-entity up to the anchor, and fetches OCSP.
+        Result: ``status.trusted`` (bool).
+
+    Step 6 – Map results to status fields
+        ``trusted=True``: set ``chain_status=VALID``, ``lotl_confirmed=True``
+        on LOTL certs, ``issuer_verified=True`` on certs below the anchor
+        (pyhanko has already verified them).  Same for the TSA chain.
+        ``trusted=False``: set UNKNOWN/INVALID; still set ``lotl_confirmed``
+        on TSA chain certs if they are independently LOTL-confirmed.
+
+    Step 7 – Explicit issuer signature verification
+        pyhanko treats the LOTL-confirmed intermediate as a trust anchor and
+        does NOT verify its signature against the root above it.  We fill
+        this gap: ``_verify_issuer_sig`` uses the cryptography library to
+        cryptographically verify that the root actually signed the
+        intermediate.  Sets ``issuer_verified=True/False`` on the
+        intermediate.  Applied to both signer chain and TSA chain.
+
+    NOTE: Keep this docstring in sync when adding, removing, or modifying
+    steps.
     """
     from asn1crypto import x509 as asn1_x509
     from pyhanko.sign.validation import validate_pdf_signature, validate_pdf_timestamp
@@ -465,8 +520,14 @@ def _validate_one(rev: RevisionInfo,
                len(confirmed_trusted))
 
     # ── Step 3: Annotate cert_chain ───────────────────────────────────────
+    # Include AIA root DER bytes in aia_other_der so that NOT_FOUND root
+    # placeholders are replaced with real CertInfo (with cert_fingerprint set).
+    # Without this, Step 7 cannot verify the LOTL intermediate → root link
+    # because issuer_info.cert_fingerprint is None for NOT_FOUND placeholders.
+    aia_roots_der = [r.dump() for r in aia_roots]
     aia_as_asn1 = _append_downloaded_certs(
-        sig_info.cert_chain, aia_other_der, aia_roots, certifi_hashes, trust_store)
+        sig_info.cert_chain, aia_other_der + aia_roots_der, aia_roots,
+        certifi_hashes, trust_store)
 
     # Also extend the TSA timestamp cert chain via AIA if present
     tsa_all_ders: list[bytes] = []   # TSA cert DER bytes, made available for Step 7
@@ -526,9 +587,13 @@ def _validate_one(rev: RevisionInfo,
                                       country,
                                       asn1_x509.Certificate.load(cert_der)
                                       .subject.human_friendly)
+                # Same principle as signer chain: include root DER bytes so
+                # NOT_FOUND root placeholders get replaced with real CertInfo.
+                tsa_aia_roots_der = [r.dump() for r in tsa_aia_roots]
                 _append_downloaded_certs(
                     sig_info.timestamp.cert_chain,
-                    tsa_aia_other, tsa_aia_roots, certifi_hashes, trust_store)
+                    tsa_aia_other + tsa_aia_roots_der, tsa_aia_roots,
+                    certifi_hashes, trust_store)
             except Exception:
                 pass
 

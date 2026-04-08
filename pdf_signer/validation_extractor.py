@@ -575,8 +575,11 @@ def _build_sig_info(sig, dss_pool: list,
     if signer_cert is not None:
         chain = _build_chain(signer_cert, all_certs, ocsp_by_serial, crl_info)
 
-    # Embedded TSA timestamp token (optional, inside the signature)
-    tsa_ts = _embedded_tsa_token(sig, dss_pool)
+    # Embedded TSA timestamp token (optional, inside the signature).
+    # Pass cms_certs (outer signature's CMS certificates) so that TSA root
+    # certs embedded there (via signer._cert_registry / chain_complete_via_aia)
+    # are also available for TSA chain building.
+    tsa_ts = _embedded_tsa_token(sig, dss_pool + cms_certs)
 
     # Crypto integrity (byte range hash)
     crypto_status = _check_crypto_integrity(sig)

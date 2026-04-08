@@ -806,6 +806,32 @@ class SignWorker(QThread):
         else:
             signer.embed_roots = False
 
+        # ── TSA root cert embedding ──────────────────────────────────────────
+        # The TSA timestamp token is created by the TSA server and cannot be
+        # modified.  To embed the TSA root in the signature's CMS certificates
+        # field, we register it in the signer's cert registry (pyhanko will
+        # then include it in the signature).  No user confirmation is needed
+        # since the user already configured and trusts this TSA URL.
+        if self._chain_complete_via_aia and self.tsa_url:
+            try:
+                from .lotl_trust import AiaCertCache
+                tsa_cert_der_ = _fetch_tsa_cert_der(self.tsa_url)
+                if tsa_cert_der_:
+                    _, tsa_roots_ = _fetch_aia_chain(tsa_cert_der_)
+                    tsa_cache = AiaCertCache()
+                    for tsa_root in tsa_roots_:
+                        try:
+                            tsa_root_der = tsa_root.dump()
+                            tsa_root_fp  = hashlib.sha256(tsa_root_der).digest()
+                            if not tsa_cache.contains(tsa_root_fp):
+                                tsa_cache.put(tsa_root_fp, tsa_root_der)
+                            signer._cert_registry.register_multiple([tsa_root])
+                            signer.embed_roots = True
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
     def _do_sign(self, signer, field_name: str, cert_cn: str, stamp_style,
                  chain_certs: list[bytes] | None = None,
                  signing_cert_der: bytes | None = None) -> None:
