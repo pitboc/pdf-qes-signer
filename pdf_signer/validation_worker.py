@@ -724,6 +724,35 @@ def _validate_one(rev: RevisionInfo,
         sig_info.chain_status = _worst(sig_info.chain_status, ValidationStatus.UNKNOWN)
         if sig_info.revocation_status == ValidationStatus.NOT_CHECKED:
             sig_info.revocation_status = ValidationStatus.UNKNOWN
+
+        # Even when the signer chain is untrusted (e.g. self-signed cert),
+        # the TSA timestamp chain may still be LOTL-confirmed independently.
+        # Run _update_chain for the timestamp so that lotl_confirmed is set
+        # correctly and the UI shows the TSA chain status accurately.
+        if sig_info.timestamp and sig_info.timestamp.cert_chain:
+            confirmed_fps_tsa: set[bytes] = {
+                hashlib.sha256(c.dump()).digest() for c in confirmed_trusted}
+            def _update_tsa_lotl(chain: list) -> None:
+                for cert_info in chain:
+                    if (cert_info.cert_fingerprint is not None
+                            and cert_info.cert_fingerprint in confirmed_fps_tsa):
+                        cert_info.lotl_confirmed = True
+                    if (not cert_info.is_root
+                            and not cert_info.lotl_confirmed
+                            and cert_info.source != CertSource.NOT_FOUND):
+                        cert_info.issuer_verified = True
+                    if cert_info.source == CertSource.NOT_FOUND:
+                        cert_info.status = ValidationStatus.NOT_CHECKED
+                    else:
+                        cert_info.status = ValidationStatus.VALID
+            _update_tsa_lotl(sig_info.timestamp.cert_chain)
+            # If at least one TSA cert is LOTL-confirmed, the TSA chain is
+            # considered trusted even though the signer chain is not.
+            # Set chain_status to VALID so _chain_label_tip shows "Gültig"
+            # rather than running the expiry / root-unknown fallback checks.
+            if any(c.lotl_confirmed for c in sig_info.timestamp.cert_chain):
+                sig_info.timestamp.chain_status = ValidationStatus.VALID
+
         # Capture the AdES subindication so the UI can show a precise reason.
         # OUT_OF_BOUNDS_NO_POE, REVOKED_NO_POE, TRY_LATER etc. imply that
         # pyhanko successfully built and verified the chain; only a subsequent

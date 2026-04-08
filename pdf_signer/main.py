@@ -74,7 +74,20 @@ def main() -> None:
     config   = AppConfig()
     i18n.lang = config.get("app", "language")
 
+    # Load Qt's own translations (file dialogs, standard buttons, etc.)
+    # so that native Qt widgets use the same language as the app.
+    from PyQt6.QtCore import QTranslator, QLibraryInfo
+    _qt_translator = QTranslator(app)
+    _qt_lang = i18n.lang if i18n.lang else "de"
+    _qt_translations_path = QLibraryInfo.path(
+        QLibraryInfo.LibraryPath.TranslationsPath)
+    if _qt_translator.load(f"qt_{_qt_lang}", _qt_translations_path):
+        app.installTranslator(_qt_translator)
+
     window = PDFSignerApp(config, initial_pdf=args.pdf)
+    # Expose the startup translator on the window so _set_language can remove it
+    # on the first runtime language switch (otherwise the old translator stays installed).
+    window._qt_translator = _qt_translator
     window.show()
     sys.exit(app.exec())
 

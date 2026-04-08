@@ -727,11 +727,11 @@ class KeygenDialog(QDialog):
     PAdES-LTA (Langzeitarchivierung) ist ohne OCSP-Dienst nicht möglich.
 
     Signal:
-        pfx_generated(str): Pfad der erzeugten .p12-Datei nach erfolgreicher
-                            Erzeugung.
+        pfx_generated(str, str): Pfad der erzeugten .p12-Datei und CN des
+                                 Zertifikats nach erfolgreicher Erzeugung.
     """
 
-    pfx_generated = pyqtSignal(str)
+    pfx_generated = pyqtSignal(str, str)  # (pfx_path, cert_cn)
 
     # Verfügbare Schlüsselkonfigurationen: (Anzeige, Typ, Parameter, Hash)
     # "Typ" ist "ec" oder "rsa"; "Parameter" ist Kurvenname für EC, Bitlänge für RSA.
@@ -1179,7 +1179,8 @@ class KeygenDialog(QDialog):
         self._btn_run_openssl.setEnabled(True)
 
         if self._openssl_out_path.exists():
-            self.pfx_generated.emit(str(self._openssl_out_path))
+            self.pfx_generated.emit(str(self._openssl_out_path),
+                                    self._cn_edit.text().strip())
             QMessageBox.information(self, t("keygen_success_title"),
                                     t("keygen_success_msg",
                                       path=str(self._openssl_out_path)))
@@ -1247,7 +1248,7 @@ class KeygenDialog(QDialog):
                                  t("keygen_error_failed", error=str(exc)))
             return
 
-        self.pfx_generated.emit(str(path))
+        self.pfx_generated.emit(str(path), self._cn_edit.text().strip())
         QMessageBox.information(self, t("keygen_success_title"),
                                 t("keygen_success_msg", path=str(path)))
         self.accept()
@@ -1743,10 +1744,12 @@ class Pkcs11ConfigDialog(QDialog):
         dlg.pfx_generated.connect(self._on_pfx_generated)
         dlg.exec()
 
-    def _on_pfx_generated(self, path: str) -> None:
+    def _on_pfx_generated(self, path: str, cn: str) -> None:
         """Callback nach erfolgreicher Schlüsselerzeugung."""
         self.pfx_edit.setText(path)
         self._pfx_info = None       # Cache leeren – neue Datei
+        if cn:
+            self.cert_cn_edit.setText(cn)
         self._on_pfx_path_changed(path)
 
     def _save_and_close(self) -> None:

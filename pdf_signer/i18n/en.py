@@ -745,7 +745,7 @@ TRANSLATIONS: dict[str, str] = {
     "keygen_openssl_tip": (
         "Equivalent openssl command to produce the same file – "
         "for transparency and manual execution.\n"
-        "<PASSWORT> is a placeholder for the password you entered."
+        "openssl will ask for the password interactively when run."
     ),
     "keygen_btn_run":      "Run",
     "keygen_btn_run_tip":  (

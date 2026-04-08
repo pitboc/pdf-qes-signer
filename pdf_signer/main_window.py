@@ -465,6 +465,18 @@ class PDFSignerApp(QMainWindow):
         self.config.save()
         for c, act in self._lang_actions.items():
             act.setChecked(c == code)
+        # Reload Qt's own translations (file dialogs, standard buttons, etc.)
+        # so that native Qt widgets switch language at runtime too.
+        from PyQt6.QtCore import QTranslator, QLibraryInfo
+        app = QApplication.instance()
+        if app is not None:
+            if hasattr(self, "_qt_translator"):
+                app.removeTranslator(self._qt_translator)
+            self._qt_translator = QTranslator(app)
+            _qt_lang = code if code else "de"
+            _path = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+            if self._qt_translator.load(f"qt_{_qt_lang}", _path):
+                app.installTranslator(self._qt_translator)
         self._apply_language()
 
     def _apply_language(self) -> None:
