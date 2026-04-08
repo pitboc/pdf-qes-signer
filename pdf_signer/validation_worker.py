@@ -7,7 +7,7 @@
 ``validation_extractor.extract`` (Phase 1) and fills in the status fields
 that require network access:
 
-- ``chain_status``      – trust chain validated against certifi/Mozilla roots
+- ``chain_status``      – trust chain validated against EU LOTL/TSL
 - ``revocation_status`` – OCSP response fetched or confirmed from embedded data
 
 It mutates the ``DocumentValidation`` object **in-place** so the UI tree,
@@ -35,24 +35,40 @@ For future ``ask``-mode user-consent dialogs, the worker exposes:
 
 For each revision the worker:
 
-1. Loads certifi Mozilla CA roots (cached globally via ``signer.py``).
-2. Downloads missing intermediate certificates via AIA caIssuers links.
-3. For each AIA-downloaded root: checks ``XmlCacheTrustStore.is_trusted()``.
-   Only LOTL-confirmed roots are added to ``extra_trust_roots``; unconfirmed
-   roots are kept in ``other_certs`` (chain-building only, not trusted).
-4. Calls ``validate_pdf_signature`` / ``validate_pdf_timestamp`` with a
-   ``ValidationContext`` that includes the confirmed roots and
-   ``allow_fetching=True`` for live OCSP queries.
-5. Maps ``PdfSignatureStatus.trusted`` to ``chain_status`` /
+1. Fetches missing certificates via AIA caIssuers links (HTTP, per RFC 5280).
+2. Checks all collected certificates (AIA-downloaded + CMS-embedded) against
+   ``XmlCacheTrustStore``.  Any cert whose SHA-256 fingerprint appears in a
+   nationally-published TSL is added to ``confirmed_trusted``.
+3. Calls ``validate_pdf_signature`` / ``validate_pdf_timestamp`` with a
+   ``ValidationContext`` whose ``extra_trust_roots`` contains only
+   LOTL-confirmed certificates.
+4. Maps ``PdfSignatureStatus.trusted`` to ``chain_status`` /
    ``revocation_status``.
+
+## Trust model
+
+The sole trust anchor for QES validation is the **EU LOTL** (List of Trusted
+Lists) and the national TSLs it references.  National TSLs publish the
+certificates of accredited Qualified Trust Service Providers (QTSPs), typically
+their issuing CA (intermediate) certificates.
+
+A LOTL-confirmed intermediate is used directly as an ``extra_trust_root``.
+Per RFC 5280, a trust anchor is accepted without verifying its own certificate
+signature – pyhanko stops chain-building at the confirmed intermediate and does
+not need the root CA above it.  The root CA is therefore not part of the
+verified chain and is shown as informational only.
+
+certifi (Mozilla CA Bundle) is **not** used as a validation trust anchor.
+It is only used for TLS connections when downloading LOTL and TSL files over
+HTTPS.
 
 ## TSL loading policy
 
 When ``auto_fetch_revocation = always``:
-  The worker automatically fetches the relevant national TSL when an
-  AIA root cannot be confirmed.  Country is inferred from the root cert's
-  Issuer-DN.  Already-cached (and still valid) TSLs are reused without
-  network access.  If no LOTL URL list exists it is fetched first.
+  The worker automatically fetches the relevant national TSL when a cert
+  cannot be confirmed.  Country is inferred from the cert's Issuer-DN.
+  Already-cached (and still valid) TSLs are reused without network access.
+  If no LOTL URL list exists it is fetched first.
 
 When ``auto_fetch_revocation = never``:
   No network access beyond what pyhanko itself does for OCSP.  Only
@@ -65,8 +81,9 @@ When ``auto_fetch_revocation = ask`` (future):
 
 ## Security
 
-AIA-downloaded roots are NEVER added to ``extra_trust_roots`` without LOTL
-confirmation.  Only certifi roots and LOTL-confirmed roots are trusted.
+Only LOTL-confirmed certificates are added to ``extra_trust_roots``.
+AIA-downloaded or CMS-embedded certificates not confirmed by a TSL are kept
+in ``other_certs`` (chain-building only, never trusted as anchors).
 """
 
 from __future__ import annotations
@@ -101,6 +118,43 @@ def _worst(*statuses: ValidationStatus) -> ValidationStatus:
 
 
 # ── Certificate helpers ───────────────────────────────────────────────────────
+
+def _verify_issuer_sig(cert_der: bytes, issuer_der: bytes) -> bool:
+    """Return True if issuer_der's public key verifies cert_der's signature.
+
+    Uses the cryptography library (already a pyhanko dependency).
+    Supports RSA (PKCS#1 v1.5), EC (ECDSA), Ed25519, Ed448.
+    Returns False on InvalidSignature or any unexpected error.
+    """
+    try:
+        from cryptography.x509 import load_der_x509_certificate
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives.asymmetric import padding, ec
+        from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
+        from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        from cryptography.hazmat.primitives.asymmetric.ed448 import Ed448PublicKey
+        cert   = load_der_x509_certificate(cert_der)
+        issuer = load_der_x509_certificate(issuer_der)
+        pub = issuer.public_key()
+        sig = cert.signature
+        tbs = cert.tbs_certificate_bytes
+        alg = cert.signature_hash_algorithm
+        if isinstance(pub, RSAPublicKey):
+            pub.verify(sig, tbs, padding.PKCS1v15(), alg)
+        elif isinstance(pub, EllipticCurvePublicKey):
+            pub.verify(sig, tbs, ec.ECDSA(alg))
+        elif isinstance(pub, (Ed25519PublicKey, Ed448PublicKey)):
+            pub.verify(sig, tbs)
+        else:
+            return False
+        return True
+    except InvalidSignature:
+        return False
+    except Exception as exc:
+        _log.debug("certchain [issuer_sig]: verification error: %s", exc)
+        return False
+
 
 def _cert_source_for_root(cert_asn1,
                            certifi_fps: frozenset,
@@ -182,10 +236,9 @@ def _append_downloaded_certs(cert_chain: list,
                     is_ca = is_root
                 source  = (_cert_source_for_root(cert, certifi_hashes, trust_store)
                            if is_root else CertSource.DOWNLOADED)
-                try:
-                    cert_fp = hashlib.sha256(cert.dump()).digest()
-                except Exception:
-                    cert_fp = None
+                # Use original DER bytes (not cert.dump()) so cert_fingerprint
+                # is consistent with fp_to_der in Step 7, which also uses sha256(der).
+                cert_fp = hashlib.sha256(der).digest()
                 ci = CertInfo(
                     subject=subj,
                     issuer=cert.issuer.human_friendly,
@@ -270,15 +323,15 @@ def _restore_logs(old: tuple) -> None:
 
 def _validate_one(rev: RevisionInfo,
                   sig_obj,
-                  certifi_roots: list,
                   certifi_hashes: frozenset,
                   trust_store,
                   auto_fetch: bool = False) -> None:
     """Run Phase 2 validation for one revision, mutating *rev* in-place.
 
     Args:
-        certifi_roots:  Mozilla CA roots (always trusted).
-        certifi_hashes: frozenset of subject.hashable for certifi roots.
+        certifi_hashes: SHA-256 fingerprints of certifi roots, used only to
+                        annotate CertSource (display purposes).  certifi roots
+                        are NOT used as validation trust anchors.
         trust_store:    QesTrustStore instance for LOTL confirmation.
         auto_fetch:     If True, fetch missing TSLs from the network.
     """
@@ -328,31 +381,20 @@ def _validate_one(rev: RevisionInfo,
     # Using embedded certs avoids redundant HTTP downloads for certs that are
     # already present in the signature.
     #
-    # ## Trust model: EU-LOTL bestätigt Intermediate, Root ist indirekt gesichert
+    # ## Trust model: LOTL-confirmed intermediate as direct trust anchor
     #
-    # Die nationalen TSLs (erreichbar über die EU-LOTL) enthalten die
-    # vollständigen DER-Bytes der akkreditierten Dienstezertifikate der TSPs.
-    # Das sind typischerweise Intermediate-CAs, nicht Root-CAs – Roots sind
-    # technische Infrastruktur, Intermediates sind die akkreditierten Dienste.
+    # National TSLs publish the certificates of accredited QTSPs – typically
+    # their issuing CA (intermediate) certificates, not root CAs.
     #
-    # Der SHA-256-Fingerprint in der TSL wird über die kompletten DER-Bytes
-    # des Intermediate-Zertifikats berechnet.  Diese Bytes enthalten die
-    # kryptografische Signatur des Roots über das Intermediate.
-    # Deshalb ist das Root-Zertifikat **indirekt gesichert**:
-    #
-    #   • Ein gefälschtes Root kann die Signaturprüfung auf dem echten
-    #     Intermediate nicht bestehen (falscher öffentlicher Schlüssel).
-    #   • Ein gefälschtes Intermediate (mit anderem Root signiert) hätte
-    #     andere DER-Bytes → anderen SHA-256-Fingerprint → kein TSL-Treffer.
-    #
-    # Damit impliziert ein TSL-bestätigtes Intermediate kryptografisch die
-    # Authentizität des zugehörigen Roots – auch wenn der Root selbst nicht
-    # direkt in der TSL oder in certifi eingetragen ist.
+    # A cert confirmed via TSL fingerprint is added to extra_trust_roots and
+    # used as a direct trust anchor per RFC 5280.  pyhanko stops chain-building
+    # at this anchor; the root CA above it is not verified and plays no role
+    # in the trust decision.  The root is shown as informational only.
     #
     # SECURITY: Embedding a cert in the CMS structure does NOT grant trust.
     # A cert only becomes an extra_trust_root when LOTL explicitly confirms
-    # its fingerprint in a nationally-published TSL.  An attacker who embeds
-    # a self-signed cert gains nothing unless its fingerprint is in a TSL.
+    # its SHA-256 fingerprint in a nationally-published TSL.  An attacker who
+    # embeds a self-signed cert gains nothing unless its fingerprint is in a TSL.
     _seen_check: set[bytes] = set()
     all_check_ders: list[bytes] = []
 
@@ -491,11 +533,12 @@ def _validate_one(rev: RevisionInfo,
 
     # ── Step 4: Build ValidationContext ──────────────────────────────────
     # cms_certs already extracted in Step 1.5.
-    # SECURITY: only certifi roots and LOTL-confirmed certs are trusted.
-    # AIA-downloaded and embedded certs not in LOTL go into other_certs
-    # (chain-building only, never trusted as roots).
+    # SECURITY: only LOTL-confirmed certs are trusted as anchors.
+    # certifi roots are NOT included – they are TLS-only, not QES trust anchors.
+    # AIA-downloaded and embedded certs not confirmed by a TSL go into
+    # other_certs (chain-building only, never trusted as anchors).
     all_other   = cms_certs + aia_as_asn1
-    extra_roots = certifi_roots + confirmed_trusted
+    extra_roots = confirmed_trusted
 
     vc = ValidationContext(
         other_certs=all_other or None,
@@ -533,10 +576,8 @@ def _validate_one(rev: RevisionInfo,
         # must never be classified as trusted.
         confirmed_fps: set[bytes] = {
             hashlib.sha256(c.dump()).digest() for c in confirmed_trusted}
-        certifi_fps: set[bytes] = {
-            hashlib.sha256(c.dump()).digest() for c in certifi_roots}
         _log.debug("certchain [step6]: confirmed_fps=%d  certifi_fps=%d",
-                   len(confirmed_fps), len(certifi_fps))
+                   len(confirmed_fps), len(certifi_hashes))
 
         def _source_for(cert_info: CertInfo) -> Optional[CertSource]:
             """Return EU_TSL / CERTIFI if cert fingerprint is in a trusted set."""
@@ -554,36 +595,46 @@ def _validate_one(rev: RevisionInfo,
         def _update_chain(chain: list) -> None:
             for cert_info in chain:
                 old_src = cert_info.source
+
+                # Mark LOTL-confirmed certs (source of truth for trust display).
+                # lotl_confirmed is set independently of physical origin (source).
+                if (cert_info.cert_fingerprint is not None
+                        and cert_info.cert_fingerprint in confirmed_fps):
+                    cert_info.lotl_confirmed = True
+
+                # Certs below the LOTL anchor were verified by pyhanko as part
+                # of validate_pdf_signature (EE→anchor chain is fully checked).
+                # The anchor itself and roots above it are NOT covered by pyhanko.
+                if not cert_info.is_root and not cert_info.lotl_confirmed:
+                    cert_info.issuer_verified = True
+
+                # Update source (physical origin) – only upgrade, never downgrade.
+                # Root certs are NOT promoted to EU_TSL just because the chain is
+                # trusted via an intermediate.  Their origin stays DOWNLOADED (AIA)
+                # or EMBEDDED; lotl_confirmed=True on the intermediate is the signal.
                 if cert_info.source == CertSource.NOT_FOUND:
                     trusted_src = _source_for(cert_info)
                     cert_info.source = trusted_src if trusted_src else CertSource.DOWNLOADED
                 elif cert_info.source == CertSource.DOWNLOADED:
-                    # AIA-downloaded cert: upgrade to CERTIFI/EU_TSL if directly confirmed.
+                    # Upgrade to EU_TSL/CERTIFI only if directly confirmed.
                     trusted_src = _source_for(cert_info)
                     if trusted_src:
                         cert_info.source = trusted_src
-                    elif cert_info.is_root:
-                        # Root was downloaded via AIA but is not directly listed in certifi
-                        # or a TSL (many national QES root CAs aren't).  Since we are inside
-                        # the status.trusted branch, pyhanko verified the full chain via a
-                        # LOTL-confirmed trust anchor (typically a confirmed intermediate CA).
-                        # Mark as EU_TSL to indicate "chain confirmed via EU trust infrastructure".
-                        cert_info.source = CertSource.EU_TSL
+                    # Root not directly confirmed → stays DOWNLOADED (shown as informational)
                 elif cert_info.is_root and cert_info.source == CertSource.EMBEDDED:
-                    # Embedded root: upgrade to CERTIFI/EU_TSL if directly confirmed.
-                    # If not directly in certifi/TSL but chain is trusted (status.trusted),
-                    # pyhanko verified the chain via a LOTL-confirmed intermediate –
-                    # mark as EU_TSL to reflect that the chain was LOTL-confirmed.
+                    # Embedded root: upgrade only if directly confirmed.
                     trusted_src = _source_for(cert_info)
-                    cert_info.source = trusted_src if trusted_src else CertSource.EU_TSL
+                    if trusted_src:
+                        cert_info.source = trusted_src
+                    # Otherwise stays EMBEDDED (shown as informational)
+
                 if cert_info.source != old_src:
                     _log.debug("certchain [update]: %r  %s → %s",
                                cert_info.subject[:60], old_src, cert_info.source)
                 else:
-                    _log.debug("certchain [update]: %r  unchanged=%s  h=%s",
+                    _log.debug("certchain [update]: %r  unchanged=%s  lotl=%s",
                                cert_info.subject[:60], cert_info.source,
-                               cert_info.subject_hashable.hex()[:16]
-                               if cert_info.subject_hashable else "None")
+                               cert_info.lotl_confirmed)
                 # Set cert status; don't override a known OCSP revocation
                 if (cert_info.ocsp and
                         cert_info.ocsp.status == ValidationStatus.INVALID):
@@ -599,6 +650,63 @@ def _validate_one(rev: RevisionInfo,
                        len(sig_info.timestamp.cert_chain))
             _update_chain(sig_info.timestamp.cert_chain)
             sig_info.timestamp.chain_status = ValidationStatus.VALID
+
+        # ── Step 7: Explicit issuer signature verification ────────────────
+        # Build fingerprint→DER lookup from all cert bytes collected so far.
+        # Used to verify that the root actually signed the LOTL anchor cert
+        # (this relationship is NOT verified by pyhanko when the anchor is
+        # an intermediate).  EE→anchor is already handled in _update_chain.
+        fp_to_der: dict[bytes, bytes] = {}
+        # Prefer original DER bytes (sha256 of raw bytes matches cert_fingerprint
+        # computed from aia_other_der entries in _append_downloaded_certs).
+        if signer_cert_der:
+            fp_to_der[hashlib.sha256(signer_cert_der).digest()] = signer_cert_der
+        for _der in aia_other_der:
+            fp_to_der[hashlib.sha256(_der).digest()] = _der
+        # all_check_ders: original DER bytes used during LOTL step (covers intermediate)
+        for _der in all_check_ders:
+            fp_to_der[hashlib.sha256(_der).digest()] = _der
+        # Fallback: re-encoded from asn1crypto objects (lower priority, may differ)
+        for _c in aia_roots + cms_certs + confirmed_trusted:
+            try:
+                _der = _c.dump()
+                _fp  = hashlib.sha256(_der).digest()
+                if _fp not in fp_to_der:
+                    fp_to_der[_fp] = _der
+            except Exception:
+                pass
+
+        _log.debug("certchain [step7]: fp_to_der has %d entries", len(fp_to_der))
+
+        def _verify_issuer_sigs(chain: list) -> None:
+            for idx, cert_info in enumerate(chain):
+                if cert_info.is_root or cert_info.issuer_verified is True:
+                    continue  # root has no issuer; already verified by pyhanko
+                issuer_info = chain[idx + 1] if idx + 1 < len(chain) else None
+                if issuer_info is None or issuer_info.cert_fingerprint is None:
+                    _log.debug("certchain [step7]: skip %s – no issuer in chain",
+                               cert_info.subject[:60])
+                    continue
+                cert_der_   = fp_to_der.get(cert_info.cert_fingerprint)
+                issuer_der_ = fp_to_der.get(issuer_info.cert_fingerprint)
+                _log.debug("certchain [step7]: %s  cert_der=%s  issuer_der=%s  "
+                           "cert_fp=%s  issuer_fp=%s",
+                           cert_info.subject[:60],
+                           cert_der_ is not None, issuer_der_ is not None,
+                           cert_info.cert_fingerprint.hex()[:16]
+                               if cert_info.cert_fingerprint else "None",
+                           issuer_info.cert_fingerprint.hex()[:16]
+                               if issuer_info.cert_fingerprint else "None")
+                if cert_der_ is None or issuer_der_ is None:
+                    continue
+                result = _verify_issuer_sig(cert_der_, issuer_der_)
+                cert_info.issuer_verified = result
+                _log.debug("certchain [step7]: %s issuer_sig=%s",
+                           cert_info.subject[:60], result)
+
+        _verify_issuer_sigs(sig_info.cert_chain)
+        if sig_info.timestamp:
+            _verify_issuer_sigs(sig_info.timestamp.cert_chain)
     else:
         # Never upgrade: if Phase 1 already found INVALID (e.g. expired cert),
         # keep it – UNKNOWN must not overwrite a worse status.
@@ -701,10 +809,11 @@ class ValidationWorker(QThread):
         if self._auto_fetch and not trust_store.lotl_urls_valid():
             trust_store.fetch_lotl_urls()
 
+        # certifi hashes are used only for CertSource annotation (display),
+        # NOT as validation trust anchors.
         from .signer import _load_certifi_roots
-        certifi_roots  = _load_certifi_roots()
         certifi_hashes = frozenset(
-            hashlib.sha256(c.dump()).digest() for c in certifi_roots)
+            hashlib.sha256(c.dump()).digest() for c in _load_certifi_roots())
 
         # Process each signed revision, matched by field_name
         for rev in self._doc.revisions:
@@ -718,7 +827,7 @@ class ValidationWorker(QThread):
                              rev.signed_by.field_name)
                 continue
             try:
-                _validate_one(rev, sig_obj, certifi_roots, certifi_hashes,
+                _validate_one(rev, sig_obj, certifi_hashes,
                               trust_store, auto_fetch=self._auto_fetch)
                 self.step_done.emit(
                     f"Rev {rev.revision_number}: {rev.status.value}")

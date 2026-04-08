@@ -8,20 +8,25 @@ Die Klasse :class:`QesTrustStore` definiert ein abstraktes Interface.
 TSL-XML-Dateien lokal.  Zukünftige Backends (NSS, Windows-CAPI) können ohne
 Änderungen am aufrufenden Code eingesteckt werden.
 
-## Vertrauen entsteht in zwei Schritten
+## Trust-Modell
 
-1. **AIA** (Authority Information Access, Erweiterung im Zertifikat selbst)
-   liefert die Kette: Signing-Cert → Intermediate → Root.  AIA ist eine
-   Selbstauskunft – ein Angreifer kann beliebige URLs eintragen.
+Der einzige Vertrauensanker für QES-Validierung ist die **EU LOTL** und die
+darüber referenzierten nationalen TSLs.  certifi (Mozilla CA Bundle) wird
+**nicht** als Validierungs-Anker verwendet – ausschließlich für TLS beim
+HTTPS-Abruf von LOTL und TSL-Dateien.
 
-2. **LOTL** (EU List of Trusted Lists, `ec.europa.eu`) bestätigt, dass ein
-   Root oder eine Intermediate-CA offiziell als Qualified Trust Service
-   Provider anerkannt ist.  Die LOTL wird über HTTPS geladen; der TLS-Anker
-   ist certifi (Mozilla-Bundle).
+Nationale TSLs veröffentlichen die Zertifikate akkreditierter QTSPs, in der
+Regel deren ausstellende CA (Intermediate-CA).  Ein per TSL-Fingerprint
+bestätigtes Intermediate wird direkt als ``extra_trust_root`` an pyhanko
+übergeben und gilt als direkter Trust Anchor gemäß RFC 5280.  pyhanko bricht
+den Kettenaufbau am bestätigten Intermediate ab; die Root-CA darüber wird
+weder benötigt noch geprüft.
 
-Erst die Kombination macht es sicher: AIA findet den Weg, LOTL bestätigt das
-Ziel.  Ein AIA-Root ohne LOTL-Eintrag wird niemals als ``extra_trust_root``
-akzeptiert.
+AIA (Authority Information Access) liefert die Zertifikatskette per HTTP
+(Signing-Cert → Intermediate → Root), damit die TSL-Fingerprint-Suche alle
+relevanten Certs prüfen kann.  AIA ist eine Selbstauskunft – ein Angreifer
+kann beliebige URLs eintragen.  Ein AIA-Zertifikat ohne TSL-Bestätigung wird
+niemals als ``extra_trust_root`` akzeptiert.
 
 ## Lokaler Cache
 

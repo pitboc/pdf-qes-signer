@@ -2860,9 +2860,8 @@ class CertChainDetailWindow(QWidget):
         self.setWindowTitle(title)
         self._tree.clear()
 
-        chain_len = len(chain)
-        for cert in chain:
-            self._add_cert_item(cert, chain_len)
+        for idx, cert in enumerate(chain):
+            self._add_cert_item(cert, chain, idx)
 
         self._restore_col0_width()
         self._tree.expandAll()
@@ -2881,10 +2880,11 @@ class CertChainDetailWindow(QWidget):
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
-    def _add_cert_item(self, cert, chain_len: int = 0) -> None:
+    def _add_cert_item(self, cert, chain: list, idx: int) -> None:
         from .validation_result import CertSource, ValidationStatus
         from PyQt6.QtGui import QFont
 
+        chain_len = len(chain)
         is_self_signed = cert.is_root and chain_len == 1
         if is_self_signed:
             role = t("cert_win_role_self_signed")
@@ -2912,9 +2912,55 @@ class CertChainDetailWindow(QWidget):
                       self._fmt_validity(cert))
         self._add_sub(top, t("cert_win_label_source"),
                       self._source_text(cert.source))
+
+        # Trust row – explains the basis of trust for this specific cert.
+        # Coloured: green = verified, amber = informational, red = failed.
+        issuer_cert     = chain[idx + 1] if idx + 1 < chain_len else None
+        issuer_fp       = (issuer_cert.cert_fingerprint
+                           if issuer_cert is not None else None)
+        issuer_verified = getattr(cert, "issuer_verified", None)
+
+        def _abbrev_fp(fp_bytes: bytes) -> str:
+            h = fp_bytes.hex().upper()
+            return h[:8] + " " + h[8:16] + "…"
+
+        if getattr(cert, "lotl_confirmed", False):
+            # LOTL-confirmed intermediate (trust anchor).
+            # Show whether root actually signed it (explicit crypto check).
+            if issuer_verified is True and issuer_fp is not None:
+                trust_val = (t("cert_win_lotl_confirmed") + "  ·  "
+                             + t("cert_win_trust_verified") + "  ·  "
+                             + _abbrev_fp(issuer_fp))
+                trust_color = self._GREEN
+            elif issuer_verified is False:
+                trust_val = (t("cert_win_lotl_confirmed") + "  ·  "
+                             + t("cert_win_issuer_sig_invalid"))
+                trust_color = self._RED
+            else:
+                trust_val  = t("cert_win_lotl_confirmed")
+                trust_color = self._GREEN
+            sub = self._add_sub(top, t("cert_win_label_trust"), trust_val)
+            sub.setForeground(1, QColor(trust_color))
+
+        elif cert.is_root:
+            sub = self._add_sub(top, t("cert_win_label_trust"),
+                                t("cert_win_root_informational"))
+            sub.setForeground(1, QColor("#8a6000"))
+
+        else:
+            # Non-root, non-anchor: pyhanko verified issuer signature.
+            if issuer_verified is True and issuer_fp is not None:
+                trust_val = (t("cert_win_trust_verified") + "  ·  "
+                             + _abbrev_fp(issuer_fp))
+            else:
+                trust_val = t("cert_win_trust_verified")
+            sub = self._add_sub(top, t("cert_win_label_trust"), trust_val)
+            sub.setForeground(1, QColor(self._GREEN))
+
+        # Full fingerprint of this cert, grouped in 8-hex-digit blocks
         if cert.cert_fingerprint is not None:
-            fp = cert.cert_fingerprint.hex().upper()
-            fp_display = " ".join(fp[i:i+2] for i in range(0, len(fp), 2))
+            fp_hex = cert.cert_fingerprint.hex().upper()
+            fp_display = " ".join(fp_hex[i:i+8] for i in range(0, len(fp_hex), 8))
             self._add_sub(top, t("cert_win_label_fingerprint"), fp_display)
         if cert.ocsp is not None:
             self._add_sub(top, t("cert_win_label_ocsp"),
@@ -3001,8 +3047,7 @@ class CertChainDetailWindow(QWidget):
         if status == ValidationStatus.UNKNOWN:
             if len(chain) == 1 and chain[0].is_root:
                 return t("val_chain_self_signed"), "#8a6000"
-            root = chain[-1] if chain else None
-            if root and root.source not in (CertSource.CERTIFI, CertSource.EU_TSL):
+            if not any(getattr(c, "lotl_confirmed", False) for c in chain):
                 if trust_problem_indic is not None:
                     key = _trust_indic_key(trust_problem_indic)
                     return t(key), "#8a6000"

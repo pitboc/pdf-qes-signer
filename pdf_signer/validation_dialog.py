@@ -214,53 +214,33 @@ def _chain_label_tip(chain: list, status: ValidationStatus,
 
     # 4. Root trust (only meaningful when chain is otherwise complete)
     #
-    # ## Wie EU-LOTL das Root-Zertifikat indirekt absichert
+    # ## Trust-Modell: LOTL-bestätigtes Intermediate als direkter Trust Anchor
     #
-    # Die EU-Liste vertrauenswürdiger Listen (LOTL, ec.europa.eu) verweist auf
-    # nationale Vertrauenslisten (TSL).  Jede TSL enthält die vollständigen
-    # DER-codierten Zertifikate akkreditierter Trust-Service-Provider (TSP) –
-    # das sind in der Regel die **Zwischen-CAs** (Intermediate CAs), mit denen
-    # TSPs qualifizierte Zertifikate ausstellen, z. B.:
+    # Nationale TSLs (via EU LOTL) enthalten die Zertifikate akkreditierter
+    # QTSPs – typischerweise deren ausstellende Intermediate-CA:
     #
     #   Root CA  →  signiert  →  Intermediate CA  →  signiert  →  End-Entity
-    #                              (steht in TSL)
+    #                            (lotl_confirmed=True)
     #
-    # Die Vertrauensbestätigung erfolgt per SHA-256-Fingerprint über die
-    # **vollständigen DER-Bytes** des Intermediate-Zertifikats.  Diese Bytes
-    # enthalten u. a. die kryptografische Signatur des Roots über das
-    # Intermediate.  Damit ist das Root-Zertifikat **indirekt gesichert**:
-    #
-    #   – Ein Angreifer könnte zwar ein selbst erstelltes Root-Zertifikat
-    #     einbetten, aber er kann die Signatur des echten Roots auf dem echten
-    #     Intermediate-Zertifikat nicht fälschen – dafür bräuchte er den
-    #     privaten Schlüssel des echten Roots.
-    #
-    #   – Würde er ein gefälschtes Intermediate mit einem anderen Root
-    #     signieren, hätten die DER-Bytes dieses Intermediates einen anderen
-    #     SHA-256-Fingerprint → kein Treffer in der TSL → kein Vertrauen.
-    #
-    # Ergebnis: Ein TSL-bestätigtes Intermediate impliziert kryptografisch
-    # zwingend die Authentizität des Roots.  Das Root-Zertifikat ist damit
-    # nicht „unbekannt" – es ist nur nicht *direkt* in einem Trust-Store
-    # eingetragen, aber über das LOTL-bestätigte Intermediate verifiziert.
+    # Das bestätigte Intermediate wird als direkter Trust Anchor (RFC 5280)
+    # an pyhanko übergeben.  pyhanko bricht den Kettenaufbau dort ab; die
+    # Root CA darüber wird weder benötigt noch geprüft.  Die Root ist deshalb
+    # nicht „unbekannt" im Sinne eines Fehlers – sie ist schlicht nicht Teil
+    # der geprüften Kette und wird nur informativ angezeigt.
     #
     # Wenn pyhanko einen AdES-Subindikator zurückgibt (trust_problem_indic),
-    # hat es die Kette vollständig aufgebaut und die Root→Intermediate-Signatur
-    # bereits kryptografisch geprüft.  Nur ein späteres Kriterium (z. B.
-    # abgelaufenes End-Entity-Zertifikat) verhindert die volle Vertrauensstufe.
-    # In diesem Fall wäre „Root unbekannt" irreführend – der eigentliche Grund
-    # wird stattdessen über den Subindikator angezeigt.
+    # hat es die Kette bis zum Trust Anchor aufgebaut.  Nur ein späteres
+    # Kriterium (z. B. abgelaufenes Zertifikat) verhindert die volle
+    # Vertrauensstufe.  In diesem Fall wird der Subindikator angezeigt.
+    lotl_in_chain = any(c.lotl_confirmed for c in chain)
     root = chain[-1] if chain else None
     if root is not None and root.source != CertSource.NOT_FOUND:
         if _is_self_signed_chain(chain):
             labels.append(t("val_chain_self_signed"))
             tips.append(t("val_chain_self_signed_tip"))
-        elif root.source not in (CertSource.CERTIFI, CertSource.EU_TSL):
+        elif not lotl_in_chain:
+            # No LOTL-confirmed cert in chain → genuinely unknown trust
             if trust_problem_indic is not None:
-                # pyhanko has built and verified the full chain (including
-                # root→intermediate signature) and returned a specific
-                # subindication.  The root is implicitly authenticated via the
-                # LOTL-confirmed intermediate – see comment above.
                 indic_key = _trust_indic_key(trust_problem_indic)
                 labels.append(t(indic_key))
                 tips.append(t(indic_key + "_tip"))
@@ -268,8 +248,7 @@ def _chain_label_tip(chain: list, status: ValidationStatus,
                 labels.append(t("val_chain_unknown_root"))
                 tips.append(t("val_chain_unknown_root_tip"))
         elif status == ValidationStatus.UNKNOWN:
-            # Root is trusted (certifi or EU_TSL); map AdES subindication
-            # to a precise label if available.
+            # Chain has LOTL-confirmed anchor; map AdES subindication.
             indic_key = _trust_indic_key(trust_problem_indic)
             labels.append(t(indic_key))
             tips.append(t(indic_key + "_tip"))

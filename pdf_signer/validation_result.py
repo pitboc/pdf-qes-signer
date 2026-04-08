@@ -117,6 +117,8 @@ class CertInfo:
     is_ca: bool = False        # True if Basic Constraints cA=TRUE (or self-signed root)
     subject_hashable: Optional[bytes] = None  # cert.subject.dump() – DER bytes, used for chain-building only
     cert_fingerprint: Optional[bytes] = None  # SHA-256(cert.dump()) – used for trust confirmation
+    lotl_confirmed: bool = False      # True if SHA-256 fingerprint found in a nationally-published TSL (EU LOTL)
+    issuer_verified: Optional[bool] = None  # True/False = explicit crypto check; None = not checked
     ocsp: Optional[OCSPInfo] = None
     crl: Optional[CRLInfo] = None
 
