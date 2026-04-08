@@ -576,7 +576,7 @@ def _validate_one(rev: RevisionInfo,
         # must never be classified as trusted.
         confirmed_fps: set[bytes] = {
             hashlib.sha256(c.dump()).digest() for c in confirmed_trusted}
-        _log.debug("certchain [step6]: confirmed_fps=%d  certifi_fps=%d",
+        _log.debug("certchain [step6]: confirmed_fps=%d  certifi_hashes=%d",
                    len(confirmed_fps), len(certifi_hashes))
 
         def _source_for(cert_info: CertInfo) -> Optional[CertSource]:
@@ -585,7 +585,7 @@ def _validate_one(rev: RevisionInfo,
             if fp is not None:
                 if fp in confirmed_fps:
                     return CertSource.EU_TSL
-                if fp in certifi_fps:
+                if fp in certifi_hashes:
                     return CertSource.CERTIFI
             _log.debug("certchain [source_for]: no match for %r  fp=%s",
                        cert_info.subject[:60],
@@ -604,8 +604,11 @@ def _validate_one(rev: RevisionInfo,
 
                 # Certs below the LOTL anchor were verified by pyhanko as part
                 # of validate_pdf_signature (EE→anchor chain is fully checked).
-                # The anchor itself and roots above it are NOT covered by pyhanko.
-                if not cert_info.is_root and not cert_info.lotl_confirmed:
+                # The anchor itself, roots above it, and NOT_FOUND placeholders
+                # are NOT covered by pyhanko.
+                if (not cert_info.is_root
+                        and not cert_info.lotl_confirmed
+                        and cert_info.source != CertSource.NOT_FOUND):
                     cert_info.issuer_verified = True
 
                 # Update source (physical origin) – only upgrade, never downgrade.

@@ -546,6 +546,7 @@ TRANSLATIONS: dict[str, str] = {
     "cert_win_label_overall":       "Overall status",
     "cert_win_lotl_confirmed":      "EU LOTL confirmed (trust anchor)",
     "cert_win_root_informational":  "Informational only · not verified",
+    "cert_win_not_found_trust":     "Not present · trust cannot be verified",
     "cert_win_trust_verified":      "Cryptographically verified by issuer",
     "cert_win_issuer_sig_invalid":  "Issuer signature invalid!",
     "cert_win_source_embedded":     "Embedded (PDF)",

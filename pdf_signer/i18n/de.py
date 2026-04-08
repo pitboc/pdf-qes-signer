@@ -548,6 +548,7 @@ TRANSLATIONS: dict[str, str] = {
     "cert_win_label_overall":       "Gesamtstatus",
     "cert_win_lotl_confirmed":      "EU LOTL bestätigt (Trust Anchor)",
     "cert_win_root_informational":  "Nur informativ · nicht geprüft",
+    "cert_win_not_found_trust":     "Nicht vorhanden · Vertrauen nicht prüfbar",
     "cert_win_trust_verified":      "Durch Aussteller kryptografisch verifiziert",
     "cert_win_issuer_sig_invalid":  "Aussteller-Signatur ungültig!",
     "cert_win_source_embedded":     "Eingebettet (PDF)",

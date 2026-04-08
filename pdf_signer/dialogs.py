@@ -2942,6 +2942,12 @@ class CertChainDetailWindow(QWidget):
             sub = self._add_sub(top, t("cert_win_label_trust"), trust_val)
             sub.setForeground(1, QColor(trust_color))
 
+        elif cert.source == CertSource.NOT_FOUND:
+            # Placeholder for a missing cert – cannot verify anything.
+            sub = self._add_sub(top, t("cert_win_label_trust"),
+                                t("cert_win_not_found_trust"))
+            sub.setForeground(1, QColor(self._RED))
+
         elif cert.is_root:
             sub = self._add_sub(top, t("cert_win_label_trust"),
                                 t("cert_win_root_informational"))
