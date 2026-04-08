@@ -709,4 +709,34 @@ TRANSLATIONS: dict[str, str] = {
         "The path has been automatically applied to the configuration.\n"
         "Click 'Save' to store the settings."
     ),
+
+    # openssl equivalent section
+    "keygen_section_openssl": "openssl Equivalent",
+    "keygen_openssl_tip": (
+        "Equivalent openssl command to produce the same file – "
+        "for transparency and manual execution.\n"
+        "<PASSWORT> is a placeholder for the password you entered."
+    ),
+    "keygen_btn_run":      "Run",
+    "keygen_btn_run_tip":  (
+        "Run openssl in a terminal window.\n"
+        "openssl will interactively ask for the password there –\n"
+        "no password is transferred from this dialog.\n"
+        "Requires: openssl and a terminal emulator (xterm etc.)."
+    ),
+    "keygen_btn_copy":     "Copy",
+    "keygen_btn_copy_tip": "Copy the openssl command to the clipboard.",
+    "keygen_openssl_not_found": (
+        "openssl was not found in PATH.\n\n"
+        "Please install openssl or use the 'Generate' button "
+        "(internal implementation, no external dependencies)."
+    ),
+    "keygen_openssl_no_terminal": (
+        "No terminal emulator found in PATH.\n\n"
+        "Searched for: x-terminal-emulator, xterm, konsole, xfce4-terminal, "
+        "mate-terminal, gnome-terminal.\n\n"
+        "Please install a terminal emulator or copy the command and run it "
+        "manually in a terminal."
+    ),
+    "keygen_openssl_failed": "openssl execution failed:\n\n{error}",
 }

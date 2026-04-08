@@ -715,4 +715,34 @@ TRANSLATIONS: dict[str, str] = {
         "Der Pfad wurde automatisch in die Konfiguration übernommen.\n"
         "Klicken Sie auf 'Speichern', um die Einstellungen zu sichern."
     ),
+
+    # openssl-Äquivalent-Abschnitt
+    "keygen_section_openssl": "openssl-Äquivalent",
+    "keygen_openssl_tip": (
+        "Äquivalenter openssl-Befehl zur Erzeugung derselben Datei – "
+        "zur Transparenz und für die manuelle Ausführung.\n"
+        "<PASSWORT> ist ein Platzhalter für das eingegebene Passwort."
+    ),
+    "keygen_btn_run":      "Ausführen",
+    "keygen_btn_run_tip":  (
+        "openssl in einem Terminalfenster ausführen.\n"
+        "openssl fragt dort interaktiv nach dem Passwort –\n"
+        "kein Passwort wird aus der Maske übertragen.\n"
+        "Benötigt: openssl und einen Terminal-Emulator (xterm o.ä.)."
+    ),
+    "keygen_btn_copy":     "Kopieren",
+    "keygen_btn_copy_tip": "openssl-Befehl in die Zwischenablage kopieren.",
+    "keygen_openssl_not_found": (
+        "openssl wurde nicht im Systempfad (PATH) gefunden.\n\n"
+        "Bitte installieren Sie openssl oder verwenden Sie die Schaltfläche "
+        "'Erzeugen' (interne Implementierung ohne externe Abhängigkeiten)."
+    ),
+    "keygen_openssl_no_terminal": (
+        "Kein Terminal-Emulator im Systempfad gefunden.\n\n"
+        "Gesucht: x-terminal-emulator, xterm, konsole, xfce4-terminal, "
+        "mate-terminal, gnome-terminal.\n\n"
+        "Bitte installieren Sie einen Terminal-Emulator oder kopieren Sie den "
+        "Befehl und führen Sie ihn manuell in einem Terminal aus."
+    ),
+    "keygen_openssl_failed": "openssl-Ausführung fehlgeschlagen:\n\n{error}",
 }

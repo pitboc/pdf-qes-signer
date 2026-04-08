@@ -23,14 +23,14 @@ from typing import Optional
 
 import re
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QPixmap
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QFontDatabase, QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
     QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox,
     QPushButton, QRadioButton, QSizePolicy, QSlider, QSpinBox, QTabWidget,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QCheckBox, QComboBox,
-    QAbstractItemView, QGridLayout, QProgressBar, QTextEdit,
+    QAbstractItemView, QGridLayout, QPlainTextEdit, QProgressBar, QTextEdit,
 )
 
 from .config import AppConfig, PDF_STANDARD_FONTS
@@ -867,6 +867,41 @@ class KeygenDialog(QDialog):
 
         lay.addWidget(file_box)
 
+        # ── openssl-Äquivalent ────────────────────────────────────────────
+        ossl_box = QGroupBox(t("keygen_section_openssl"))
+        ossl_vlay = QVBoxLayout(ossl_box)
+
+        self._openssl_edit = QPlainTextEdit()
+        self._openssl_edit.setReadOnly(True)
+        self._openssl_edit.setFont(
+            QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
+        self._openssl_edit.setFixedHeight(175)
+        self._openssl_edit.setToolTip(t("keygen_openssl_tip"))
+        ossl_vlay.addWidget(self._openssl_edit)
+
+        ossl_btn_row = QHBoxLayout()
+        self._btn_run_openssl = QPushButton(t("keygen_btn_run"))
+        self._btn_run_openssl.setToolTip(t("keygen_btn_run_tip"))
+        self._btn_run_openssl.clicked.connect(self._run_openssl)
+        btn_copy_openssl = QPushButton(t("keygen_btn_copy"))
+        btn_copy_openssl.setToolTip(t("keygen_btn_copy_tip"))
+        btn_copy_openssl.clicked.connect(self._copy_openssl_cmd)
+        ossl_btn_row.addStretch()
+        ossl_btn_row.addWidget(self._btn_run_openssl)
+        ossl_btn_row.addWidget(btn_copy_openssl)
+        ossl_vlay.addLayout(ossl_btn_row)
+
+        lay.addWidget(ossl_box)
+
+        # Alle Felder → Befehlsanzeige aktualisieren
+        for widget in (self._key_combo, self._validity_combo):
+            widget.currentIndexChanged.connect(self._update_openssl_display)
+        for widget in (self._cn_edit, self._org_edit, self._country_edit,
+                       self._email_edit, self._path_edit, self._pw_edit):
+            widget.textChanged.connect(self._update_openssl_display)
+        self._smime_enc_chk.stateChanged.connect(self._update_openssl_display)
+        self._update_openssl_display()
+
         # ── Buttons ───────────────────────────────────────────────────────
         btn_row = QHBoxLayout()
         self._btn_generate = QPushButton(t("keygen_btn_generate"))
@@ -914,6 +949,241 @@ class KeygenDialog(QDialog):
             if not path.lower().endswith((".p12", ".pfx")):
                 path += ext
             self._path_edit.setText(path)
+
+    # ── openssl-Äquivalent ─────────────────────────────────────────────────
+
+    @staticmethod
+    def _shell_q(s: str) -> str:
+        """Shell-Quoting mit einfachen Anführungszeichen (für Befehlsanzeige)."""
+        return "'" + s.replace("'", "'\\''") + "'"
+
+    def _build_openssl_cmd(self) -> str:
+        """Erzeugt den äquivalenten openssl-Befehl aus den aktuellen Formularwerten.
+
+        Gibt einen mehrzeiligen Shell-Befehl (mit Backslash-Fortsetzung) zurück.
+        Das Exportpasswort wird *nicht* übergeben – openssl fragt interaktiv nach.
+        Der Zwischen-PEM-Schlüssel wird mit ``-nodes`` unverschlüsselt gespeichert
+        (temporäre Datei, wird in Schritt 3 gelöscht).
+        """
+        key_idx  = self._key_combo.currentIndex()
+        _, key_type, key_param, hash_name = self._KEY_CHOICES[key_idx]
+        validity_years: int = self._validity_combo.currentData()
+        days = 365 * validity_years + validity_years // 4
+
+        cn       = self._cn_edit.text().strip()   or "MeinName"
+        org      = self._org_edit.text().strip()
+        country  = self._country_edit.text().strip().upper()
+        email    = self._email_edit.text().strip()
+        path_str = self._path_edit.text().strip() or f"mein-schluessel{self._default_ext()}"
+        smime    = self._smime_enc_chk.isChecked()
+
+        # Schlüsseltyp-Flag
+        if key_type == "ec":
+            newkey = f"-newkey ec -pkeyopt ec_paramgen_curve:{key_param}"
+        else:
+            newkey = f"-newkey rsa:{key_param}"
+
+        # Hash-Flag: "SHA-256" → "-sha256"
+        sha_flag = "-" + hash_name.lower().replace("-", "")
+
+        # Subject-DN
+        dn_parts = [f"CN={cn}"]
+        if org:
+            dn_parts.append(f"O={org}")
+        if country:
+            dn_parts.append(f"C={country}")
+        subj = self._shell_q("/" + "/".join(dn_parts))
+
+        # Key Usage
+        ku = "digitalSignature,nonRepudiation"
+        if smime:
+            ku += ",keyAgreement" if key_type == "ec" else ",keyEncipherment"
+
+        # X.509-Extensions
+        addext = [
+            "-addext 'basicConstraints=critical,CA:FALSE'",
+            f"-addext 'keyUsage=critical,{ku}'",
+            "-addext 'extendedKeyUsage=emailProtection'",
+        ]
+        if email:
+            addext.append(f"-addext 'subjectAltName=email:{email}'")
+
+        # Temp-Pfade (Zwischen-PEM, werden in Schritt 3 gelöscht)
+        if sys.platform == "win32":
+            tmp_key  = r"%TEMP%\keygen_key.pem"
+            tmp_cert = r"%TEMP%\keygen_cert.pem"
+            rm_cmd   = f'del "{tmp_key}" "{tmp_cert}"'
+        else:
+            tmp_key  = "/tmp/keygen_key.pem"
+            tmp_cert = "/tmp/keygen_cert.pem"
+            rm_cmd   = f"rm {tmp_key} {tmp_cert}"
+
+        # Schritt 1: Schlüssel + Zertifikat; -nodes = kein PEM-Passwort
+        # (Zwischen-PEM ist temporär, das finale .p12 wird verschlüsselt)
+        # -utf8 zwingt openssl, DN-Felder als UTF8String zu kodieren (statt
+        # T61String/Latin-1), damit Umlaute und andere Nicht-ASCII-Zeichen
+        # korrekt im Zertifikat landen.
+        s1 = ["openssl req -x509 -utf8", f"  {newkey}",
+              f"  {sha_flag} -days {days}", f"  -subj {subj}"]
+        s1 += [f"  {e}" for e in addext]
+        s1 += [f"  -keyout {tmp_key} -out {tmp_cert}", "  -nodes"]
+        step1 = " \\\n".join(s1)
+
+        # Schritt 2: PKCS#12 – openssl fragt nach dem Exportpasswort
+        s2 = ["openssl pkcs12 -export",
+              f"  -in {tmp_cert} -inkey {tmp_key}",
+              f"  -out {self._shell_q(path_str)} -name {self._shell_q(cn)}"]
+        step2 = " \\\n".join(s2)
+
+        return "\n".join([
+            "# Schritt 1: Schlüssel + selbstsigniertes Zertifikat",
+            step1, "",
+            "# Schritt 2: PKCS#12 exportieren (openssl fragt nach dem Passwort)",
+            step2, "",
+            "# Schritt 3: temporäre Dateien löschen",
+            rm_cmd,
+        ])
+
+    def _update_openssl_display(self, *_) -> None:
+        """Aktualisiert die openssl-Befehlsanzeige."""
+        self._openssl_edit.setPlainText(self._build_openssl_cmd())
+
+    def _copy_openssl_cmd(self) -> None:
+        """Kopiert den angezeigten openssl-Befehl in die Zwischenablage."""
+        QApplication.clipboard().setText(self._openssl_edit.toPlainText())
+
+    def _run_openssl(self) -> None:
+        """Führt den openssl-Befehl aus (alternative zur internen Erzeugung).
+
+        Öffnet ein Terminalfenster mit dem openssl-Befehl; openssl fragt dort
+        interaktiv nach dem Passwort.  Das Passwort aus der Maske wird *nicht*
+        übergeben.  Sobald das Terminal geschlossen wird und die Ausgabedatei
+        existiert, wird das Signal ``pfx_generated`` emittiert und der Dialog
+        geschlossen.
+        """
+        import shutil
+        import subprocess
+        import tempfile
+        import stat
+        import os as _os
+
+        # Nur Pfad und CN validieren – kein Passwort nötig
+        cn = self._cn_edit.text().strip()
+        if not cn:
+            QMessageBox.warning(self, t("keygen_error_title"),
+                                t("keygen_error_cn_empty"))
+            self._cn_edit.setFocus()
+            return
+        path_str = self._path_edit.text().strip()
+        if not path_str:
+            QMessageBox.warning(self, t("keygen_error_title"),
+                                t("keygen_error_path_empty"))
+            self._path_edit.setFocus()
+            return
+        country = self._country_edit.text().strip().upper()
+        if country and len(country) != 2:
+            QMessageBox.warning(self, t("keygen_error_title"),
+                                t("keygen_error_country_len"))
+            self._country_edit.setFocus()
+            return
+
+        if not shutil.which("openssl"):
+            QMessageBox.critical(self, t("keygen_error_title"),
+                                 t("keygen_openssl_not_found"))
+            return
+
+        # Terminal-Emulator suchen
+        _terminals = [
+            ("x-terminal-emulator", ["-e"]),
+            ("xterm",               ["-e"]),
+            ("konsole",             ["-e"]),
+            ("xfce4-terminal",      ["-e"]),
+            ("mate-terminal",       ["-e"]),
+            ("gnome-terminal",      ["--"]),
+        ]
+        term_bin, term_flag = None, None
+        for name, flag in _terminals:
+            if shutil.which(name):
+                term_bin, term_flag = name, flag
+                break
+        if not term_bin:
+            QMessageBox.critical(self, t("keygen_error_title"),
+                                 t("keygen_openssl_no_terminal"))
+            return
+
+        path = Path(path_str)
+        if not path.suffix:
+            path = path.with_suffix(self._default_ext())
+
+        # Shell-Skript aus der aktuellen Befehlsanzeige erzeugen
+        openssl_cmd = self._build_openssl_cmd()
+        script_body = (
+            "#!/usr/bin/env bash\n"
+            "set -e\n"
+            f"echo '=== openssl Schlüsselerzeugung – PDF QES Signer ==='\n"
+            f"echo 'openssl fragt nach dem Exportpasswort (2×).'\n"
+            f"echo 'Enter für kein Passwort.'\n"
+            f"echo ''\n"
+            f"{openssl_cmd}\n"
+            f"echo ''\n"
+            f"echo 'Fertig. Datei: {path}'\n"
+            f"read -rp 'Enter zum Schließen...' _\n"
+        )
+
+        fd, script_path = tempfile.mkstemp(suffix=".sh", prefix="pdf_signer_keygen_")
+        try:
+            _os.write(fd, script_body.encode())
+            _os.close(fd)
+            _os.chmod(script_path, stat.S_IRWXU)
+        except Exception:
+            try:
+                _os.close(fd)
+            except OSError:
+                pass
+            try:
+                _os.unlink(script_path)
+            except OSError:
+                pass
+            raise
+
+        term_cmd = [term_bin] + term_flag + ["bash", script_path]
+        try:
+            proc = subprocess.Popen(term_cmd)
+        except Exception as exc:
+            _os.unlink(script_path)
+            QMessageBox.critical(self, t("keygen_error_title"),
+                                 t("keygen_error_failed", error=str(exc)))
+            return
+
+        self._btn_run_openssl.setEnabled(False)
+        self._openssl_proc        = proc
+        self._openssl_script_path = script_path
+        self._openssl_out_path    = path
+
+        self._openssl_poll_timer = QTimer(self)
+        self._openssl_poll_timer.timeout.connect(self._poll_openssl_terminal)
+        self._openssl_poll_timer.start(500)
+
+    def _poll_openssl_terminal(self) -> None:
+        """Prüft ob das Terminal-Fenster bereits geschlossen wurde."""
+        import os as _os
+
+        if self._openssl_proc.poll() is None:
+            return  # läuft noch
+
+        self._openssl_poll_timer.stop()
+        try:
+            _os.unlink(self._openssl_script_path)
+        except OSError:
+            pass
+        self._btn_run_openssl.setEnabled(True)
+
+        if self._openssl_out_path.exists():
+            self.pfx_generated.emit(str(self._openssl_out_path))
+            QMessageBox.information(self, t("keygen_success_title"),
+                                    t("keygen_success_msg",
+                                      path=str(self._openssl_out_path)))
+            self.accept()
 
     def _generate(self) -> None:
         """Validiert Eingaben und ruft _do_generate auf."""
