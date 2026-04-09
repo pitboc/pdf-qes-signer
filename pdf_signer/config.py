@@ -3,16 +3,41 @@
 Application configuration for PDF QES Signer.
 
 Provides:
-  - PDF_STANDARD_FONTS  – list of (display name, PDF name, avg_width, Qt family)
-  - AppConfig           – INI-based persistent configuration with profile support
+  - PDF_STANDARD_FONTS     – list of (display name, PDF name, avg_width, Qt family)
+  - CONFIG_SCHEMA_VERSION  – integer, bumped only when the config structure changes
+  - AppConfig              – INI-based persistent configuration with profile support
 
 ## File layout
 
     ~/.config/pdf-signer/
-        settings.ini          ← global settings (language, active profile name)
+        settings.ini          ← global settings (language, channel, active profile name)
         profiles/
             default.ini       ← default profile
             <name>.ini        ← additional profiles
+
+## Schema versioning and migration
+
+``settings.ini`` stores ``[meta] schema_version`` (an integer).  On startup
+``AppConfig`` compares this value against ``CONFIG_SCHEMA_VERSION``:
+
+- **Upgrade or same version:** ``_cleanup()`` removes unknown keys; ``_init_parser()``
+  fills in missing keys with defaults.  No explicit migration step needed for
+  simple key additions or removals.
+- **Downgrade (stored > current):** A timestamped backup of ``settings.ini`` is
+  written (``settings.ini.bak_YYYYMMDD_HHMMSS``), then cleanup proceeds normally.
+  ``AppConfig.downgrade_detected`` is set to ``True`` so the caller can show a
+  warning dialog.
+
+More complex migrations (changed data structures, renamed keys) must be handled
+by adding explicit code to ``_run_schema_migrations()`` before the cleanup step,
+keyed on the stored version number.
+
+## Release channels
+
+``[update] channel`` selects the update channel:
+
+- ``stable``  – only non-pre-release tags (``/releases/latest`` API)
+- ``develop`` – latest tag including pre-releases (``/releases`` API)
 
 ## Migration from the old single-file format
 
@@ -34,8 +59,16 @@ from __future__ import annotations
 
 import os
 import sys
+import shutil
 import configparser
+from datetime import datetime
 from pathlib import Path
+
+#: Increment this integer whenever the structure of GLOBAL_DEFAULTS or
+#: PROFILE_DEFAULTS changes in a way that requires migration logic.
+#: Pure additions or removals of keys do NOT require a bump – cleanup and
+#: defaults handle those automatically.
+CONFIG_SCHEMA_VERSION = 1
 
 # PDF-14 standard fonts: (display name, PDF font name, avg_width, Qt family)
 PDF_STANDARD_FONTS: list[tuple[str, str, float, str]] = [
@@ -73,6 +106,11 @@ class AppConfig:
 
     # Global settings – stored in settings.ini, shared across all profiles
     GLOBAL_DEFAULTS: dict[str, dict[str, str]] = {
+        "meta": {
+            # Schema version written by this installation.  Used to detect
+            # downgrades (stored > CONFIG_SCHEMA_VERSION).
+            "schema_version": str(CONFIG_SCHEMA_VERSION),
+        },
         "app": {
             "language":       "de",
             "active_profile": "default",
@@ -86,6 +124,9 @@ class AppConfig:
             # "true"  – beim Start einmal im Hintergrund prüfen
             # "false" – nur manuell über Hilfe → Über prüfen
             "check_on_startup": "0",
+            # Release channel: "stable" (non-pre-release only) or "develop"
+            # (latest tag including pre-releases).
+            "channel": "stable",
         },
         "cert_detail_window": {
             # Last-known geometry of the certificate chain detail window.
@@ -151,6 +192,8 @@ class AppConfig:
     }
 
     def __init__(self) -> None:
+        self._downgrade_detected:    bool            = False
+        self._downgrade_backup_path: Path | None     = None
         self._global  = configparser.RawConfigParser()
         self._profile = configparser.RawConfigParser()
         self._init_parser(self._global,  self.GLOBAL_DEFAULTS)
@@ -187,9 +230,39 @@ class AppConfig:
     def _profile_file(self, name: str) -> Path:
         return _PROFILES_DIR / f"{name}.ini"
 
+    def _check_schema_version(self) -> None:
+        """Detect downgrades; backup settings.ini when one is found.
+
+        Must be called after reading the settings file but before ``_cleanup()``,
+        so the stored ``schema_version`` value is still present in the parser.
+        """
+        stored = self._global.getint("meta", "schema_version", fallback=0)
+        if stored > CONFIG_SCHEMA_VERSION:
+            self._downgrade_detected = True
+            ts     = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup = _SETTINGS_FILE.with_name(f"settings.ini.bak_{ts}")
+            shutil.copy2(_SETTINGS_FILE, backup)
+            self._downgrade_backup_path = backup
+        # Always overwrite with the current schema version so that the on-disk
+        # file reflects the version actually running.
+        if not self._global.has_section("meta"):
+            self._global.add_section("meta")
+        self._global.set("meta", "schema_version", str(CONFIG_SCHEMA_VERSION))
+
+    def _run_schema_migrations(self, stored_version: int) -> None:
+        """Apply explicit key-level migrations for structural changes.
+
+        This method is intentionally empty for schema version 1 – cleanup and
+        defaults are sufficient.  Add ``if stored_version < N:`` blocks here
+        when data structures change in future versions.
+        """
+
     def _load_settings(self) -> None:
         if _SETTINGS_FILE.exists():
             self._global.read(_SETTINGS_FILE, encoding="utf-8")
+            stored = self._global.getint("meta", "schema_version", fallback=0)
+            self._run_schema_migrations(stored)
+            self._check_schema_version()
         self._cleanup(self._global, self.GLOBAL_DEFAULTS)
 
     def _load_profile(self, name: str) -> None:
@@ -234,6 +307,18 @@ class AppConfig:
 
         # Keep legacy file as backup
         _LEGACY_FILE.rename(_LEGACY_FILE.with_suffix(".ini.migrated"))
+
+    # ── Schema version / downgrade info ───────────────────────────────────
+
+    @property
+    def downgrade_detected(self) -> bool:
+        """``True`` if the settings file was written by a newer app version."""
+        return self._downgrade_detected
+
+    @property
+    def downgrade_backup_path(self) -> Path | None:
+        """Path to the timestamped backup created on downgrade, or ``None``."""
+        return self._downgrade_backup_path
 
     # ── Profile management ─────────────────────────────────────────────────
 

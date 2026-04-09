@@ -47,9 +47,9 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 _log = logging.getLogger(__name__)
 
-RELEASES_URL = ("https://codeberg.org/api/v1/repos/pitbo/"
-                "pdf-qes-signer/releases/latest")
-RELEASES_PAGE = "https://codeberg.org/pitbo/pdf-qes-signer/releases"
+_RELEASES_BASE = "https://codeberg.org/api/v1/repos/pitbo/pdf-qes-signer/releases"
+RELEASES_URL   = _RELEASES_BASE + "/latest"   # stable: non-pre-release only
+RELEASES_PAGE  = "https://codeberg.org/pitbo/pdf-qes-signer/releases"
 
 
 def _parse_version(tag: str):
@@ -66,26 +66,55 @@ def _parse_version(tag: str):
             return (0,)
 
 
+def _fetch_release(channel: str, timeout: int) -> Optional[dict]:
+    """Neuestes Release-Objekt von der Codeberg-API laden.
+
+    Für ``"stable"`` wird ``/releases/latest`` verwendet (liefert nur
+    nicht-Pre-Releases).  Für ``"develop"`` werden die letzten fünf Releases
+    abgerufen und das neueste (Pre-Release oder nicht) zurückgegeben.
+
+    Returns:
+        Release-Dict oder ``None`` bei Fehler.
+    """
+    import json
+    import urllib.request
+
+    if channel == "develop":
+        url = _RELEASES_BASE + "?limit=5"
+    else:
+        url = RELEASES_URL  # /releases/latest
+
+    try:
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "pdf-qes-signer-updater"}
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        _log.debug("Release-Abruf fehlgeschlagen: %s", exc)
+        return None
+
+    # /releases/latest → einzelnes Dict; /releases?limit=N → Liste
+    if isinstance(data, list):
+        return data[0] if data else None
+    return data
+
+
 def check_for_update(current_version: str,
+                     channel: str = "stable",
                      timeout: int = 8) -> Optional[tuple[str, str]]:
     """Neueste Release-Version von Codeberg abrufen.
+
+    Args:
+        current_version: Aktuell installierte Version (z. B. ``"0.3.2"``).
+        channel:         ``"stable"`` oder ``"develop"``.
 
     Returns:
         ``(latest_tag, release_url)`` wenn eine neuere Version verfügbar ist,
         ``None`` wenn aktuell oder bei Fehlern.
     """
-    import json
-    import urllib.request
-
-    try:
-        req = urllib.request.Request(
-            RELEASES_URL,
-            headers={"User-Agent": "pdf-qes-signer-updater"},
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except Exception as exc:
-        _log.debug("Update-Prüfung fehlgeschlagen: %s", exc)
+    data = _fetch_release(channel, timeout)
+    if data is None:
         return None
 
     tag = data.get("tag_name", "").strip()
@@ -102,24 +131,18 @@ def check_for_update(current_version: str,
     return None
 
 
-def get_latest_release_asset(timeout: int = 8) -> Optional[tuple[str, str]]:
+def get_latest_release_asset(channel: str = "stable",
+                              timeout: int = 8) -> Optional[tuple[str, str]]:
     """Neuestes ``.whl``-Asset von der Codeberg-API abrufen.
+
+    Args:
+        channel: ``"stable"`` oder ``"develop"``.
 
     Returns:
         ``(tag, whl_url)`` oder ``None`` bei Fehler / kein Asset vorhanden.
     """
-    import json
-    import urllib.request
-
-    try:
-        req = urllib.request.Request(
-            RELEASES_URL,
-            headers={"User-Agent": "pdf-qes-signer-updater"},
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except Exception as exc:
-        _log.debug("Asset-Abruf fehlgeschlagen: %s", exc)
+    data = _fetch_release(channel, timeout)
+    if data is None:
         return None
 
     tag = data.get("tag_name", "").strip()
@@ -290,12 +313,14 @@ class UpdateCheckWorker(QThread):
     update_available = pyqtSignal(str, str)
     no_update        = pyqtSignal()
 
-    def __init__(self, current_version: str, parent=None) -> None:
+    def __init__(self, current_version: str, channel: str = "stable",
+                 parent=None) -> None:
         super().__init__(parent)
         self._current = current_version
+        self._channel = channel
 
     def run(self) -> None:
-        result = check_for_update(self._current)
+        result = check_for_update(self._current, channel=self._channel)
         if result:
             self.update_available.emit(*result)
         else:
@@ -319,11 +344,12 @@ class UpdateInstallWorker(QThread):
     finished = pyqtSignal(bool, str)
 
     def __init__(self, tag: str, url: str, dry_run: bool = False,
-                 parent=None) -> None:
+                 channel: str = "stable", parent=None) -> None:
         super().__init__(parent)
         self._tag     = tag
         self._url     = url
         self._dry_run = dry_run
+        self._channel = channel
         self._abort   = False
 
     def abort(self) -> None:

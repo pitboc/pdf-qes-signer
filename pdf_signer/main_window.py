@@ -145,6 +145,9 @@ class PDFSignerApp(QMainWindow):
         self._update_profile_label()
         # Fehlende Abhängigkeiten (pyhanko, python-pkcs11) beim Start prüfen
         self._check_dependencies()
+        # Downgrade-Warnung (Konfigurationsdatei wurde von neuerer Version geschrieben)
+        if self.config.downgrade_detected:
+            self._warn_downgrade()
         # Optionaler Startup-Update-Check (nur wenn in Einstellungen aktiviert)
         if self.config.getbool("update", "check_on_startup"):
             self._start_update_check()
@@ -1623,6 +1626,18 @@ class PDFSignerApp(QMainWindow):
         self.config.setbool("update", "check_on_startup", checked)
         self.config.save()
 
+    def _warn_downgrade(self) -> None:
+        """Warnung anzeigen wenn settings.ini von einer neueren App-Version stammt."""
+        from PyQt6.QtWidgets import QMessageBox
+        backup = self.config.downgrade_backup_path
+        backup_info = (f"\n\n{t('downgrade_backup')}: {backup}"
+                       if backup else "")
+        QMessageBox.warning(
+            self,
+            t("downgrade_title"),
+            t("downgrade_msg") + backup_info,
+        )
+
     def _start_update_check(self) -> None:
         """Startup-Update-Prüfung im Hintergrund starten.
 
@@ -1631,7 +1646,9 @@ class PDFSignerApp(QMainWindow):
         """
         from . import __version__
         from .updater import UpdateCheckWorker
-        self._update_worker = UpdateCheckWorker(__version__, parent=self)
+        channel = self.config.get("update", "channel")
+        self._update_worker = UpdateCheckWorker(__version__, channel=channel,
+                                                parent=self)
         self._update_worker.update_available.connect(self._on_update_available)
         self._update_worker.start()
 
@@ -1685,7 +1702,8 @@ class PDFSignerApp(QMainWindow):
             btn_check.setEnabled(False)
             status_lbl.setText(t("about_update_checking"))
             dlg.repaint()
-            result = check_for_update(__version__)
+            channel = self.config.get("update", "channel")
+            result = check_for_update(__version__, channel=channel)
             if result is None:
                 status_lbl.setText(t("about_update_current"))
                 btn_install.setVisible(False)
@@ -1702,7 +1720,8 @@ class PDFSignerApp(QMainWindow):
             btn_install.setEnabled(False)
             status_lbl.setText(t("about_update_checking"))
             dlg.repaint()
-            result = get_latest_release_asset()
+            channel = self.config.get("update", "channel")
+            result = get_latest_release_asset(channel=channel)
             if result is None:
                 status_lbl.setText(t("update_no_asset"))
                 btn_install.setEnabled(True)

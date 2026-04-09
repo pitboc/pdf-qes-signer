@@ -345,6 +345,15 @@ TRANSLATIONS: dict[str, str] = {
         "Strg + Ziehen        →  In Auswahl zoomen\n"
         "Mittlere Maustaste   →  Ansicht verschieben"
     ),
+    # Downgrade-Warnung
+    "downgrade_title":           "Ältere Programmversion gestartet",
+    "downgrade_msg":             (
+        "Die Konfigurationsdatei wurde von einer neueren Version der Anwendung "
+        "geschrieben. Unbekannte Einstellungen wurden entfernt. "
+        "Die Anwendung funktioniert weiterhin, aber einige Optionen könnten "
+        "auf Standardwerte zurückgesetzt worden sein."
+    ),
+    "downgrade_backup":          "Sicherungskopie der Konfiguration",
     "about_check_update":        "Nach Updates suchen",
     "about_update_checking":     "Suche läuft…",
     "about_update_available":    "Neue Release-Version verfügbar: {version}",

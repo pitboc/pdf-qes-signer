@@ -344,6 +344,15 @@ TRANSLATIONS: dict[str, str] = {
         "Ctrl + drag          →  zoom into selection\n"
         "Middle-drag          →  pan the view"
     ),
+    # Downgrade warning
+    "downgrade_title":           "Older application version started",
+    "downgrade_msg":             (
+        "The configuration file was written by a newer version of this "
+        "application. Unknown settings have been removed. "
+        "The application will continue to work, but some options may have "
+        "been reset to their defaults."
+    ),
+    "downgrade_backup":          "Configuration backup",
     "about_check_update":        "Check for updates",
     "about_update_checking":     "Checking…",
     "about_update_available":    "New release available: {version}",
