@@ -870,6 +870,28 @@ function Start-Install {
         $chReg = "HKCU:\Software\PDF-QES-Signer"
         New-Item -Path $chReg -Force -ErrorAction SilentlyContinue | Out-Null
         Set-ItemProperty -Path $chReg -Name "Channel" -Value $channel
+
+        # Write channel to app settings.ini so the app reads it on first start
+        # (%APPDATA%\pdf-signer\settings.ini, INI format, [update] section)
+        $cfgDir  = Join-Path $env:APPDATA "pdf-signer"
+        $cfgFile = Join-Path $cfgDir "settings.ini"
+        New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
+        if (Test-Path $cfgFile) {
+            # Update existing file: replace or append channel= in [update] section
+            $lines   = [System.IO.File]::ReadAllLines($cfgFile, [System.Text.Encoding]::UTF8)
+            $inUpd   = $false; $written = $false; $out = [System.Collections.Generic.List[string]]::new()
+            foreach ($line in $lines) {
+                if ($line -match '^\[update\]') { $inUpd = $true }
+                elseif ($line -match '^\[')     { if ($inUpd -and -not $written) { $out.Add("channel = $channel"); $written = $true }; $inUpd = $false }
+                if ($inUpd -and $line -match '^channel\s*=') { $out.Add("channel = $channel"); $written = $true; continue }
+                $out.Add($line)
+            }
+            if (-not $written) { $out.Add("[update]"); $out.Add("channel = $channel") }
+            [System.IO.File]::WriteAllLines($cfgFile, $out, [System.Text.Encoding]::UTF8)
+        } else {
+            # Create minimal settings.ini with just the channel
+            [System.IO.File]::WriteAllText($cfgFile, "[update]`nchannel = $channel`n", [System.Text.Encoding]::UTF8)
+        }
         Write-Log "Channel saved: $channel"
 
         # --- Step 8: Save install log ---
