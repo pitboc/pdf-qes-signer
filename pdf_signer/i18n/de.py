@@ -376,6 +376,17 @@ TRANSLATIONS: dict[str, str] = {
     "settings_upd_channel_label":   "Update-Kanal",
     "settings_upd_stable":          "Stable (empfohlen)",
     "settings_upd_develop":         "Develop (Vorabversionen)",
+    "settings_upd_develop_warn_title": "Develop-Kanal aktivieren?",
+    "settings_upd_develop_warn_body": (
+        "Der Develop-Kanal enthält Vorabversionen, die weniger getestet sind "
+        "als Stable-Releases.\n\n"
+        "Wechsle nur wenn:\n"
+        "  \u2022 du dringend ein neues Feature oder einen Bugfix benötigst,\n"
+        "  \u2022 ein störender Fehler im Develop-Kanal bereits behoben ist,\n"
+        "  \u2022 oder du von einem Maintainer dazu aufgefordert wirst.\n\n"
+        "Beachte: Ein Zurückwechseln zu Stable kann schwieriger sein und "
+        "unter Umständen Konfigurationsverlust verursachen."
+    ),
     "settings_gen_lang_label":      "Sprache",
     "menu_settings_open":           "Einstellungen…",
     # Update-Installations-Dialog

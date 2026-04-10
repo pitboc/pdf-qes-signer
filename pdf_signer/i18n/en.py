@@ -375,6 +375,17 @@ TRANSLATIONS: dict[str, str] = {
     "settings_upd_channel_label":   "Update Channel",
     "settings_upd_stable":          "Stable (recommended)",
     "settings_upd_develop":         "Develop (pre-releases)",
+    "settings_upd_develop_warn_title": "Enable Develop channel?",
+    "settings_upd_develop_warn_body": (
+        "The develop channel contains pre-release versions that are less "
+        "tested than stable releases.\n\n"
+        "Switch only if:\n"
+        "  \u2022 you urgently need a new feature or bug fix,\n"
+        "  \u2022 a disturbing bug has already been fixed in the develop channel,\n"
+        "  \u2022 or you have been asked to do so by a maintainer.\n\n"
+        "Note: Switching back to stable may be more difficult and could "
+        "result in loss of configuration."
+    ),
     "settings_gen_lang_label":      "Language",
     "menu_settings_open":           "Settings…",
     # Update install dialog

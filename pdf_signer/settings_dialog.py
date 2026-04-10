@@ -352,10 +352,29 @@ class SettingsDialog(QDialog):
             lambda v: self.config.setbool("update", "check_on_startup", v))
         self._rb_stable.toggled.connect(
             lambda v: self.config.set("update", "channel", "stable") if v else None)
-        self._rb_develop.toggled.connect(
-            lambda v: self.config.set("update", "channel", "develop") if v else None)
+        self._rb_develop.toggled.connect(self._on_develop_toggled)
 
         return page
+
+    def _on_develop_toggled(self, checked: bool) -> None:
+        if not checked:
+            return
+        mb = QMessageBox(self)
+        mb.setWindowTitle(t("settings_upd_develop_warn_title"))
+        mb.setText(t("settings_upd_develop_warn_body"))
+        mb.setIcon(QMessageBox.Icon.Warning)
+        mb.setStandardButtons(
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
+        mb.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        if mb.exec() != QMessageBox.StandardButton.Ok:
+            # Revert – block signals so we don't recurse
+            self._rb_stable.blockSignals(True)
+            self._rb_develop.blockSignals(True)
+            self._rb_stable.setChecked(True)
+            self._rb_stable.blockSignals(False)
+            self._rb_develop.blockSignals(False)
+            return
+        self.config.set("update", "channel", "develop")
 
     def _build_page_general(self) -> QWidget:
         page = QWidget()
