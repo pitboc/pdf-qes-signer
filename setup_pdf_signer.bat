@@ -710,10 +710,14 @@ function Start-Install {
         Step-Start "$(if ($isUpgrade) { 'Updating' } else { 'Creating' }) virtual environment ..."
 
         New-Item -ItemType Directory -Force -Path $INSTALL_DIR | Out-Null
-        $venvOut = & python -m venv $VENV_DIR 2>&1
+        $prevEnc = [Console]::OutputEncoding
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        $venvOut = & $python -m venv $VENV_DIR 2>&1
+        [Console]::OutputEncoding = $prevEnc
         if ($LASTEXITCODE -ne 0) {
+            Write-Log "venv creation failed: $venvOut" "ERROR"
+            Save-Log $INSTALL_DIR
             Show-Err "venv error" "Could not create virtual environment:`n$venvOut"
-            Write-Log "venv creation failed" "ERROR"
             $form.Close(); return
         }
 
@@ -744,8 +748,9 @@ function Start-Install {
             $version = $rel.tag_name -replace "^v", ""
             Write-Log "Target version: $version"
         } catch {
-            Show-Err "Release query failed" "$_`n`nPlease check your internet connection."
             Write-Log "Release query failed: $_" "ERROR"
+            Save-Log $INSTALL_DIR
+            Show-Err "Release query failed" "$_`n`nPlease check your internet connection."
             $form.Close(); return
         }
 
@@ -755,8 +760,9 @@ function Start-Install {
 
         $pipOut = & $VENV_PIP install --upgrade $whlUrl 2>&1
         if ($LASTEXITCODE -ne 0) {
+            Write-Log "pip install failed: $pipOut" "ERROR"
+            Save-Log $INSTALL_DIR
             Show-Err "Installation failed" "pip install failed:`n$pipOut"
-            Write-Log "pip install failed" "ERROR"
             $form.Close(); return
         }
         Step-Ok "pdf-signer $version $(if ($isUpgrade) { 'updated' } else { 'installed' })"
