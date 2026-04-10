@@ -9,9 +9,9 @@ aktuell installierten Version.  Die Prüfung läuft in einem
 ## Versionsvergleich
 
 Es wird ``packaging.version.Version`` (PEP 440) verwendet, damit
-``0.3.1 > 0.3.1.dev0`` korrekt erkannt wird.  Ist ``packaging`` nicht
-verfügbar, fällt der Code auf einen einfachen String-Vergleich zurück –
-das reicht für ``X.Y.Z``-Tags ohne Pre-Release-Suffix.
+``0.3.1 > 0.3.1.dev0`` und ``0.3.3.dev1 > 0.3.3.dev0`` korrekt erkannt
+werden.  Ist ``packaging`` nicht verfügbar, greift ein Fallback für
+``X.Y.Z[.devN]``-Tags, der dev-Versionen korrekt als Tupel vergleicht.
 
 ## API-Endpunkt
 
@@ -59,7 +59,17 @@ def _parse_version(tag: str):
         from packaging.version import Version
         return Version(v)
     except Exception:
-        # Einfacher Fallback: Tupel aus Integer-Teilen
+        # Fallback mit dev-Unterstützung für X.Y.Z[.devN] (PEP 440-kompatibel)
+        import re
+        m = re.match(r'^(\d+)\.(\d+)\.(\d+)(?:\.dev(\d+))?$', v)
+        if m:
+            major, minor, patch = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            dev = m.group(4)
+            # dev-Releases liegen unter dem Release: 0.3.3.dev0 < 0.3.3.dev1 < 0.3.3
+            if dev is not None:
+                return (major, minor, patch, 0, int(dev))
+            else:
+                return (major, minor, patch, 1, 0)
         try:
             return tuple(int(x) for x in v.split(".") if x.isdigit())
         except Exception:
