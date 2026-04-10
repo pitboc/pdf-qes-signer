@@ -597,11 +597,12 @@ function Start-Install {
     $progress.Style                  = "Marquee"
     $progress.MarqueeAnimationSpeed  = 30
 
-    $INSTALL_DIR = $txtDir.Text.TrimEnd('\')
-    $VENV_DIR    = Join-Path $INSTALL_DIR ".venv"
-    $VENV_PY     = Join-Path $VENV_DIR "Scripts\pythonw.exe"
-    $VENV_PIP    = Join-Path $VENV_DIR "Scripts\pip.exe"
-    $isUpgrade   = Test-Path $VENV_PY
+    $INSTALL_DIR  = $txtDir.Text.TrimEnd('\')
+    $VENV_DIR     = Join-Path $INSTALL_DIR ".venv"
+    $VENV_PY      = Join-Path $VENV_DIR "Scripts\pythonw.exe"   # GUI – app launch only
+    $VENV_PYTHON  = Join-Path $VENV_DIR "Scripts\python.exe"    # console – pip operations
+    $VENV_PIP     = Join-Path $VENV_DIR "Scripts\pip.exe"
+    $isUpgrade    = Test-Path $VENV_PY
 
     Write-Log "=== PDF QES Signer installation started ==="
     Write-Log "Mode: $(if ($isUpgrade) { 'upgrade' } else { 'fresh install' })"
@@ -722,7 +723,7 @@ function Start-Install {
         }
 
         Step-Start "Updating pip ..."
-        $pipUpOut = & $VENV_PY -m pip install --upgrade pip 2>&1
+        $pipUpOut = & $VENV_PYTHON -m pip install --upgrade pip 2>&1
         if ($LASTEXITCODE -eq 0) {
             $pipUpdated = ($pipUpOut | Out-String) -match "Successfully installed pip"
             if ($pipUpdated) { Step-Ok "pip updated" } else { Step-Ok "pip up to date" }
