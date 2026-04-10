@@ -23,10 +23,11 @@ Add-Type -AssemblyName System.Drawing
 # ---------------------------------------------------------------------------
 $PY_URL      = $null   # determined on demand in Start-Install
 $VC_URL      = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
-$API_URL     = "https://codeberg.org/api/v1/repos/pitbo/pdf-qes-signer/releases/latest"
 $DEFAULT_DIR = Join-Path $env:LOCALAPPDATA "pdf-signer"
 $savedDir    = (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\PDFQESSigner" -ErrorAction SilentlyContinue).InstallLocation
 if ($savedDir -and (Test-Path $savedDir)) { $DEFAULT_DIR = $savedDir }
+$savedChannel = (Get-ItemProperty "HKCU:\Software\PDF-QES-Signer" -ErrorAction SilentlyContinue).Channel
+if (-not $savedChannel) { $savedChannel = "stable" }
 
 # ---------------------------------------------------------------------------
 # Log buffer – flushed to install.log once the install dir exists
@@ -255,7 +256,7 @@ if ($script:isUpgrade) {
 # ---------------------------------------------------------------------------
 $form                 = New-Object System.Windows.Forms.Form
 $form.Text            = "PDF QES Signer – Installation"
-$form.Size            = New-Object System.Drawing.Size(560, 560)
+$form.Size            = New-Object System.Drawing.Size(560, 630)
 $form.StartPosition   = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
 $form.MaximizeBox     = $false
@@ -333,20 +334,42 @@ $chkLaunch.Location = New-Object System.Drawing.Point(30, 228)
 $chkLaunch.Size     = New-Object System.Drawing.Size(500, 20)
 $chkLaunch.Checked  = $false
 
+$grpChannel          = New-Object System.Windows.Forms.GroupBox
+$grpChannel.Text     = "Update channel"
+$grpChannel.Font     = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+$grpChannel.Location = New-Object System.Drawing.Point(20, 254)
+$grpChannel.Size     = New-Object System.Drawing.Size(510, 66)
+
+$rbStable            = New-Object System.Windows.Forms.RadioButton
+$rbStable.Text       = "stable  –  official releases  (recommended)"
+$rbStable.Font       = New-Object System.Drawing.Font("Segoe UI", 9)
+$rbStable.Location   = New-Object System.Drawing.Point(12, 20)
+$rbStable.Size       = New-Object System.Drawing.Size(486, 20)
+$rbStable.Checked    = ($savedChannel -ne "develop")
+
+$rbDevelop           = New-Object System.Windows.Forms.RadioButton
+$rbDevelop.Text      = "develop  –  pre-releases and test builds"
+$rbDevelop.Font      = New-Object System.Drawing.Font("Segoe UI", 9)
+$rbDevelop.Location  = New-Object System.Drawing.Point(12, 42)
+$rbDevelop.Size      = New-Object System.Drawing.Size(486, 20)
+$rbDevelop.Checked   = ($savedChannel -eq "develop")
+
+$grpChannel.Controls.AddRange(@($rbStable, $rbDevelop))
+
 $sep2             = New-Object System.Windows.Forms.Label
 $sep2.BorderStyle = "Fixed3D"
-$sep2.Location    = New-Object System.Drawing.Point(20, 256)
+$sep2.Location    = New-Object System.Drawing.Point(20, 326)
 $sep2.Size        = New-Object System.Drawing.Size(510, 2)
 
 # Progress area
 $lstLog              = New-Object System.Windows.Forms.ListBox
-$lstLog.Location     = New-Object System.Drawing.Point(20, 264)
+$lstLog.Location     = New-Object System.Drawing.Point(20, 334)
 $lstLog.Size         = New-Object System.Drawing.Size(510, 148)
 $lstLog.Font         = New-Object System.Drawing.Font("Consolas", 9)
 $lstLog.BorderStyle  = "FixedSingle"
 
 $progress                        = New-Object System.Windows.Forms.ProgressBar
-$progress.Location               = New-Object System.Drawing.Point(20, 420)
+$progress.Location               = New-Object System.Drawing.Point(20, 490)
 $progress.Size                   = New-Object System.Drawing.Size(510, 20)
 $progress.Style                  = "Continuous"
 $progress.Value                  = 0
@@ -354,19 +377,19 @@ $progress.Value                  = 0
 $lblStatus          = New-Object System.Windows.Forms.Label
 $lblStatus.Text     = "Ready."
 $lblStatus.Font     = New-Object System.Drawing.Font("Segoe UI", 9)
-$lblStatus.Location = New-Object System.Drawing.Point(20, 446)
+$lblStatus.Location = New-Object System.Drawing.Point(20, 516)
 $lblStatus.Size     = New-Object System.Drawing.Size(510, 18)
 
 $btnInstall          = New-Object System.Windows.Forms.Button
 $btnInstall.Text     = "Install"
 $btnInstall.Font     = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-$btnInstall.Location = New-Object System.Drawing.Point(344, 470)
+$btnInstall.Location = New-Object System.Drawing.Point(344, 540)
 $btnInstall.Size     = New-Object System.Drawing.Size(90, 28)
 
 $btnCancel          = New-Object System.Windows.Forms.Button
 $btnCancel.Text     = "Cancel"
 $btnCancel.Font     = New-Object System.Drawing.Font("Segoe UI", 9)
-$btnCancel.Location = New-Object System.Drawing.Point(444, 470)
+$btnCancel.Location = New-Object System.Drawing.Point(444, 540)
 $btnCancel.Size     = New-Object System.Drawing.Size(90, 28)
 $btnCancel.Add_Click({ $script:cancelled = $true; $form.Close() })
 
@@ -374,6 +397,7 @@ $form.Controls.AddRange(@(
     $lblTitle, $lblSub, $sep1,
     $lblDir, $txtDir, $btnBrowse,
     $lblOpts, $chkDesktop, $chkStartMenu, $chkCtx, $chkLaunch,
+    $grpChannel,
     $sep2,
     $lstLog, $progress, $lblStatus,
     $btnInstall, $btnCancel
@@ -564,7 +588,7 @@ function Find-Python {
 # ---------------------------------------------------------------------------
 function Start-Install {
     # Lock UI during installation
-    foreach ($c in @($btnInstall, $txtDir, $btnBrowse, $chkDesktop, $chkStartMenu, $chkCtx, $chkLaunch)) {
+    foreach ($c in @($btnInstall, $txtDir, $btnBrowse, $chkDesktop, $chkStartMenu, $chkCtx, $chkLaunch, $rbStable, $rbDevelop)) {
         $c.Enabled = $false
     }
     $progress.Style                  = "Marquee"
@@ -696,7 +720,15 @@ function Start-Install {
 
         Step-Start "Fetching latest release from Codeberg ..."
         try {
-            $rel = Invoke-RestMethod -Uri $API_URL -UseBasicParsing
+            $channel = if ($rbDevelop.Checked) { "develop" } else { "stable" }
+            Write-Log "Update channel: $channel"
+            if ($channel -eq "develop") {
+                $releases = Invoke-RestMethod -Uri "https://codeberg.org/api/v1/repos/pitbo/pdf-qes-signer/releases?limit=5" -UseBasicParsing
+                if (-not $releases -or $releases.Count -eq 0) { throw "No releases found." }
+                $rel = $releases[0]
+            } else {
+                $rel = Invoke-RestMethod -Uri "https://codeberg.org/api/v1/repos/pitbo/pdf-qes-signer/releases/latest" -UseBasicParsing
+            }
             $whl = $rel.assets | Where-Object { $_.name -like "*.whl" } | Select-Object -First 1
             if (-not $whl) { throw "No .whl asset found in release." }
             $whlUrl  = $whl.browser_download_url
@@ -817,6 +849,12 @@ function Start-Install {
         }
         Step-Ok "Registered in Apps & Features"
         Write-Log "Apps & Features entry created (version $version)"
+
+        # Save selected channel to Registry
+        $chReg = "HKCU:\Software\PDF-QES-Signer"
+        New-Item -Path $chReg -Force -ErrorAction SilentlyContinue | Out-Null
+        Set-ItemProperty -Path $chReg -Name "Channel" -Value $channel
+        Write-Log "Channel saved: $channel"
 
         # --- Step 8: Save install log ---
         Write-Log "=== Installation completed successfully ==="

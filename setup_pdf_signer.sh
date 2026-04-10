@@ -21,8 +21,6 @@ BIN_DIR="$HOME/.local/bin"
 SYMLINK="$BIN_DIR/pdf-signer"
 STARTER="$INSTALL_DIR/pdf-signer.sh"
 UNINSTALLER="$INSTALL_DIR/uninstall.sh"
-API_URL="https://codeberg.org/api/v1/repos/pitbo/pdf-qes-signer/releases/latest"
-
 # ---------------------------------------------------------------------------
 # Colour helpers
 # ---------------------------------------------------------------------------
@@ -84,6 +82,45 @@ conditions of the GPL. The full license text is available at:
 
 EOF
 read -rp "Press Enter to accept the license and continue, or Ctrl+C to abort ... "
+echo
+
+# ---------------------------------------------------------------------------
+# Release channel
+# ---------------------------------------------------------------------------
+header "Update channel"
+
+CHANNEL="stable"
+if $IS_UPGRADE; then
+    CHANNEL=$(grep '^channel=' "$CONFIG_FILE" 2>/dev/null | cut -d= -f2 || echo "stable")
+fi
+
+echo "  Which update channel do you want to use?"
+echo
+if [[ "$CHANNEL" == "develop" ]]; then
+    echo "    1) stable   – official releases  (recommended)"
+    echo "    2) develop  – pre-releases and test builds  [current]"
+    echo
+    read -rp "  Your choice [1/2, default: 2 (develop)]: " _ch
+    case "${_ch}" in
+        1) CHANNEL="stable" ;;
+        *) :                 ;;
+    esac
+else
+    echo "    1) stable   – official releases  (recommended)"
+    echo "    2) develop  – pre-releases and test builds"
+    echo
+    read -rp "  Your choice [1/2, default: 1 (stable)]: " _ch
+    case "${_ch}" in
+        2) CHANNEL="develop" ;;
+        *) :                  ;;
+    esac
+fi
+
+if [[ "$CHANNEL" == "develop" ]]; then
+    ok "Channel: develop (pre-releases)"
+else
+    ok "Channel: stable (recommended)"
+fi
 echo
 
 # ---------------------------------------------------------------------------
@@ -150,16 +187,32 @@ header "Fetching release information"
 
 echo "  Contacting Codeberg API ..."
 
+if [[ "$CHANNEL" == "develop" ]]; then
+    API_URL="https://codeberg.org/api/v1/repos/pitbo/pdf-qes-signer/releases?limit=5"
+else
+    API_URL="https://codeberg.org/api/v1/repos/pitbo/pdf-qes-signer/releases/latest"
+fi
+
 if [[ "$DOWNLOADER" == "curl" ]]; then
     release_json=$(curl -fsSL "$API_URL") || die "Failed to contact Codeberg API."
 else
     release_json=$(wget -qO- "$API_URL") || die "Failed to contact Codeberg API."
 fi
 
-VERSION=$(echo "$release_json" | python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'])")
+VERSION=$(echo "$release_json" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+if isinstance(data, list):
+    if not data: raise SystemExit('No releases found.')
+    data = data[0]
+print(data['tag_name'])
+")
 WHL_URL=$(echo "$release_json" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
+if isinstance(data, list):
+    if not data: raise SystemExit('No releases found.')
+    data = data[0]
 assets = data.get('assets', [])
 whl = next((a['browser_download_url'] for a in assets if a['name'].endswith('.whl')), None)
 if not whl:
@@ -285,6 +338,7 @@ cat > "$CONFIG_FILE" <<CONF
 version=$VERSION
 install_dir=$INSTALL_DIR
 installed_at=$(date -Iseconds)
+channel=$CHANNEL
 CONF
 ok "Config saved: $CONFIG_FILE"
 
