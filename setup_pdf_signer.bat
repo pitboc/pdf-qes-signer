@@ -22,12 +22,15 @@ Add-Type -AssemblyName System.Drawing
 # Constants
 # ---------------------------------------------------------------------------
 $PY_URL      = $null   # determined on demand in Start-Install
-$VC_URL      = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
 $DEFAULT_DIR = Join-Path $env:LOCALAPPDATA "pdf-signer"
 $savedDir    = (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\PDFQESSigner" -ErrorAction SilentlyContinue).InstallLocation
 if ($savedDir -and (Test-Path $savedDir)) { $DEFAULT_DIR = $savedDir }
 $savedChannel = (Get-ItemProperty "HKCU:\Software\PDF-QES-Signer" -ErrorAction SilentlyContinue).Channel
 if (-not $savedChannel) { $savedChannel = "stable" }
+$arch    = $env:PROCESSOR_ARCHITECTURE          # AMD64 or ARM64
+$pyArch  = if ($arch -eq "ARM64") { "arm64" } else { "amd64" }
+$vcArch  = if ($arch -eq "ARM64") { "arm64" } else { "x64" }
+$VC_URL  = "https://aka.ms/vs/17/release/vc_redist.$vcArch.exe"
 
 # ---------------------------------------------------------------------------
 # Log buffer – flushed to install.log once the install dir exists
@@ -623,16 +626,16 @@ function Start-Install {
                               ForEach-Object { $_.Groups[1].Value } |
                               Sort-Object { [version]$_ } -Descending
                 foreach ($v in $candidates) {
-                    $url  = "https://www.python.org/ftp/python/$v/python-$v-amd64.exe"
+                    $url  = "https://www.python.org/ftp/python/$v/python-$v-$pyArch.exe"
                     $head = Invoke-WebRequest $url -Method Head -UseBasicParsing -TimeoutSec 5 -ErrorAction SilentlyContinue
                     if ($head -and $head.StatusCode -eq 200) { $PY_VERSION = $v; break }
                 }
             } catch { }
-            $PY_URL = "https://www.python.org/ftp/python/$PY_VERSION/python-$PY_VERSION-amd64.exe"
+            $PY_URL = "https://www.python.org/ftp/python/$PY_VERSION/python-$PY_VERSION-$pyArch.exe"
             Step-Ok "Python $PY_VERSION selected"
 
             Step-Start "Downloading Python $PY_VERSION (~25 MB) ..."
-            $pyTmp = Join-Path $env:TEMP "python-$PY_VERSION-amd64.exe"
+            $pyTmp = Join-Path $env:TEMP "python-$PY_VERSION-$pyArch.exe"
             try   { Get-File $PY_URL $pyTmp "Python $PY_VERSION" }
             catch { Show-Err "Download error" "$_"; $form.Close(); return }
 
@@ -662,7 +665,7 @@ function Start-Install {
         # --- Step 2: Visual C++ Runtime ---
         Step-Start "Checking Visual C++ Runtime ..."
 
-        $vcKey  = "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+        $vcKey  = "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\$vcArch"
         $vcProp    = Get-ItemProperty $vcKey -ErrorAction SilentlyContinue
         $vcVerStr  = ($vcProp.Version -replace "^v","")
         $vcOk      = (Test-Path $vcKey) -and
@@ -671,7 +674,7 @@ function Start-Install {
 
         if (-not $vcOk) {
             Step-Start "Downloading Visual C++ Runtime (~14 MB) ..."
-            $vcTmp = Join-Path $env:TEMP "vc_redist.x64.exe"
+            $vcTmp = Join-Path $env:TEMP "vc_redist.$vcArch.exe"
             try   { Get-File $VC_URL $vcTmp "VC++ Redistributable" }
             catch { Show-Err "Download error" "$_"; $form.Close(); return }
 
