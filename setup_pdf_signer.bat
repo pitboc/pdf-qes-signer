@@ -718,8 +718,14 @@ function Start-Install {
         }
 
         Step-Start "Updating pip ..."
-        & $VENV_PIP install --upgrade pip -q 2>&1 | Out-Null
-        Step-Ok "pip up to date"
+        $pipUpOut = & $VENV_PY -m pip install --upgrade pip 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $pipUpdated = ($pipUpOut | Out-String) -match "Successfully installed pip"
+            if ($pipUpdated) { Step-Ok "pip updated" } else { Step-Ok "pip up to date" }
+        } else {
+            Write-Log "pip upgrade failed: $pipUpOut" "WARN"
+            Step-Ok "pip upgrade skipped"
+        }
 
         Step-Start "Fetching latest release from Codeberg ..."
         try {
