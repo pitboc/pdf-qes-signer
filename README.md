@@ -157,7 +157,33 @@ If you prefer to install manually:
 > **Note:** The current development version (master branch) contains the latest
 > features and fixes and is generally preferred over the tagged releases.
 
-### Option A – Download archive (recommended for end users)
+### Quick install (one-liner)
+
+**Linux:**
+
+```bash
+bash <(curl -fsSL https://codeberg.org/pitbo/pdf-qes-signer/raw/branch/master/setup_pdf_signer.sh)
+```
+
+> **Note:** `bash <(curl ...)` is required instead of `curl ... | bash` because
+> the installer prompts for input interactively.
+
+**Windows** – run in PowerShell:
+
+```powershell
+irm https://codeberg.org/pitbo/pdf-qes-signer/raw/branch/master/setup_pdf_signer.bat -OutFile "$env:TEMP\setup_pdf_signer.bat"; & "$env:TEMP\setup_pdf_signer.bat"
+```
+
+Both installers ask for an **update channel** during setup:
+
+| Channel | Description |
+|---------|-------------|
+| `stable` | Official releases — **recommended** (default) |
+| `develop` | Pre-releases and test builds |
+
+The selected channel is remembered for future upgrades.
+
+### Option A – Download archive
 
 **Linux / macOS** – download and extract the `.tar.gz` archive:
 
@@ -221,6 +247,10 @@ rights and no pre-installed tools beyond a standard Windows 10/11 installation.
 - Registers the application in *Apps & Features* (Settings → Apps) with a
   proper uninstaller entry.
 - Writes an install log to `%TEMP%\pdf_signer_install.log`.
+
+**Update channel:** the installer always asks whether to use the `stable`
+(recommended, default) or `develop` (pre-releases) channel. The choice is
+saved and pre-selected on the next run.
 
 **Upgrade:** running the installer again on an existing installation shows an
 *Update* dialog — the GPL acceptance step is skipped and the previous install
