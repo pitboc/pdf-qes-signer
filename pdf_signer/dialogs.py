@@ -12,6 +12,7 @@ Provides:
   - RenameProfileDialog   – rename any profile
   - DeleteProfileDialog   – delete a profile with special-case handling
   - UpdateDialog          – automatic download + install of a new release
+  - UpdateAvailableDialog – shows changelog + offers to start the update
 """
 
 from __future__ import annotations
@@ -3425,3 +3426,85 @@ class UpdateDialog(QDialog):
             self._worker.abort()
             self._worker.wait(2000)
         super().closeEvent(event)
+
+
+# ---------------------------------------------------------------------------
+# UpdateAvailableDialog
+# ---------------------------------------------------------------------------
+
+class UpdateAvailableDialog(QDialog):
+    """Dialog: Update verfügbar – zeigt Changelog und bietet Installation an.
+
+    Wird sowohl vom Startup-Update-Check als auch vom manuellen Check in
+    Hilfe → Über verwendet.
+
+    Args:
+        tag:     Release-Tag der neuen Version (z. B. ``"v0.3.3"``).
+        url:     Codeberg-Release-Seiten-URL (für den „Im Browser öffnen"-Link).
+        body:    Markdown-Changelog-Text des Releases (kann leer sein).
+        channel: Update-Kanal – wird an ``UpdateDialog`` weitergereicht.
+        parent:  Eltern-Widget.
+    """
+
+    def __init__(self, tag: str, url: str, body: str,
+                 channel: str = "stable", parent=None) -> None:
+        super().__init__(parent)
+        self._tag     = tag
+        self._url     = url
+        self._body    = body
+        self._channel = channel
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        from . import __version__ as _cur
+        self.setWindowTitle(t("upd_avail_title"))
+        self.setMinimumWidth(520)
+        self.setMinimumHeight(380)
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
+
+        vl = QVBoxLayout(self)
+        vl.setSpacing(10)
+
+        # Versionszeile
+        ver_lbl = QLabel(t("upd_avail_versions",
+                            current=_cur,
+                            latest=self._tag.lstrip("v")))
+        ver_lbl.setWordWrap(True)
+        vl.addWidget(ver_lbl)
+
+        # Changelog
+        changelog_lbl = QLabel(t("upd_avail_changelog"))
+        vl.addWidget(changelog_lbl)
+
+        changelog_box = QTextEdit()
+        changelog_box.setReadOnly(True)
+        if self._body.strip():
+            changelog_box.setMarkdown(self._body)
+        else:
+            changelog_box.setPlainText(t("upd_avail_no_changelog"))
+        vl.addWidget(changelog_box)
+
+        # Buttons
+        hl = QHBoxLayout()
+        hl.setSpacing(6)
+        btn_install = QPushButton(t("update_btn_install"))
+        btn_install.setDefault(True)
+        btn_cancel  = QPushButton(t("dlg_token_close"))
+        hl.addWidget(btn_install)
+        hl.addStretch()
+        hl.addWidget(btn_cancel)
+        vl.addLayout(hl)
+
+        btn_cancel.clicked.connect(self.reject)
+        btn_install.clicked.connect(self._start_install)
+
+    def _start_install(self) -> None:
+        from .updater import get_latest_release_asset
+        result = get_latest_release_asset(channel=self._channel)
+        if result is None:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, t("upd_avail_title"), t("update_no_asset"))
+            return
+        tag, whl_url = result
+        self.accept()
+        UpdateDialog(tag, whl_url, autostart=True, parent=self.parent()).exec()

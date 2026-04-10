@@ -389,6 +389,11 @@ TRANSLATIONS: dict[str, str] = {
     ),
     "settings_gen_lang_label":      "Sprache",
     "menu_settings_open":           "Einstellungen…",
+    # Update verfügbar-Dialog
+    "upd_avail_title":           "Update verfügbar",
+    "upd_avail_versions":        "Installiert: {current}  →  Neu: {latest}",
+    "upd_avail_changelog":       "Änderungen in dieser Version:",
+    "upd_avail_no_changelog":    "(Keine Änderungsnotizen vorhanden.)",
     # Update-Installations-Dialog
     "update_btn_install":        "Update installieren",
     "update_btn_retry":          "Erneut versuchen",

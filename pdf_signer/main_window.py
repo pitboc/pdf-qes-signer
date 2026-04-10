@@ -1608,7 +1608,7 @@ class PDFSignerApp(QMainWindow):
     def _start_update_check(self) -> None:
         """Startup-Update-Prüfung im Hintergrund starten.
 
-        Bei verfügbarem Update wird die Meldung in der Statusleiste angezeigt.
+        Bei verfügbarem Update erscheint automatisch der UpdateAvailableDialog.
         Wenn kein Update gefunden wird, passiert nichts (kein Hinweis).
         """
         from . import __version__
@@ -1619,9 +1619,16 @@ class PDFSignerApp(QMainWindow):
         self._update_worker.update_available.connect(self._on_update_available)
         self._update_worker.start()
 
-    def _on_update_available(self, tag: str, url: str) -> None:
-        """Ergebnis des Startup-Checks merken; wird beim nächsten Über-Dialog angezeigt."""
+    def _on_update_available(self, tag: str, url: str, body: str) -> None:
+        """Startup-Check hat Update gefunden – Dialog anzeigen."""
         self._update_found = tag
+        self._show_update_available(tag, url, body)
+
+    def _show_update_available(self, tag: str, url: str, body: str) -> None:
+        """UpdateAvailableDialog öffnen (Startup-Check und manueller Check)."""
+        from .dialogs import UpdateAvailableDialog
+        channel = self.config.get("update", "channel")
+        UpdateAvailableDialog(tag, url, body, channel=channel, parent=self).exec()
 
     def _show_about(self) -> None:
         """Über-Dialog mit Update-Suchen- und Update-Installieren-Button."""
@@ -1643,23 +1650,18 @@ class PDFSignerApp(QMainWindow):
         lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         vl.addWidget(lbl)
 
-        # Status-Zeile für Update-Ergebnis
+        # Status-Zeile für laufende Prüfung
         status_lbl = QLabel("")
         status_lbl.setTextFormat(Qt.TextFormat.PlainText)
         status_lbl.setWordWrap(True)
-        if self._update_found:
-            status_lbl.setText(t("about_update_available", version=self._update_found))
         vl.addWidget(status_lbl)
 
         hl = QHBoxLayout()
         hl.setSpacing(6)
-        btn_check   = QPushButton(t("about_check_update"))
-        btn_install = QPushButton(t("update_btn_install"))
-        btn_install.setVisible(bool(self._update_found))
-        btn_close   = QPushButton(t("dlg_token_close"))
+        btn_check = QPushButton(t("about_check_update"))
+        btn_close = QPushButton(t("dlg_token_close"))
         btn_close.clicked.connect(dlg.accept)
         hl.addWidget(btn_check)
-        hl.addWidget(btn_install)
         hl.addStretch()
         hl.addWidget(btn_close)
         vl.addLayout(hl)
@@ -1673,32 +1675,15 @@ class PDFSignerApp(QMainWindow):
             result = check_for_update(__version__, channel=channel)
             if result is None:
                 status_lbl.setText(t("about_update_current"))
-                btn_install.setVisible(False)
             else:
-                tag, _url = result
+                tag, url, body = result
                 self._update_found = tag
-                status_lbl.setText(t("about_update_available", version=tag))
-                btn_install.setVisible(True)
+                status_lbl.setText("")
+                dlg.accept()
+                self._show_update_available(tag, url, body)
             btn_check.setEnabled(True)
 
-        def _do_install():
-            from .updater import get_latest_release_asset
-            from .dialogs import UpdateDialog
-            btn_install.setEnabled(False)
-            status_lbl.setText(t("about_update_checking"))
-            dlg.repaint()
-            channel = self.config.get("update", "channel")
-            result = get_latest_release_asset(channel=channel)
-            if result is None:
-                status_lbl.setText(t("update_no_asset"))
-                btn_install.setEnabled(True)
-                return
-            tag, url = result
-            dlg.accept()
-            UpdateDialog(tag, url, autostart=True, parent=self).exec()
-
         btn_check.clicked.connect(_do_check)
-        btn_install.clicked.connect(_do_install)
         dlg.exec()
 
     def _show_license(self) -> None:

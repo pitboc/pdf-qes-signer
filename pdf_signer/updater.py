@@ -112,7 +112,7 @@ def _fetch_release(channel: str, timeout: int) -> Optional[dict]:
 
 def check_for_update(current_version: str,
                      channel: str = "stable",
-                     timeout: int = 8) -> Optional[tuple[str, str]]:
+                     timeout: int = 8) -> Optional[tuple[str, str, str]]:
     """Neueste Release-Version von Codeberg abrufen.
 
     Args:
@@ -120,21 +120,23 @@ def check_for_update(current_version: str,
         channel:         ``"stable"`` oder ``"develop"``.
 
     Returns:
-        ``(latest_tag, release_url)`` wenn eine neuere Version verfügbar ist,
+        ``(latest_tag, release_url, body)`` wenn eine neuere Version verfügbar ist,
         ``None`` wenn aktuell oder bei Fehlern.
+        *body* enthält den Markdown-Changelog des Releases (kann leer sein).
     """
     data = _fetch_release(channel, timeout)
     if data is None:
         return None
 
-    tag = data.get("tag_name", "").strip()
-    url = data.get("html_url", RELEASES_PAGE).strip()
+    tag  = data.get("tag_name", "").strip()
+    url  = data.get("html_url", RELEASES_PAGE).strip()
+    body = data.get("body", "") or ""
     if not tag:
         return None
 
     try:
         if _parse_version(tag) > _parse_version(current_version):
-            return tag, url
+            return tag, url, body
     except Exception as exc:
         _log.debug("Versionsvergleich fehlgeschlagen: %s", exc)
 
@@ -316,11 +318,11 @@ class UpdateCheckWorker(QThread):
     """Hintergrund-Thread für die Update-Prüfung beim Programmstart.
 
     Signals:
-        update_available(str, str): (latest_tag, release_url) wenn Update verfügbar.
-        no_update():                aktuell oder Fehler.
+        update_available(str, str, str): (latest_tag, release_url, body) wenn Update verfügbar.
+        no_update():                     aktuell oder Fehler.
     """
 
-    update_available = pyqtSignal(str, str)
+    update_available = pyqtSignal(str, str, str)
     no_update        = pyqtSignal()
 
     def __init__(self, current_version: str, channel: str = "stable",
