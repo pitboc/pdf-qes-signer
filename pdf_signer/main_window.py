@@ -83,7 +83,7 @@ from .pdf_view import PDFViewWidget, SignatureFieldDef
 from .dialogs import (Pkcs11ConfigDialog, ProfileManagerDialog,
                        ProfileSelectDialog, _pfx_load_cert_info,
                        DocMDPDialog)
-from .i18n import t, i18n, AVAILABLE_LANGUAGES
+from .i18n import t, i18n
 from .appearance_panel import AppearancePanel
 from .continuous_view import ContinuousView
 
@@ -185,24 +185,13 @@ class PDFSignerApp(QMainWindow):
         self._act_quit.triggered.connect(self.close)
         self._menu_file.addAction(self._act_quit)
 
-        self._menu_sign = self.menuBar().addMenu("")
-        self._act_sign  = QAction(self)
-        # Startet den Signiervorgang für das ausgewählte Signaturfeld
-        self._act_sign.triggered.connect(self.sign_document)
-        self._menu_sign.addAction(self._act_sign)
-        self._act_check_sigs = QAction(self)
-        self._act_check_sigs.triggered.connect(self.check_signatures)
-        self._menu_sign.addAction(self._act_check_sigs)
-        self._menu_sign.addSeparator()
-        self._act_trust_cache = QAction(self)
-        self._act_trust_cache.triggered.connect(self.open_trust_cache_dialog)
-        self._menu_sign.addAction(self._act_trust_cache)
-
         self._menu_settings  = self.menuBar().addMenu("")
-        self._act_pkcs11     = QAction(self)
-        # Öffnet den PKCS#11-Konfigurationsdialog (Bibliothek, Schlüssel-ID, TSA)
-        self._act_pkcs11.triggered.connect(self.open_pkcs11_config)
-        self._menu_settings.addAction(self._act_pkcs11)
+        self._act_settings = QAction(self)
+        self._act_settings.setShortcut("Ctrl+,")
+        self._act_settings.triggered.connect(self._open_settings)
+        self._menu_settings.addAction(self._act_settings)
+
+        self._menu_settings.addSeparator()
 
         # Profile action (single entry → combined manager dialog)
         self._act_profile = QAction(self)
@@ -215,29 +204,6 @@ class PDFSignerApp(QMainWindow):
         self._profile_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
         self._profile_lbl.clicked.connect(self._profile_select)
         self.statusBar().addPermanentWidget(self._profile_lbl)
-
-        # Language sub-menu
-        # Sprachauswahl-Untermenü: für jede verfügbare Sprache eine umschaltbare Aktion
-        self._menu_lang = self.menuBar().addMenu("")
-        self._lang_actions: dict[str, QAction] = {}
-        for code, label in AVAILABLE_LANGUAGES.items():
-            act = QAction(label, self)
-            act.setCheckable(True)
-            # Aktuell aktive Sprache mit Häkchen markieren
-            act.setChecked(code == i18n.lang)
-            # Lambda mit Default-Argument um Closures-Problem mit Schleifenvariable zu vermeiden
-            act.triggered.connect(lambda _, c=code: self._set_language(c))
-            self._lang_actions[code] = act
-            self._menu_lang.addAction(act)
-        self._menu_settings.addMenu(self._menu_lang)
-
-        # Update-Check-Einstellung
-        self._act_check_updates = QAction(self)
-        self._act_check_updates.setCheckable(True)
-        self._act_check_updates.setChecked(
-            self.config.getbool("update", "check_on_startup"))
-        self._act_check_updates.toggled.connect(self._toggle_update_check)
-        self._menu_settings.addAction(self._act_check_updates)
 
         self._menu_help = self.menuBar().addMenu("")
         self._act_about = QAction(self)
@@ -462,12 +428,10 @@ class PDFSignerApp(QMainWindow):
 
     def _set_language(self, code: str) -> None:
         # Sprache wechseln: i18n-Singleton aktualisieren, Konfig speichern,
-        # alle Sprach-Aktionen neu einrasten und UI neu beschriften
+        # Qt-Übersetzer neu laden und UI neu beschriften
         i18n.lang = code
         self.config.set("app", "language", code)
         self.config.save()
-        for c, act in self._lang_actions.items():
-            act.setChecked(c == code)
         # Reload Qt's own translations (file dialogs, standard buttons, etc.)
         # so that native Qt widgets switch language at runtime too.
         from PyQt6.QtCore import QTranslator, QLibraryInfo
@@ -491,15 +455,9 @@ class PDFSignerApp(QMainWindow):
         self._act_open.setText(t("menu_file_open"))
         self._act_save_fields.setText(t("menu_file_save_fields"))
         self._act_quit.setText(t("menu_file_quit"))
-        self._menu_sign.setTitle(t("menu_sign"))
-        self._act_sign.setText(t("menu_sign_document"))
-        self._act_check_sigs.setText(t("menu_check_sigs"))
-        self._act_trust_cache.setText(t("menu_trust_cache"))
         self._menu_settings.setTitle(t("menu_settings"))
-        self._act_pkcs11.setText(t("menu_settings_pkcs11"))
+        self._act_settings.setText(t("menu_settings_open"))
         self._act_profile.setText(t("menu_profile"))
-        self._menu_lang.setTitle(t("menu_settings_language"))
-        self._act_check_updates.setText(t("settings_check_on_startup"))
         self._menu_help.setTitle(t("menu_help"))
         self._act_about.setText(t("menu_help_about"))
         self._act_license.setText(t("menu_help_license"))
@@ -1388,6 +1346,19 @@ class PDFSignerApp(QMainWindow):
         self._update_token_panel_for_mode()
         self._ap_panel.on_checks()
 
+    def _open_settings(self, initial_page: int = 0) -> None:
+        """Open the consolidated settings dialog (Ctrl+,)."""
+        from .settings_dialog import SettingsDialog
+        dlg = SettingsDialog(self.config, parent=self,
+                             initial_page=initial_page)
+        dlg.language_changed.connect(
+            lambda code: (self._set_language(code), dlg.retranslate()))
+        dlg.exec()
+        # Refresh main-window state that may have changed in settings
+        self._tsa_chk.setChecked(self.config.getbool("tsa", "enabled"))
+        self._update_token_panel_for_mode()
+        self._ap_panel.on_checks()
+
     # ── Profile management ────────────────────────────────────────────────
 
     def _update_profile_label(self) -> None:
@@ -1621,10 +1592,6 @@ class PDFSignerApp(QMainWindow):
             self._sign_worker.allow_root_fetch()
         else:
             self._sign_worker.deny_root_fetch()
-
-    def _toggle_update_check(self, checked: bool) -> None:
-        self.config.setbool("update", "check_on_startup", checked)
-        self.config.save()
 
     def _warn_downgrade(self) -> None:
         """Warnung anzeigen wenn settings.ini von einer neueren App-Version stammt."""

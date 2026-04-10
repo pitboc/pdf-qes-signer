@@ -358,6 +358,25 @@ TRANSLATIONS: dict[str, str] = {
     "about_update_available":    "New release available: {version}",
     "about_update_current":      "Up to date – no update available.",
     "settings_check_on_startup": "Automatically check for updates on startup",
+    # Settings dialog
+    "settings_title":               "Settings",
+    "settings_nav_token":           "Token / Signature",
+    "settings_nav_tsa":             "Timestamp",
+    "settings_nav_validation":      "Validation",
+    "settings_nav_cache":           "Trust Store Cache",
+    "settings_nav_updates":         "Updates",
+    "settings_nav_general":         "General",
+    "settings_tok_docmdp_label":    "Default Document Restriction",
+    "settings_val_auto_fetch_label": "Auto-fetch revocation status during validation",
+    "settings_val_auto_fetch_hint": (
+        "Fetches OCSP status online during validation. Requires network access to "
+        "the CA's OCSP service (consider data privacy implications)."
+    ),
+    "settings_upd_channel_label":   "Update Channel",
+    "settings_upd_stable":          "Stable (recommended)",
+    "settings_upd_develop":         "Develop (pre-releases)",
+    "settings_gen_lang_label":      "Language",
+    "menu_settings_open":           "Settings…",
     # Update install dialog
     "update_btn_install":        "Install update",
     "update_btn_retry":          "Try again",
