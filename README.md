@@ -168,10 +168,16 @@ bash <(curl -fsSL https://codeberg.org/pitbo/pdf-qes-signer/raw/branch/master/se
 > **Note:** `bash <(curl ...)` is required instead of `curl ... | bash` because
 > the installer prompts for input interactively.
 
-**Windows** – run in CMD or PowerShell:
+**Windows (CMD):**
 
 ```
-powershell -Command "Invoke-WebRequest 'https://codeberg.org/pitbo/pdf-qes-signer/raw/branch/master/setup_pdf_signer.bat' -OutFile \"$env:TEMP\setup_pdf_signer.bat\"; & \"$env:TEMP\setup_pdf_signer.bat\""
+powershell -Command "irm 'https://codeberg.org/pitbo/pdf-qes-signer/raw/branch/master/setup_pdf_signer.bat' -OutFile '%TEMP%\setup_pdf_signer.bat'; & '%TEMP%\setup_pdf_signer.bat'"
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm 'https://codeberg.org/pitbo/pdf-qes-signer/raw/branch/master/setup_pdf_signer.bat' -OutFile "$env:TEMP\setup_pdf_signer.bat"; & "$env:TEMP\setup_pdf_signer.bat"
 ```
 
 Both installers ask for an **update channel** during setup:
