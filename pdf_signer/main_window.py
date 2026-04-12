@@ -1705,10 +1705,10 @@ class PDFSignerApp(QMainWindow):
 
     def _set_modifying_actions_enabled(self, enabled: bool) -> None:
         """Enable or disable all actions that would modify or replace the PDF."""
-        for act in (self._act_sign, self._tb_sign,
+        for act in (self._tb_sign,
                     self._act_save_fields, self._tb_save_fields,
                     self._act_open, self._tb_open,
-                    self._act_check_sigs, self._tb_check_sigs):
+                    self._tb_check_sigs):
             act.setEnabled(enabled)
         # Delete button: only active when enabled AND a free field is selected
         if enabled:
@@ -1768,7 +1768,7 @@ class PDFSignerApp(QMainWindow):
         Also propagates to the field-drawing views so that no drag/name-dialog
         can be started when *enabled* is False.
         """
-        for act in (self._act_sign, self._tb_sign,
+        for act in (self._tb_sign,
                     self._act_save_fields, self._tb_save_fields):
             act.setEnabled(enabled)
         if enabled:
