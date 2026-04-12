@@ -53,7 +53,7 @@ def main() -> None:
     _check_imports()
 
     from pathlib import Path
-    from PyQt6.QtGui import QIcon
+    from PyQt6.QtGui import QIcon, QPalette
     from PyQt6.QtWidgets import QApplication
     from .config import AppConfig
     from .i18n import i18n
@@ -66,6 +66,16 @@ def main() -> None:
         app.setStyle("Fusion")
     except Exception:
         pass
+
+    # Ensure placeholder text is visible regardless of system theme.
+    # Qt's PlaceholderText role is not set by all themes (e.g. KDE Plasma);
+    # fall back to the Disabled/Text colour which is always set correctly.
+    _pal = app.palette()
+    _pal.setColor(
+        QPalette.ColorRole.PlaceholderText,
+        _pal.color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text),
+    )
+    app.setPalette(_pal)
 
     _icon_path = Path(__file__).parent / "icons" / "app.png"
     if _icon_path.exists():
