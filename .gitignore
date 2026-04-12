@@ -25,3 +25,6 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local issue tracking (managed locally, not in repo)
+ISSUES.md
