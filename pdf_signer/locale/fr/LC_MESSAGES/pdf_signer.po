@@ -860,7 +860,7 @@ msgid "settings_nav_updates"
 msgstr "Mises à jour"
 
 msgid "settings_nav_general"
-msgstr "Général"
+msgstr "Langue"
 
 msgid "settings_tok_docmdp_label"
 msgstr "Restriction de document par défaut"

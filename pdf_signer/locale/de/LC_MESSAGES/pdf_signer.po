@@ -890,7 +890,7 @@ msgid "settings_nav_updates"
 msgstr "Updates"
 
 msgid "settings_nav_general"
-msgstr "Allgemein"
+msgstr "Sprache"
 
 msgid "settings_tok_docmdp_label"
 msgstr "Standard-Dokumenteinschränkung"
