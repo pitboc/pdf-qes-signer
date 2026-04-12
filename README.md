@@ -125,7 +125,7 @@ pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
   complete set of signing parameters (PKCS#11 library, key label, TSA URL,
   appearance settings). Profiles can be created, renamed, deleted, and
   switched at runtime.
-- Bilingual UI: German and English (switchable at runtime without restart)
+- Multilingual UI: German, English, French, Spanish, Italian, Dutch, Polish, and Portuguese (switchable at runtime without restart)
 - Persistent configuration in `~/.config/pdf-signer/settings.ini` (global)
   and `~/.config/pdf-signer/profiles/<name>.ini` (per profile)
 
@@ -410,6 +410,21 @@ country attribute is present.
 `test_tsl_fetched_real_network` fetches the Finnish TSL (~130 KB) and writes it
 to `~/.config/pdf-signer/tsl_cache/tsl_FI.xml`. On subsequent runs the cached
 file is reused and no network request is made.
+
+## Translations
+
+The UI is available in **German, English, French, Spanish, Italian, Dutch,
+Polish, and Portuguese**.
+
+Translations for French, Spanish, Italian, Dutch, Polish, and Portuguese were
+generated with AI assistance and may be rough or contain inaccuracies —
+especially for legal and technical terms related to qualified electronic
+signatures.
+
+**Native speakers are warmly invited to review and improve the translations.**
+If you find an error or would like to contribute a corrected version, please
+open an issue or pull request on
+[Codeberg](https://codeberg.org/pitbo/pdf-qes-signer).
 
 ## Known limitations
 

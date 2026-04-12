@@ -67,3 +67,4 @@ include = ["pdf_signer*"]
 
 [tool.setuptools.package-data]
 "pdf_signer.icons" = ["*.png", "*.ico", "*.svg"]
+"pdf_signer" = ["locale/*/LC_MESSAGES/*.mo", "locale/*/LC_MESSAGES/*.po"]
