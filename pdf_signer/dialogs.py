@@ -854,12 +854,12 @@ class KeygenDialog(QDialog):
             QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
         self._cn_edit = QLineEdit()
-        self._cn_edit.setPlaceholderText("Max Mustermann")
+        self._cn_edit.setPlaceholderText("Jane Doe")
         self._cn_edit.setToolTip(t("keygen_cn_tip"))
         subj_form.addRow(t("keygen_cn_label"), self._cn_edit)
 
         self._org_edit = QLineEdit()
-        self._org_edit.setPlaceholderText("Musterfirma GmbH")
+        self._org_edit.setPlaceholderText("Example Company")
         self._org_edit.setToolTip(t("keygen_org_tip"))
         subj_form.addRow(t("keygen_org_label"), self._org_edit)
 
@@ -880,7 +880,7 @@ class KeygenDialog(QDialog):
         subj_form.addRow(t("keygen_country_label"), country_widget)
 
         self._email_edit = QLineEdit()
-        self._email_edit.setPlaceholderText("max@example.de")
+        self._email_edit.setPlaceholderText("jane.doe@example.com")
         self._email_edit.setToolTip(t("keygen_email_tip"))
         subj_form.addRow(t("keygen_email_label"), self._email_edit)
 
@@ -894,7 +894,7 @@ class KeygenDialog(QDialog):
 
         path_row = QHBoxLayout()
         self._path_edit = QLineEdit()
-        self._path_edit.setPlaceholderText("mein-schluessel.p12")
+        self._path_edit.setPlaceholderText("my-key.p12")
         self._path_edit.setToolTip(t("keygen_path_tip"))
         browse_btn = QPushButton(t("cfg_lib_browse"))
         browse_btn.setFixedWidth(36)
@@ -994,7 +994,7 @@ class KeygenDialog(QDialog):
         path, _ = QFileDialog.getSaveFileName(
             self,
             t("keygen_save_title"),
-            str(Path(self._save_dir) / f"mein-schluessel{ext}"),
+            str(Path(self._save_dir) / f"my-key{ext}"),
             t("keygen_save_filter"),
         )
         if path:
@@ -1022,11 +1022,11 @@ class KeygenDialog(QDialog):
         validity_years: int = self._validity_combo.currentData()
         days = 365 * validity_years + validity_years // 4
 
-        cn       = self._cn_edit.text().strip()   or "MeinName"
+        cn       = self._cn_edit.text().strip()   or "My Name"
         org      = self._org_edit.text().strip()
         country  = self._country_edit.text().strip().upper()
         email    = self._email_edit.text().strip()
-        path_str = self._path_edit.text().strip() or f"mein-schluessel{self._default_ext()}"
+        path_str = self._path_edit.text().strip() or f"my-key{self._default_ext()}"
         smime    = self._smime_enc_chk.isChecked()
 
         # Schlüsseltyp-Flag
@@ -1088,11 +1088,11 @@ class KeygenDialog(QDialog):
         step2 = " \\\n".join(s2)
 
         return "\n".join([
-            "# Schritt 1: Schlüssel + selbstsigniertes Zertifikat",
+            "# Step 1: generate key + self-signed certificate",
             step1, "",
-            "# Schritt 2: PKCS#12 exportieren (openssl fragt nach dem Passwort)",
+            "# Step 2: export PKCS#12 (openssl will prompt for the password)",
             step2, "",
-            "# Schritt 3: temporäre Dateien löschen",
+            "# Step 3: remove temporary files",
             rm_cmd,
         ])
 
@@ -1172,14 +1172,14 @@ class KeygenDialog(QDialog):
         script_body = (
             "#!/usr/bin/env bash\n"
             "set -e\n"
-            f"echo '=== openssl Schlüsselerzeugung – PDF QES Signer ==='\n"
-            f"echo 'openssl fragt nach dem Exportpasswort (2×).'\n"
-            f"echo 'Enter für kein Passwort.'\n"
+            f"echo '=== openssl key generation – PDF QES Signer ==='\n"
+            f"echo 'openssl will prompt for the export password (twice).'\n"
+            f"echo 'Press Enter for no password.'\n"
             f"echo ''\n"
             f"{openssl_cmd}\n"
             f"echo ''\n"
-            f"echo 'Fertig. Datei: {path}'\n"
-            f"read -rp 'Enter zum Schließen...' _\n"
+            f"echo 'Done. File: {path}'\n"
+            f"read -rp 'Press Enter to close...' _\n"
         )
 
         fd, script_path = tempfile.mkstemp(suffix=".sh", prefix="pdf_signer_keygen_")
