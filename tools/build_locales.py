@@ -1,21 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-Build locale files (.po and .mo) for PDF QES Signer.
+Compile locale .po files to .mo for PDF QES Signer.
 
 Usage (from project root, with venv active):
-    python tools/build_locales.py
+    python tools/build_locales.py --compile-only
 
-What it does:
-  1. Reads the existing Python translation dicts from pdf_signer/i18n/de.py
-     and pdf_signer/i18n/en.py.
-  2. Writes a .po file for each language into
-     pdf_signer/locale/<lang>/LC_MESSAGES/pdf_signer.po
-  3. Compiles each .po file to a binary .mo file using msgfmt.
-
-After the initial migration the .po files become the source of truth.
-Edit them directly (e.g. with Poedit) and re-run this script with --compile-only
-to regenerate the .mo files:
+The .po files under pdf_signer/locale/<lang>/LC_MESSAGES/ are the source of
+truth.  Edit them directly (e.g. with Poedit) and re-run with --compile-only
+to regenerate the binary .mo files:
     python tools/build_locales.py --compile-only
 """
 

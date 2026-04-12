@@ -357,10 +357,10 @@ pdf_signer/
 ├── validation_dialog.py    # ValidationDialog: revision tree, PAdES profile, warning banner
 ├── validation_worker.py    # Phase 2 background worker (trust chain validation, AIA/OCSP, EU LOTL)
 ├── lotl_trust.py           # EU LOTL/TSL trust store (cached XML)
-└── i18n/
-    ├── __init__.py         # I18n class, t() function
-    ├── de.py               # German translations
-    └── en.py               # English translations
+├── i18n/
+│   └── __init__.py         # I18n class, t() function (gettext-backed)
+└── locale/
+    └── <lang>/LC_MESSAGES/ # .po source + compiled .mo for de, en, fr, es, it, nl, pl, pt
 tests/
 ├── test_cert_chain_security.py  # security tests: forged/expired/tampered cert chains (no network)
 └── test_tsl_loading.py          # TSL loading tests: country hint, fetch trigger, EU_TSL classification
