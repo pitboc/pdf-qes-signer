@@ -4,7 +4,11 @@
 # Downloads and installs pdf-qes-signer from Codeberg into a Python venv.
 # Does not require root – everything goes into ~/.local/share/pdf-signer/.
 #
-# Usage:  bash setup_pdf_signer.sh
+# Usage:  bash setup_pdf_signer.sh [--installversion vX.Y.Z]
+#
+# Options:
+#   --installversion vX.Y.Z   Install a specific version (e.g. v0.3.3).
+#                             Use this to downgrade or pin a release.
 
 set -euo pipefail
 
@@ -40,6 +44,23 @@ header() {
     echo "$(bold "=== $* ===")"
     echo
 }
+
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+INSTALL_VERSION=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --installversion)
+            INSTALL_VERSION="${2:-}"
+            [[ -z "$INSTALL_VERSION" ]] && die "--installversion requires a version argument (e.g. v0.3.3)"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
 
 # ---------------------------------------------------------------------------
 # Detect update vs. fresh install
@@ -87,41 +108,47 @@ echo
 # ---------------------------------------------------------------------------
 # Release channel
 # ---------------------------------------------------------------------------
-header "Update channel"
-
 CHANNEL="stable"
 if $IS_UPGRADE; then
     CHANNEL=$(grep '^channel=' "$CONFIG_FILE" 2>/dev/null | cut -d= -f2 || echo "stable")
 fi
 
-echo "  Which update channel do you want to use?"
-echo
-if [[ "$CHANNEL" == "develop" ]]; then
-    echo "    1) stable   – official releases  (recommended)"
-    echo "    2) develop  – pre-releases and test builds  [current]"
+if [[ -n "$INSTALL_VERSION" ]]; then
+    # Specific version requested – skip channel selection, keep existing channel
+    ok "Installing specific version: $INSTALL_VERSION (channel: $CHANNEL)"
     echo
-    read -rp "  Your choice [1/2, default: 2 (develop)]: " _ch
-    case "${_ch}" in
-        1) CHANNEL="stable" ;;
-        *) :                 ;;
-    esac
 else
-    echo "    1) stable   – official releases  (recommended)"
-    echo "    2) develop  – pre-releases and test builds"
-    echo
-    read -rp "  Your choice [1/2, default: 1 (stable)]: " _ch
-    case "${_ch}" in
-        2) CHANNEL="develop" ;;
-        *) :                  ;;
-    esac
-fi
+    header "Update channel"
 
-if [[ "$CHANNEL" == "develop" ]]; then
-    ok "Channel: develop (pre-releases)"
-else
-    ok "Channel: stable (recommended)"
+    echo "  Which update channel do you want to use?"
+    echo
+    if [[ "$CHANNEL" == "develop" ]]; then
+        echo "    1) stable   – official releases  (recommended)"
+        echo "    2) develop  – pre-releases and test builds  [current]"
+        echo
+        read -rp "  Your choice [1/2, default: 2 (develop)]: " _ch
+        case "${_ch}" in
+            1) CHANNEL="stable" ;;
+            *) :                 ;;
+        esac
+    else
+        echo "    1) stable   – official releases  (recommended)"
+        echo "    2) develop  – pre-releases and test builds"
+        echo
+        read -rp "  Your choice [1/2, default: 1 (stable)]: " _ch
+        case "${_ch}" in
+            2) CHANNEL="develop" ;;
+            *) :                  ;;
+        esac
+    fi
+
+    if [[ "$CHANNEL" == "develop" ]]; then
+        ok "Channel: develop (pre-releases)"
+    else
+        ok "Channel: stable (recommended)"
+    fi
+    echo
 fi
-echo
 
 # ---------------------------------------------------------------------------
 # Check prerequisites
@@ -181,25 +208,33 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Fetch latest release info
+# Fetch release info / build URL
 # ---------------------------------------------------------------------------
 header "Fetching release information"
 
-echo "  Contacting Codeberg API ..."
-
-if [[ "$CHANNEL" == "develop" ]]; then
-    API_URL="https://codeberg.org/api/v1/repos/pitbo/pdf-qes-signer/releases?limit=5"
+if [[ -n "$INSTALL_VERSION" ]]; then
+    # Specific version: build URL directly, no API call needed
+    TAG="$INSTALL_VERSION"
+    VERSION="${TAG#v}"
+    WHL_URL="https://codeberg.org/pitbo/pdf-qes-signer/releases/download/${TAG}/pdf_qes_signer-${VERSION}-py3-none-any.whl"
+    ok "Target version: $VERSION"
+    ok "Package: $(basename "$WHL_URL")"
 else
-    API_URL="https://codeberg.org/api/v1/repos/pitbo/pdf-qes-signer/releases/latest"
-fi
+    echo "  Contacting Codeberg API ..."
 
-if [[ "$DOWNLOADER" == "curl" ]]; then
-    release_json=$(curl -fsSL "$API_URL") || die "Failed to contact Codeberg API."
-else
-    release_json=$(wget -qO- "$API_URL") || die "Failed to contact Codeberg API."
-fi
+    if [[ "$CHANNEL" == "develop" ]]; then
+        API_URL="https://codeberg.org/api/v1/repos/pitbo/pdf-qes-signer/releases?limit=5"
+    else
+        API_URL="https://codeberg.org/api/v1/repos/pitbo/pdf-qes-signer/releases/latest"
+    fi
 
-VERSION=$(echo "$release_json" | python3 -c "
+    if [[ "$DOWNLOADER" == "curl" ]]; then
+        release_json=$(curl -fsSL "$API_URL") || die "Failed to contact Codeberg API."
+    else
+        release_json=$(wget -qO- "$API_URL") || die "Failed to contact Codeberg API."
+    fi
+
+    VERSION=$(echo "$release_json" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
 if isinstance(data, list):
@@ -207,7 +242,7 @@ if isinstance(data, list):
     data = data[0]
 print(data['tag_name'])
 ")
-WHL_URL=$(echo "$release_json" | python3 -c "
+    WHL_URL=$(echo "$release_json" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
 if isinstance(data, list):
@@ -220,16 +255,29 @@ if not whl:
 print(whl)
 ")
 
-ok "Latest release: $VERSION"
-ok "Package: $(basename "$WHL_URL")"
+    ok "Latest release: $VERSION"
+    ok "Package: $(basename "$WHL_URL")"
+fi
 
 if $IS_UPGRADE; then
-    installed_version=$(grep '^version=' "$CONFIG_FILE" 2>/dev/null | cut -d= -f2 || echo "unknown")
+    installed_version=$(
+        "$VENV_DIR/bin/python" -c \
+        "import importlib.metadata; print(importlib.metadata.version('pdf-qes-signer'))" \
+        2>/dev/null || echo "")
+    [[ -n "$installed_version" ]] && ok "Installed version:  $installed_version"
+    ok "Target version:     $VERSION"
+    echo
     if [[ "$installed_version" == "$VERSION" ]]; then
-        echo
         warn "Version $VERSION is already installed."
         read -rp "  Reinstall anyway? [y/N] " answer
         [[ "${answer,,}" == "y" ]] || { echo "  Aborted."; exit 0; }
+    else
+        higher=$(printf '%s\n' "$installed_version" "$VERSION" | sort -V | tail -1)
+        if [[ "$higher" == "$installed_version" ]]; then
+            warn "Downgrade detected: $installed_version → $VERSION"
+            read -rp "  Continue with downgrade? [y/N] " answer
+            [[ "${answer,,}" == "y" ]] || { echo "  Aborted."; exit 0; }
+        fi
     fi
 fi
 
@@ -253,8 +301,13 @@ ok "venv ready"
 
 # pip install
 echo "  Installing pdf-qes-signer $VERSION ..."
-"$VENV_DIR/bin/pip" install --quiet --upgrade "$WHL_URL" \
-    || die "pip install failed."
+if [[ -n "$INSTALL_VERSION" ]]; then
+    "$VENV_DIR/bin/pip" install --quiet --force-reinstall "$WHL_URL" \
+        || die "pip install failed."
+else
+    "$VENV_DIR/bin/pip" install --quiet --upgrade "$WHL_URL" \
+        || die "pip install failed."
+fi
 ok "pdf-qes-signer $VERSION installed"
 
 # Detect Python version inside venv (for icon path)
@@ -335,7 +388,6 @@ ok "Uninstaller: $UNINSTALLER"
 # install.conf
 cat > "$CONFIG_FILE" <<CONF
 # PDF QES Signer – installation metadata
-version=$VERSION
 install_dir=$INSTALL_DIR
 installed_at=$(date -Iseconds)
 channel=$CHANNEL

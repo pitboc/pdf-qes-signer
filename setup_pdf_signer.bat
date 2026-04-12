@@ -4,6 +4,11 @@
 :: installs everything without admin rights (VC++ requires UAC once).
 ::
 :: Usage: Double-click – no further steps required.
+::        setup_pdf_signer.bat --installversion v0.3.3
+::
+:: Options:
+::   --installversion vX.Y.Z   Install a specific version (e.g. v0.3.3).
+::                             Use this to downgrade or pin a release.
 ::
 :: The actual installer code is embedded as a PowerShell section at the end
 :: of this file (after the PS marker). The batch section reads the file
@@ -11,6 +16,20 @@
 ::
 :: Note: powershell -Command bypasses ExecutionPolicy (applies only to .ps1
 :: files), so it works even with Group Policy restrictions.
+
+:: Parse --installversion argument and pass via environment variable
+SET INSTALL_VERSION=
+:parse_args
+if "%~1"=="--installversion" (
+    SET INSTALL_VERSION=%~2
+    shift
+    shift
+    goto parse_args
+)
+if not "%~1"=="" (
+    shift
+    goto parse_args
+)
 
 powershell -NoProfile -Command "$f=[System.IO.File]::ReadAllText('%~f0',[System.Text.Encoding]::UTF8);$s=$f.LastIndexOf('<#PS#>')+6;Invoke-Expression $f.Substring($s)"
 exit /b 0
@@ -21,6 +40,7 @@ Add-Type -AssemblyName System.Drawing
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
+$installVersion = if ($env:INSTALL_VERSION) { $env:INSTALL_VERSION.Trim() } else { "" }
 $PY_URL      = $null   # determined on demand in Start-Install
 $DEFAULT_DIR = Join-Path $env:LOCALAPPDATA "pdf-signer"
 $savedDir    = (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\PDFQESSigner" -ErrorAction SilentlyContinue).InstallLocation
@@ -195,7 +215,10 @@ function Show-LicenseDialog {
 # Update dialog (shown instead of Welcome+License when upgrading)
 # ---------------------------------------------------------------------------
 function Show-UpdateDialog {
-    $installedVersion = (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\PDFQESSigner" -ErrorAction SilentlyContinue).DisplayVersion
+    $venvPy = Join-Path $DEFAULT_DIR ".venv\Scripts\python.exe"
+    $installedVersion = if (Test-Path $venvPy) {
+        & $venvPy -c "import importlib.metadata; print(importlib.metadata.version('pdf-qes-signer'))" 2>$null
+    } else { "" }
     if (-not $installedVersion) { $installedVersion = "unknown" }
 
     $uf                 = New-Object System.Windows.Forms.Form
@@ -732,34 +755,45 @@ function Start-Install {
             Step-Ok "pip upgrade skipped"
         }
 
-        Step-Start "Fetching latest release from Codeberg ..."
-        try {
-            $channel = if ($rbDevelop.Checked) { "develop" } else { "stable" }
-            Write-Log "Update channel: $channel"
-            if ($channel -eq "develop") {
-                $releases = Invoke-RestMethod -Uri "https://codeberg.org/api/v1/repos/pitbo/pdf-qes-signer/releases?limit=5" -UseBasicParsing
-                if (-not $releases -or $releases.Count -eq 0) { throw "No releases found." }
-                $rel = $releases[0]
-            } else {
-                $rel = Invoke-RestMethod -Uri "https://codeberg.org/api/v1/repos/pitbo/pdf-qes-signer/releases/latest" -UseBasicParsing
+        if ($installVersion) {
+            # Specific version requested – build URL directly
+            Step-Start "Preparing install of version $installVersion ..."
+            $tag     = $installVersion
+            $version = $tag -replace "^v", ""
+            $whlUrl  = "https://codeberg.org/pitbo/pdf-qes-signer/releases/download/$tag/pdf_qes_signer-$version-py3-none-any.whl"
+            Write-Log "Specific version requested: $version"
+            Step-Ok "Target version: $version"
+        } else {
+            Step-Start "Fetching latest release from Codeberg ..."
+            try {
+                $channel = if ($rbDevelop.Checked) { "develop" } else { "stable" }
+                Write-Log "Update channel: $channel"
+                if ($channel -eq "develop") {
+                    $releases = Invoke-RestMethod -Uri "https://codeberg.org/api/v1/repos/pitbo/pdf-qes-signer/releases?limit=5" -UseBasicParsing
+                    if (-not $releases -or $releases.Count -eq 0) { throw "No releases found." }
+                    $rel = $releases[0]
+                } else {
+                    $rel = Invoke-RestMethod -Uri "https://codeberg.org/api/v1/repos/pitbo/pdf-qes-signer/releases/latest" -UseBasicParsing
+                }
+                $whl = $rel.assets | Where-Object { $_.name -like "*.whl" } | Select-Object -First 1
+                if (-not $whl) { throw "No .whl asset found in release." }
+                $whlUrl  = $whl.browser_download_url
+                $version = $rel.tag_name -replace "^v", ""
+                Write-Log "Target version: $version"
+            } catch {
+                Write-Log "Release query failed: $_" "ERROR"
+                Save-Log $INSTALL_DIR
+                Show-Err "Release query failed" "$_`n`nPlease check your internet connection."
+                $form.Close(); return
             }
-            $whl = $rel.assets | Where-Object { $_.name -like "*.whl" } | Select-Object -First 1
-            if (-not $whl) { throw "No .whl asset found in release." }
-            $whlUrl  = $whl.browser_download_url
-            $version = $rel.tag_name -replace "^v", ""
-            Write-Log "Target version: $version"
-        } catch {
-            Write-Log "Release query failed: $_" "ERROR"
-            Save-Log $INSTALL_DIR
-            Show-Err "Release query failed" "$_`n`nPlease check your internet connection."
-            $form.Close(); return
         }
 
         Step-Start "$(if ($isUpgrade) { "Updating to $version" } else { "Installing pdf-signer $version" }) ..."
         $lblStatus.Text = "pip is running – this may take a moment ..."
         [System.Windows.Forms.Application]::DoEvents()
 
-        $pipOut = & $VENV_PIP install --upgrade $whlUrl 2>&1
+        $pipFlags = if ($installVersion) { "--force-reinstall" } else { "--upgrade" }
+        $pipOut = & $VENV_PIP install $pipFlags $whlUrl 2>&1
         if ($LASTEXITCODE -ne 0) {
             Write-Log "pip install failed: $pipOut" "ERROR"
             Save-Log $INSTALL_DIR

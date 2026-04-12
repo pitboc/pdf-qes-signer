@@ -189,27 +189,7 @@ Both installers ask for an **update channel** during setup:
 
 The selected channel is remembered for future upgrades.
 
-### Option A – Download archive
-
-**Linux / macOS** – download and extract the `.tar.gz` archive:
-
-```bash
-wget https://codeberg.org/pitbo/pdf-qes-signer/archive/master.tar.gz
-tar xf master.tar.gz
-cd pdf-qes-signer
-./setup_pdf_signer.sh
-```
-
-**Windows** – download the `.zip` archive:
-
-1. Download [master.zip](https://codeberg.org/pitbo/pdf-qes-signer/archive/master.zip)
-2. Extract the archive (right-click → *Extract All…*)
-3. Open the extracted folder and double-click `setup_pdf_signer.bat`
-
-The Windows installer opens a graphical setup wizard (no admin rights required).
-See [Windows installer](#windows-installer) for details.
-
-### Option B – Clone with Git
+### Clone with Git
 
 ```bash
 # Primary (Codeberg)
@@ -264,6 +244,43 @@ directory is pre-filled.
 
 **Uninstall:** use *Settings → Apps → PDF QES Signer → Uninstall*, or run
 `uninstall.bat` in the install directory directly.
+
+### Downgrade / installing a specific version
+
+Use the `--installversion` parameter to install any released version.
+This is also the recommended way to switch from the `develop` channel back
+to a specific `stable` release.
+
+**Linux – installer:**
+```bash
+bash setup_pdf_signer.sh --installversion v0.3.3
+```
+
+**Linux – one-liner:**
+```bash
+bash <(curl -fsSL https://codeberg.org/pitbo/pdf-qes-signer/raw/branch/master/setup_pdf_signer.sh) --installversion v0.3.3
+```
+
+**Windows – installer:**
+```
+setup_pdf_signer.bat --installversion v0.3.3
+```
+
+**Windows – one-liner (CMD):**
+```
+powershell -Command "irm 'https://codeberg.org/pitbo/pdf-qes-signer/raw/branch/master/setup_pdf_signer.bat' -OutFile '%TEMP%\setup_pdf_signer.bat'; & '%TEMP%\setup_pdf_signer.bat' --installversion v0.3.3"
+```
+
+**Windows – one-liner (PowerShell):**
+```powershell
+irm 'https://codeberg.org/pitbo/pdf-qes-signer/raw/branch/master/setup_pdf_signer.bat' -OutFile "$env:TEMP\setup_pdf_signer.bat"; & "$env:TEMP\setup_pdf_signer.bat" --installversion v0.3.3
+```
+
+Alternatively, use pip directly:
+```bash
+~/.local/share/pdf-signer/.venv/bin/pip install --force-reinstall \
+  https://codeberg.org/pitbo/pdf-qes-signer/releases/download/v0.3.3/pdf_qes_signer-0.3.3-py3-none-any.whl
+```
 
 ## Usage
 
@@ -455,6 +472,7 @@ image-padding trick, coordinate systems). To browse them as HTML:
 source .venv/bin/activate
 pip install pdoc          # once, as a development tool
 pdoc pdf_signer           # opens browser – no files written to disk
+pdoc -n pdf_signer        # same, but don't open a browser (-n / --no-browser)
 ```
 
 ## License
