@@ -32,6 +32,10 @@ pipx-Home-Verzeichnis liegt.  Ist das der Fall, wird
 - **Linux:** ``os.execv()`` ersetzt den laufenden Prozess in-place.
 - **Windows:** ``subprocess.Popen`` + ``sys.exit(0)`` (neues Fenster,
   altes beendet sich).
+
+Der Neustart rekonstruiert die ``-m <paket>``-Form wenn die App so
+gestartet wurde (wie im Installer-Starter-Script), da ``sys.argv[0]``
+in diesem Fall auf ``__main__.py`` zeigt und das ``-m`` verloren ginge.
 """
 
 from __future__ import annotations
@@ -306,12 +310,26 @@ def restart_app() -> None:
 
     - **Linux/macOS:** ``os.execv()`` ersetzt den laufenden Prozess in-place.
     - **Windows:** ``subprocess.Popen`` + ``sys.exit(0)``.
+
+    Wurde die App mit ``python -m pdf_signer`` gestartet (wie im
+    Installer-Starter-Script), ist ``sys.argv[0]`` der Pfad zur
+    ``__main__.py``.  In diesem Fall muss die ``-m``-Form rekonstruiert
+    werden, sonst startet der Neustart-Prozess als nacktes Script ohne
+    korrekten ``sys.path``.
     """
+    import __main__
+    spec = getattr(__main__, "__spec__", None)
+    if spec is not None and spec.parent:
+        # Gestartet als "python -m <paket>", z.B. "python -m pdf_signer"
+        cmd = [sys.executable, "-m", spec.parent] + sys.argv[1:]
+    else:
+        cmd = [sys.executable] + sys.argv
+
     if sys.platform == "win32":
-        subprocess.Popen([sys.executable] + sys.argv)
+        subprocess.Popen(cmd)
         sys.exit(0)
     else:
-        os.execv(sys.executable, [sys.executable] + sys.argv)
+        os.execv(sys.executable, cmd)
 
 
 class UpdateCheckWorker(QThread):
