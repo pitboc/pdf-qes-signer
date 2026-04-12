@@ -41,6 +41,7 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
 )
 
+from .dialogs import _fmt_datetime
 from .i18n import t
 from .validation_result import (
     CertSource, DocumentValidation, PadesProfile, RevisionInfo,
@@ -99,9 +100,7 @@ def _bold() -> QFont:
 
 
 def _fmt_dt(dt: Optional[datetime]) -> str:
-    if dt is None:
-        return "–"
-    return dt.strftime("%d.%m.%Y %H:%M")
+    return _fmt_datetime(dt)
 
 
 def _parse_dn(dn: str) -> dict[str, str]:

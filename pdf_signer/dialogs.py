@@ -24,7 +24,7 @@ from typing import Optional
 
 import re
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QDate, QDateTime, QLocale, QTime, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFontDatabase, QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
@@ -38,6 +38,57 @@ from .config import AppConfig, PDF_STANDARD_FONTS
 from .appearance import SigAppearance
 from .pdf_view import DPI_SCALE
 from .i18n import t
+
+
+_LANG_TO_QLOCALE: dict[str, QLocale.Language] = {
+    "de": QLocale.Language.German,
+    "en": QLocale.Language.English,
+    "fr": QLocale.Language.French,
+    "es": QLocale.Language.Spanish,
+    "it": QLocale.Language.Italian,
+    "nl": QLocale.Language.Dutch,
+    "pl": QLocale.Language.Polish,
+    "pt": QLocale.Language.Portuguese,
+}
+
+
+def _app_locale() -> QLocale:
+    """Return a QLocale matching the currently active app language.
+
+    Falls back to English if the app language has no entry in
+    _LANG_TO_QLOCALE (Qt always has English locale data built in).
+    """
+    from .i18n import i18n
+    lang = _LANG_TO_QLOCALE.get(i18n.lang, QLocale.Language.English)
+    return QLocale(lang)
+
+
+def _fmt_date(dt) -> str:
+    """Format a date using the active app language (short format).
+
+    Uses Qt's QLocale so the format matches the language selected in the app
+    settings – no per-language translation string needed.
+    Returns "–" if *dt* is None.
+    """
+    if dt is None:
+        return "–"
+    return _app_locale().toString(QDate(dt.year, dt.month, dt.day),
+                                  QLocale.FormatType.ShortFormat)
+
+
+def _fmt_datetime(dt) -> str:
+    """Format a date+time using the active app language (short format).
+
+    Like _fmt_date but includes hours and minutes.
+    Returns "–" if *dt* is None.
+    """
+    if dt is None:
+        return "–"
+    qdt = QDateTime(
+        QDate(dt.year, dt.month, dt.day),
+        QTime(dt.hour, dt.minute, dt.second),
+    )
+    return _app_locale().toString(qdt, QLocale.FormatType.ShortFormat)
 
 
 # ── Token data helpers ────────────────────────────────────────────────────────
@@ -170,8 +221,8 @@ def _read_cert_info(obj, p11) -> dict:
         info["issuer"]     = fmt_dn(cert.issuer)
         # Seriennummer in Großbuchstaben-Hex für bessere Lesbarkeit
         info["serial"]     = f"{cert.serial_number:X}"
-        info["valid_from"] = cert.not_valid_before_utc.strftime("%d.%m.%Y")
-        info["valid_to"]   = cert.not_valid_after_utc.strftime("%d.%m.%Y")
+        info["valid_from"] = _fmt_date(cert.not_valid_before_utc)
+        info["valid_to"]   = _fmt_date(cert.not_valid_after_utc)
         # Individual name components for display-name composition
         # Einzelne Namensbestandteile separat extrahieren, damit später
         # der Anzeigename (Titel Vorname Nachname) zusammengesetzt werden kann
@@ -308,12 +359,12 @@ class TokenInfoDialog(QDialog):
                 # Attribute children (non-selectable)
                 # Attribute je nach Objekttyp unterschiedlich anzeigen
                 if cls in ("PRIVATE_KEY", "PUBLIC_KEY"):
-                    attrs = (("id", "ID"), ("key_type", "Schlüsseltyp"),
-                             ("key_size", "Schlüssellänge"))
+                    attrs = (("id", "ID"), ("key_type", t("dlg_pfx_key_type")),
+                             ("key_size", t("dlg_pfx_key_size")))
                 elif cls == "CERTIFICATE":
-                    attrs = (("id", "ID"), ("subject", "Inhaber"),
-                             ("issuer", "Aussteller"), ("serial", "Seriennummer"),
-                             ("valid_from", "Gültig ab"), ("valid_to", "Gültig bis"))
+                    attrs = (("id", "ID"), ("subject", t("dlg_pfx_subject")),
+                             ("issuer", t("dlg_pfx_issuer")), ("serial", t("dlg_pfx_serial")),
+                             ("valid_from", t("dlg_pfx_valid_from")), ("valid_to", t("dlg_pfx_valid_to")))
                 else:
                     attrs = ()
 
@@ -492,8 +543,8 @@ def _pfx_load_cert_info(pfx_path: str, passphrase: bytes | None = None) -> dict:
             "cn":          attrs[0].value if attrs else "",
             "subject":     fmt_dn(cert.subject),
             "issuer":      fmt_dn(cert.issuer),
-            "valid_from":  cert.not_valid_before_utc.strftime("%d.%m.%Y"),
-            "valid_to":    cert.not_valid_after_utc.strftime("%d.%m.%Y"),
+            "valid_from":  _fmt_date(cert.not_valid_before_utc),
+            "valid_to":    _fmt_date(cert.not_valid_after_utc),
             "serial":      f"{cert.serial_number:X}",
             "self_signed": cert.subject == cert.issuer,
         }
@@ -652,8 +703,8 @@ class PfxInfoDialog(QDialog):
         if info.get("key_type"):
             hdr = self._add_section(tree, t("dlg_pfx_private_key"), alt_brush)
             self._add_object(hdr, info["key_type"], [
-                ("Schlüsseltyp",   info["key_type"]),
-                ("Schlüssellänge", info.get("key_size", "")),
+                (t("dlg_pfx_key_type"), info["key_type"]),
+                (t("dlg_pfx_key_size"), info.get("key_size", "")),
             ])
 
         # ── Signaturzertifikat ────────────────────────────────────────────
@@ -662,11 +713,11 @@ class PfxInfoDialog(QDialog):
             issuer = (f"{info['issuer']}  {t('dlg_pfx_self_signed')}"
                       if info["self_signed"] else info["issuer"])
             self._add_object(hdr, info["cn"] or info["subject"], [
-                ("Inhaber",        info["subject"]),
-                ("Aussteller",     issuer),
-                ("Gültig ab",      info["valid_from"]),
-                ("Gültig bis",     info["valid_to"]),
-                ("Seriennummer",   info["serial"]),
+                (t("dlg_pfx_subject"),    info["subject"]),
+                (t("dlg_pfx_issuer"),     issuer),
+                (t("dlg_pfx_valid_from"), info["valid_from"]),
+                (t("dlg_pfx_valid_to"),   info["valid_to"]),
+                (t("dlg_pfx_serial"),     info["serial"]),
             ])
 
         # ── Zertifikatskette ──────────────────────────────────────────────
@@ -677,11 +728,11 @@ class PfxInfoDialog(QDialog):
                 issuer = (f"{c['issuer']}  {t('dlg_pfx_self_signed')}"
                           if c["self_signed"] else c["issuer"])
                 self._add_object(hdr, c["cn"] or c["subject"], [
-                    ("Inhaber",      c["subject"]),
-                    ("Aussteller",   issuer),
-                    ("Gültig ab",    c["valid_from"]),
-                    ("Gültig bis",   c["valid_to"]),
-                    ("Seriennummer", c["serial"]),
+                    (t("dlg_pfx_subject"),    c["subject"]),
+                    (t("dlg_pfx_issuer"),     issuer),
+                    (t("dlg_pfx_valid_from"), c["valid_from"]),
+                    (t("dlg_pfx_valid_to"),   c["valid_to"]),
+                    (t("dlg_pfx_serial"),     c["serial"]),
                 ])
 
         tree.expandAll()
@@ -3030,7 +3081,7 @@ class CertChainDetailWindow(QWidget):
         vf, vu = cert.valid_from, cert.valid_until
         if vf == datetime.min or vu == datetime.max:
             return "–"
-        return f"{vf.strftime('%d.%m.%Y')} – {vu.strftime('%d.%m.%Y')}"
+        return f"{_fmt_date(vf)} – {_fmt_date(vu)}"
 
     @staticmethod
     def _source_text(source) -> str:
@@ -3053,7 +3104,7 @@ class CertChainDetailWindow(QWidget):
         }
         label = status_map.get(ocsp.cert_status, t("cert_win_ocsp_not_checked"))
         if ocsp.produced_at:
-            label += f"  ({ocsp.produced_at.strftime('%d.%m.%Y')})"
+            label += f"  ({_fmt_date(ocsp.produced_at)})"
         return label
 
     @staticmethod
@@ -3180,7 +3231,7 @@ class TrustStoreCacheDialog(QDialog):
             nu = info["lotl_next_update"]
             if nu is not None:
                 nu_aware = nu if nu.tzinfo else nu.replace(tzinfo=_tz.utc)
-                date_str = nu_aware.strftime("%d.%m.%Y")
+                date_str = _fmt_date(nu_aware)
                 key = ("trust_cache_lotl_urls_valid" if info["lotl_urls_valid"]
                        else "trust_cache_lotl_urls_expired")
                 lines.append(t(key,
@@ -3207,7 +3258,7 @@ class TrustStoreCacheDialog(QDialog):
                 nu = tsl["next_update"]
                 if nu is not None:
                     nu_aware = nu if nu.tzinfo else nu.replace(tzinfo=_tz.utc)
-                    date_str = nu_aware.strftime("%d.%m.%Y")
+                    date_str = _fmt_date(nu_aware)
                 else:
                     date_str = "?"
                 key = ("trust_cache_tsl_valid" if tsl["valid"]

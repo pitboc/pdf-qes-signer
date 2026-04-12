@@ -703,6 +703,12 @@ msgstr "Geldig tot:"
 msgid "dlg_pfx_serial"
 msgstr "Serienummer:"
 
+msgid "dlg_pfx_key_type"
+msgstr "Sleuteltype:"
+
+msgid "dlg_pfx_key_size"
+msgstr "Sleutelgrootte:"
+
 msgid "dlg_pfx_self_signed"
 msgstr "(zelfondertekend)"
 

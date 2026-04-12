@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .config import AppConfig
+from .dialogs import _fmt_date
 from .i18n import t, AVAILABLE_LANGUAGES
 
 
@@ -707,7 +708,7 @@ class SettingsDialog(QDialog):
                 nu = info["lotl_next_update"]
                 if nu is not None:
                     nu_aware = nu if nu.tzinfo else nu.replace(tzinfo=_tz.utc)
-                    date_str = nu_aware.strftime("%d.%m.%Y")
+                    date_str = _fmt_date(nu_aware)
                     key = ("trust_cache_lotl_urls_valid"
                            if info["lotl_urls_valid"]
                            else "trust_cache_lotl_urls_expired")
@@ -735,7 +736,7 @@ class SettingsDialog(QDialog):
                     if nu is not None:
                         nu_aware = (nu if nu.tzinfo
                                     else nu.replace(tzinfo=_tz.utc))
-                        date_str = nu_aware.strftime("%d.%m.%Y")
+                        date_str = _fmt_date(nu_aware)
                     else:
                         date_str = "?"
                     key = ("trust_cache_tsl_valid" if tsl["valid"]

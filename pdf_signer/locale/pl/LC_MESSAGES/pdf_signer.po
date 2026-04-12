@@ -729,6 +729,12 @@ msgstr "Ważny do:"
 msgid "dlg_pfx_serial"
 msgstr "Numer seryjny:"
 
+msgid "dlg_pfx_key_type"
+msgstr "Typ klucza:"
+
+msgid "dlg_pfx_key_size"
+msgstr "Rozmiar klucza:"
+
 msgid "dlg_pfx_self_signed"
 msgstr "(samopodpisany)"
 

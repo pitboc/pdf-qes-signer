@@ -183,7 +183,7 @@ class AppConfig:
             "name_mode":     "cert",
             "name_custom":   "",
             "show_date":     "1",
-            "date_format":   "%d.%m.%Y %H:%M",
+            "date_format":   "%Y-%m-%d %H:%M",
             "font_size":     "8",
             "font_family":   "Helvetica",
             "show_border":   "1",

@@ -703,6 +703,12 @@ msgstr "Valide jusqu'au :"
 msgid "dlg_pfx_serial"
 msgstr "Numéro de série :"
 
+msgid "dlg_pfx_key_type"
+msgstr "Type de clé :"
+
+msgid "dlg_pfx_key_size"
+msgstr "Taille de clé :"
+
 msgid "dlg_pfx_self_signed"
 msgstr "(auto-signé)"
 

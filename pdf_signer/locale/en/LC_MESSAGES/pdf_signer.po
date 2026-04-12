@@ -729,6 +729,12 @@ msgstr "Valid to:"
 msgid "dlg_pfx_serial"
 msgstr "Serial number:"
 
+msgid "dlg_pfx_key_type"
+msgstr "Key type:"
+
+msgid "dlg_pfx_key_size"
+msgstr "Key size:"
+
 msgid "dlg_pfx_self_signed"
 msgstr "(self-signed)"
 

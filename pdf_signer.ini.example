@@ -79,7 +79,7 @@ name_mode = cert
 name_custom =
 show_date = 1
 # strftime format string
-date_format = %%d.%%m.%%Y %%H:%%M
+date_format = %%Y-%%m-%%d %%H:%%M
 # Font size in PDF points
 font_size = 8
 # PDF-14 font name: Helvetica | Helvetica-Bold | Times-Roman | Courier | …
