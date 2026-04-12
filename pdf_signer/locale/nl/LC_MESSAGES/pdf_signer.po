@@ -1,0 +1,1734 @@
+# PDF QES Signer – Dutch translations
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Translators: AI-generated – needs native review
+# See https://codeberg.org/pitbo/pdf-qes-signer for contributions
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: pdf-qes-signer\n"
+"Report-Msgid-Bugs-To: https://codeberg.org/pitbo/pdf-qes-signer/issues\n"
+"PO-Revision-Date: 2026-04-12\n"
+"Last-Translator: AI-generated – needs native review\n"
+"Language: nl\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "btn_ok"
+msgstr "OK"
+
+msgid "btn_cancel"
+msgstr "Annuleren"
+
+msgid "btn_close"
+msgstr "Sluiten"
+
+msgid "btn_yes"
+msgstr "Ja"
+
+msgid "btn_no"
+msgstr "Nee"
+
+msgid "menu_profile"
+msgstr "Profielen…"
+
+msgid "dlg_profile_mgr_title"
+msgstr "Profielen beheren"
+
+msgid "dlg_profile_new_short"
+msgstr "Nieuw"
+
+msgid "dlg_profile_select_title"
+msgstr "Profiel selecteren"
+
+msgid "dlg_profile_active"
+msgstr "(actief)"
+
+msgid "dlg_profile_activate"
+msgstr "Activeren"
+
+msgid "dlg_profile_new_title"
+msgstr "Nieuw profiel"
+
+msgid "dlg_profile_new_label"
+msgstr "Profielnaam:"
+
+msgid "dlg_profile_new_btn"
+msgstr "Aanmaken"
+
+msgid "dlg_profile_exists_title"
+msgstr "Profiel bestaat al"
+
+msgid "dlg_profile_exists_msg"
+msgstr "Een profiel met de naam '{name}' bestaat al.\nWilt u het overschrijven?"
+
+msgid "dlg_profile_rename_title"
+msgstr "Profiel hernoemen"
+
+msgid "dlg_profile_rename_label"
+msgstr "Nieuwe naam:"
+
+msgid "dlg_profile_rename_btn"
+msgstr "Hernoemen"
+
+msgid "dlg_profile_delete_title"
+msgstr "Profiel verwijderen"
+
+msgid "dlg_profile_delete_btn"
+msgstr "Verwijderen"
+
+msgid "dlg_profile_delete_active_msg"
+msgstr "'{name}' is het actieve profiel.\nNa verwijdering wordt '{next}' actief.\nEcht verwijderen?"
+
+msgid "dlg_profile_delete_confirm_msg"
+msgstr "Profiel '{name}' echt verwijderen?"
+
+msgid "dlg_profile_last_title"
+msgstr "Laatste profiel"
+
+msgid "dlg_profile_last_msg"
+msgstr "Er moet minimaal één profiel bestaan.\n\nWilt u de parameters terugzetten naar de standaardwaarden?"
+
+msgid "dlg_profile_reset_btn"
+msgstr "Standaardwaarden instellen"
+
+msgid "dlg_profile_invalid_name"
+msgstr "Ongeldige profielnaam. Gebruik alleen letters, cijfers, spaties, koppeltekens en underscores."
+
+msgid "dlg_profile_empty_name"
+msgstr "Voer een profielnaam in."
+
+msgid "dlg_profile_name_exists"
+msgstr "Er bestaat al een profiel met deze naam."
+
+msgid "status_profile"
+msgstr "Profiel"
+
+msgid "menu_file"
+msgstr "Bestand"
+
+msgid "menu_file_open"
+msgstr "PDF openen…"
+
+msgid "menu_file_save_fields"
+msgstr "Opslaan met velden (kopie)…"
+
+msgid "menu_file_quit"
+msgstr "Afsluiten"
+
+msgid "menu_sign"
+msgstr "Ondertekenen"
+
+msgid "menu_sign_document"
+msgstr "Document ondertekenen…"
+
+msgid "menu_settings"
+msgstr "Instellingen"
+
+msgid "menu_settings_pkcs11"
+msgstr "Handtekening / token configureren…"
+
+msgid "menu_settings_language"
+msgstr "Taal / Language"
+
+msgid "menu_help"
+msgstr "Help"
+
+msgid "menu_help_about"
+msgstr "Over…"
+
+msgid "menu_help_license"
+msgstr "Licentie…"
+
+msgid "tb_open"
+msgstr "PDF openen"
+
+msgid "tb_prev"
+msgstr "Vorige pagina"
+
+msgid "tb_next"
+msgstr "Volgende pagina"
+
+msgid "tb_zoom_out"
+msgstr "Uitzoomen  (Ctrl+wiel)"
+
+msgid "tb_zoom_in"
+msgstr "Inzoomen  (Ctrl+wiel)"
+
+msgid "tb_fit_width"
+msgstr "Aanpassen aan breedte"
+
+msgid "tb_fit_height"
+msgstr "Aanpassen aan hoogte"
+
+msgid "tb_sign"
+msgstr "✍ Ondertekenen"
+
+msgid "tb_check_sigs"
+msgstr "🔍 Handtekening controleren"
+
+msgid "tb_save_fields"
+msgstr "💾 PDF opslaan"
+
+msgid "panel_fields"
+msgstr "Handtekeningvelden"
+
+msgid "btn_delete_field"
+msgstr "🗑 Verwijderen"
+
+msgid "btn_save_fields"
+msgstr "💾 Opslaan als PDF"
+
+msgid "panel_token"
+msgstr "Token / PIN"
+
+msgid "panel_token_pfx"
+msgstr "P12/PFX-bestand / Wachtwoord"
+
+msgid "pin_label"
+msgstr "PIN:"
+
+msgid "pin_hint"
+msgstr "leeg laten voor PIN-lezer"
+
+msgid "pin_label_pfx"
+msgstr "Wachtwoord:"
+
+msgid "pin_hint_pfx"
+msgstr "leeg laten als niet beveiligd"
+
+msgid "panel_appearance"
+msgstr "Uiterlijk handtekening"
+
+msgid "app_layout_label"
+msgstr "Indeling:"
+
+msgid "app_layout_img_left"
+msgstr "Afbeelding links | Tekst rechts"
+
+msgid "app_layout_img_right"
+msgstr "Tekst links | Afbeelding rechts"
+
+msgid "app_location_label"
+msgstr "Locatie:"
+
+msgid "app_reason_label"
+msgstr "Reden:"
+
+msgid "app_name_label"
+msgstr "Naam:"
+
+msgid "app_name_cert"
+msgstr "(uit certificaat)"
+
+msgid "app_date_label"
+msgstr "Datum:"
+
+msgid "app_show_date"
+msgstr "Datum tonen"
+
+msgid "appdlg_title"
+msgstr "Uiterlijk handtekeningveld configureren"
+
+msgid "appdlg_tab_image"
+msgstr "Afbeelding"
+
+msgid "appdlg_tab_text"
+msgstr "Tekst"
+
+msgid "appdlg_tab_layout"
+msgstr "Indeling"
+
+msgid "appdlg_img_path"
+msgstr "PNG-afbeelding:"
+
+msgid "appdlg_img_browse"
+msgstr "…"
+
+msgid "appdlg_img_clear"
+msgstr "Verwijderen"
+
+msgid "appdlg_img_preview"
+msgstr "Voorbeeld"
+
+msgid "appdlg_img_hint"
+msgstr "Transparantie wordt ondersteund. Beeldverhouding blijft behouden."
+
+msgid "appdlg_img_filter"
+msgstr "PNG-afbeeldingen (*.png);;Alle afbeeldingen (*.png *.jpg *.jpeg *.bmp);;Alle bestanden (*)"
+
+msgid "appdlg_browse_img"
+msgstr "Handtekeningafbeelding kiezen"
+
+msgid "appdlg_font_size"
+msgstr "Tekengrootte (pt):"
+
+msgid "appdlg_text_color"
+msgstr "Tekstkleur:"
+
+msgid "appdlg_border"
+msgstr "Rand tonen"
+
+msgid "appdlg_bg_color"
+msgstr "Achtergrondkleur:"
+
+msgid "appdlg_save"
+msgstr "Opslaan"
+
+msgid "appdlg_cancel"
+msgstr "Annuleren"
+
+msgid "status_ready"
+msgstr "Gereed. Open een PDF-bestand."
+
+msgid "status_opened"
+msgstr "Geopend: {path}  ({pages} pagina('s))"
+
+msgid "status_field_added"
+msgstr "Handtekeningveld '{name}' toegevoegd op pagina {page}."
+
+msgid "status_field_deleted"
+msgstr "Veld '{name}' verwijderd."
+
+msgid "status_saving_fields"
+msgstr "Handtekeningvelden insluiten…"
+
+msgid "status_saved"
+msgstr "Opgeslagen: {path}"
+
+msgid "status_signing"
+msgstr "Ondertekening bezig…"
+
+msgid "status_signed"
+msgstr "Document ondertekend: {path}"
+
+msgid "status_sign_failed"
+msgstr "Ondertekening mislukt."
+
+msgid "status_save_failed"
+msgstr "Fout bij opslaan."
+
+msgid "status_token_ok"
+msgstr "Token OK: {label} | {keys} sleutel(s), {certs} certificaat/certificaten"
+
+msgid "status_token_failed"
+msgstr "Tokentest mislukt."
+
+msgid "status_token_reading"
+msgstr "Token lezen…"
+
+msgid "dlg_field_name_title"
+msgstr "Veldnaam"
+
+msgid "dlg_field_name_prompt"
+msgstr "Naam van het handtekeningveld:"
+
+msgid "dlg_field_name_default"
+msgstr "Sig_{page}_{count}"
+
+msgid "dlg_field_name_duplicate"
+msgstr "Er bestaat al een veld met de naam '{name}'. Kies een andere naam."
+
+msgid "dlg_delete_title"
+msgstr "Verwijderen"
+
+msgid "dlg_delete_msg"
+msgstr "Handtekeningveld '{name}' verwijderen?"
+
+msgid "dlg_delete_sel_msg"
+msgstr "Veld '{name}' echt verwijderen?"
+
+msgid "dlg_no_doc"
+msgstr "Geen document"
+
+msgid "dlg_no_doc_msg"
+msgstr "Open eerst een PDF-bestand."
+
+msgid "dlg_no_fields"
+msgstr "Geen velden"
+
+msgid "dlg_no_fields_msg"
+msgstr "Teken eerst minimaal één handtekeningveld."
+
+msgid "dlg_no_field_sel"
+msgstr "Geen veld geselecteerd"
+
+msgid "dlg_no_field_sel_msg"
+msgstr "Selecteer een veld in de lijst."
+
+msgid "dlg_missing_deps"
+msgstr "Ontbrekende afhankelijkheden"
+
+msgid "dlg_missing_deps_msg"
+msgstr ""
+"De volgende pakketten ontbreken voor ondertekening:\n\n{packages}\n\n"
+"Handtekeningvelden plaatsen is nog steeds mogelijk."
+
+msgid "dlg_open_pdf_title"
+msgstr "PDF openen"
+
+msgid "dlg_save_fields_title"
+msgstr "Opslaan als…"
+
+msgid "dlg_save_fields_suffix"
+msgstr "_met_velden"
+
+msgid "dlg_save_signed_title"
+msgstr "Ondertekende PDF opslaan als…"
+
+msgid "dlg_save_signed_suffix"
+msgstr "_ondertekend"
+
+msgid "dlg_pdf_filter"
+msgstr "PDF-bestanden (*.pdf);;Alle bestanden (*)"
+
+msgid "dlg_lib_filter"
+msgstr "Gedeelde bibliotheken (*.so *.so.*);;DLL (*.dll);;Alle bestanden (*)"
+
+msgid "dlg_open_error_title"
+msgstr "Fout"
+
+msgid "dlg_open_error_msg"
+msgstr "PDF kon niet worden geopend:\n{error}"
+
+msgid "dlg_save_error_title"
+msgstr "Fout"
+
+msgid "dlg_save_error_msg"
+msgstr "Fout:\n{error}"
+
+msgid "dlg_save_success_title"
+msgstr "Geslaagd"
+
+msgid "dlg_save_success_msg"
+msgstr "PDF met handtekeningvelden opgeslagen:\n{path}"
+
+msgid "dlg_sign_success_title"
+msgstr "Ondertekening geslaagd ✓"
+
+msgid "dlg_sign_success_msg"
+msgstr "Handtekening succesvol toegepast.\n\nBestand: {path}"
+
+msgid "dlg_sign_error_title"
+msgstr "Ondertekeningsfout"
+
+msgid "dlg_sign_error_msg"
+msgstr ""
+"Fout bij gekwalificeerde elektronische handtekening:\n\n{error}\n\n"
+"Veelvoorkomende oorzaken:\n"
+"• PIN-veld leeg laten voor CyberJack PIN-lezer\n"
+"• Token niet ingevoerd\n"
+"• Verkeerd bibliotheekpad\n"
+"• Sleutellabel komt niet overeen\n"
+"• Geen certificaat op token\n\n"
+"Volledige traceback in console (stderr)."
+
+msgid "dlg_sign_error_msg_pfx"
+msgstr ""
+"Fout bij ondertekening:\n\n{error}\n\n"
+"Veelvoorkomende oorzaken:\n"
+"• Verkeerd wachtwoord (of leeg laten als niet beveiligd)\n"
+"• P12/PFX-bestand niet gevonden of beschadigd\n"
+"• Geen privésleutel in het bestand\n\n"
+"Volledige traceback in console (stderr)."
+
+msgid "dlg_field_already_signed"
+msgstr "Dit veld is al ondertekend en kan niet opnieuw worden gebruikt."
+
+msgid "warn_crypto_invalid_short"
+msgstr "⚠  Cryptografische integriteitscontrole mislukt ({count}) – inhoud mogelijk gemanipuleerd of bestand beschadigd.  Controleer de handtekeningen."
+
+msgid "warn_docmdp_p1"
+msgstr "Document vergrendeld – geen wijzigingen toegestaan (docMDP P=1)"
+
+msgid "warn_docmdp_p2"
+msgstr "Document beperkt – alleen formuliervelden en handtekeningen (docMDP P=2)"
+
+msgid "dlg_docmdp_title"
+msgstr "Documentbeperking"
+
+msgid "dlg_docmdp_info"
+msgstr ""
+"Dit is de eerste handtekening in dit document.\n"
+"Kies welke wijzigingen daarna nog zijn toegestaan:"
+
+msgid "dlg_docmdp_none"
+msgstr "Geen beperking"
+
+msgid "dlg_docmdp_p2"
+msgstr "Formuliervelden en verdere handtekeningen toegestaan (aanbevolen)"
+
+msgid "dlg_docmdp_p1"
+msgstr "Geen verdere wijzigingen toegestaan"
+
+msgid "dlg_locked_field_title"
+msgstr "Veld vergrendeld"
+
+msgid "dlg_locked_field_msg"
+msgstr ""
+"Het veld '{name}' is beschermd door een bestaande handtekening in het document\n"
+"en kan niet worden verwijderd of verplaatst.\n\n"
+"Het kan alleen worden ondertekend."
+
+msgid "dlg_pyhanko_missing"
+msgstr "pyhanko is niet geïnstalleerd.\npip install pyhanko python-pkcs11"
+
+msgid "dlg_choose_field_title"
+msgstr "Handtekeningveld kiezen"
+
+msgid "dlg_choose_field_label"
+msgstr "Met welk veld ondertekenen?"
+
+msgid "dlg_invisible_field"
+msgstr "✦ Handtekening zonder veld (onzichtbaar)"
+
+msgid "tsa_enabled_label"
+msgstr "🕐 Tijdstempel (TSA) inschakelen"
+
+msgid "cfg_chain_aia_label"
+msgstr "Certificaatketen aanvullen bij ondertekening (AIA)"
+
+msgid "cfg_chain_aia_hint"
+msgstr ""
+"Downloadt het ontbrekende root-CA-certificaat via AIA (Authority Information Access) "
+"en sluit het in de handtekening in. "
+"Aanbevolen voor langetermijnarchivering (PAdES-LT / ETSI EN 319 132). "
+"De eerste keer wordt om bevestiging gevraagd; het certificaat wordt daarna "
+"lokaal opgeslagen en bij volgende ondertekeningen zonder vraag ingesloten."
+
+msgid "dlg_root_fetch_title"
+msgstr "Root-CA-certificaat insluiten"
+
+msgid "dlg_root_fetch_msg"
+msgstr ""
+"De handtekening bevat geen root-CA-certificaat.\n\n"
+"Nu downloaden van internet (AIA) en insluiten?\n\n"
+"Root-CA: {subject}\n\n"
+"Het certificaat wordt lokaal opgeslagen. Toekomstige handtekeningen sluiten het "
+"zonder vraag in.\n\n"
+"Opmerking: deze melding kan worden uitgeschakeld in de handtekeningconfiguratie."
+
+msgid "cfg_ocsp_lta_label"
+msgstr "Intrekkingsstatus insluiten voor langetermijnarchivering (OCSP/PAdES-LTA)"
+
+msgid "cfg_ocsp_lta_hint"
+msgstr ""
+"Sluit de huidige intrekkingsstatus van alle certificaten in en voegt een "
+"archieftijdstempel toe. Vereist een door een CA uitgegeven certificaat met OCSP-dienst."
+
+msgid "cfg_ocsp_self_signed_hint"
+msgstr ""
+"Niet beschikbaar: het geselecteerde certificaat is zelfondertekend. "
+"Voor langetermijnarchivering is een door een CA uitgegeven certificaat vereist."
+
+msgid "dlg_ocsp_warning_title"
+msgstr "Langetermijnarchivering niet ingesloten"
+
+msgid "dlg_ocsp_warning_msg"
+msgstr ""
+"De intrekkingsstatus kon niet worden opgehaald – "
+"het document is ondertekend zonder langetermijnarchiveringsgegevens.\n\n"
+"Tijdstempel en handtekening zijn succesvol toegevoegd.\n\n"
+"Technische oorzaak: {error}"
+
+msgid "cfg_title"
+msgstr "Handtekening / token configureren"
+
+msgid "cfg_tab_pkcs11"
+msgstr "Ondertekeningswijze"
+
+msgid "cfg_tab_tsa"
+msgstr "Tijdstempel (TSA)"
+
+msgid "cfg_mode_label"
+msgstr "Methode:"
+
+msgid "cfg_mode_pkcs11"
+msgstr "Hardware-token (PKCS#11)"
+
+msgid "cfg_mode_pfx"
+msgstr "Sleutel en certificaat (P12/PFX)"
+
+msgid "cfg_pfx_path_label"
+msgstr "P12/PFX-bestand:"
+
+msgid "cfg_pfx_browse_title"
+msgstr "P12/PFX-bestand kiezen"
+
+msgid "cfg_pfx_filter"
+msgstr "P12/PFX-bestanden (*.p12 *.pfx);;Alle bestanden (*)"
+
+msgid "cfg_pfx_show_cert_btn"
+msgstr "Certificaat tonen"
+
+msgid "cfg_pfx_keygen_btn"
+msgstr "Sleutel genereren…"
+
+msgid "cfg_pfx_keygen_tip"
+msgstr ""
+"Opent het venster voor het genereren van een zelfondertekend certificaat.\n"
+"De gegenereerde sleutel wordt opgeslagen als P12/PFX-bestand en\n"
+"automatisch in dit veld ingevoerd."
+
+msgid "cfg_pfx_encrypted_yes"
+msgstr "Beveiligd met wachtwoord"
+
+msgid "cfg_pfx_encrypted_no"
+msgstr "Niet beveiligd met wachtwoord"
+
+msgid "cfg_pfx_no_file"
+msgstr "Geen P12/PFX-bestand geselecteerd."
+
+msgid "cfg_pfx_password_title"
+msgstr "Wachtwoord vereist"
+
+msgid "cfg_pfx_password_prompt"
+msgstr ""
+"Het P12/PFX-bestand is beveiligd met een wachtwoord.\n"
+"Wachtwoord invoeren (wordt niet opgeslagen):"
+
+msgid "cfg_pfx_wrong_password_prompt"
+msgstr "Verkeerd wachtwoord. Probeer opnieuw:"
+
+msgid "cfg_tsa_url"
+msgstr "TSA-URL:"
+
+msgid "cfg_tsa_hint"
+msgstr "RFC 3161-tijdstempelservice. Leeg laten voor standaard (BaltStamp)."
+
+msgid "cfg_lib_label"
+msgstr "Bibliotheekpad (.so / .dll):"
+
+msgid "cfg_lib_browse"
+msgstr "…"
+
+msgid "cfg_key_id_label"
+msgstr "Sleutel-ID:"
+
+msgid "cfg_key_id_placeholder"
+msgstr "hex-ID (automatisch ingevuld bij tokentest)"
+
+msgid "cfg_key_id_hint"
+msgstr "↑ CKA_ID van de privésleutel (uit tokenvenster)"
+
+msgid "cfg_cert_cn_label"
+msgstr "Naam:"
+
+msgid "cfg_pin_label"
+msgstr "PIN (alleen test):"
+
+msgid "cfg_pin_placeholder"
+msgstr "leeg laten voor PIN-lezer"
+
+msgid "cfg_pin_hint"
+msgstr "↑ alleen voor tokentest, niet opgeslagen"
+
+msgid "cfg_test_btn_no_pin"
+msgstr "🔑 Token testen (zonder PIN)"
+
+msgid "cfg_test_btn_with_pin"
+msgstr "🔑 Token testen (met PIN)"
+
+msgid "cfg_pinpad_test_title"
+msgstr "PIN-lezer niet testbaar"
+
+msgid "cfg_pinpad_test_msg"
+msgstr ""
+"De PIN-lezer kan niet worden geactiveerd bij de tokentest,\n"
+"omdat python-pkcs11 geen afzonderlijke login-aanroep biedt.\n\n"
+"Alternatieven:\n"
+"• PIN hier invoeren om privésleutels direct te tonen\n"
+"• 'Token testen (zonder PIN)' – leest sleutel-ID uit certificaat\n"
+"• PIN-lezer werkt normaal bij ondertekening"
+
+msgid "cfg_save_btn"
+msgstr "Opslaan"
+
+msgid "cfg_cancel_btn"
+msgstr "Annuleren"
+
+msgid "dlg_browse_lib"
+msgstr "PKCS#11-bibliotheek kiezen"
+
+msgid "dlg_token_error_title"
+msgstr "Tokenfout"
+
+msgid "dlg_token_info_title"
+msgstr "Tokeninhoud"
+
+msgid "dlg_token_info_label"
+msgstr "Naam: {label}    Fabrikant: {manufacturer}"
+
+msgid "dlg_token_class_private_key"
+msgstr "Privésleutels"
+
+msgid "dlg_token_class_private_key_derived"
+msgstr "Privésleutels (afgeleid van openbare sleutel)"
+
+msgid "dlg_token_class_certificate"
+msgstr "Certificaten"
+
+msgid "dlg_token_class_public_key"
+msgstr "Openbare sleutels"
+
+msgid "dlg_token_use_key"
+msgstr "ID gebruiken"
+
+msgid "dlg_token_close"
+msgstr "Sluiten"
+
+msgid "dlg_pfx_info_title"
+msgstr "Certificaatinformatie"
+
+msgid "dlg_pfx_private_key"
+msgstr "Privésleutel"
+
+msgid "dlg_pfx_signing_cert"
+msgstr "Ondertekeningscertificaat"
+
+msgid "dlg_pfx_subject"
+msgstr "Houder:"
+
+msgid "dlg_pfx_issuer"
+msgstr "Uitgever:"
+
+msgid "dlg_pfx_valid_from"
+msgstr "Geldig vanaf:"
+
+msgid "dlg_pfx_valid_to"
+msgstr "Geldig tot:"
+
+msgid "dlg_pfx_serial"
+msgstr "Serienummer:"
+
+msgid "dlg_pfx_self_signed"
+msgstr "(zelfondertekend)"
+
+msgid "dlg_pfx_chain_header"
+msgstr "Certificaatketen ({n} certificaat/certificaten)"
+
+msgid "dlg_pfx_use_cn"
+msgstr "CN gebruiken"
+
+msgid "dlg_pfx_load_error_title"
+msgstr "Fout"
+
+msgid "dlg_pfx_load_error"
+msgstr "P12/PFX-bestand kon niet worden geladen:\n{error}"
+
+msgid "dlg_token_no_key_title"
+msgstr "Geen privésleutel gevonden"
+
+msgid "dlg_token_no_key_msg"
+msgstr ""
+"Geen privésleutel gevonden.\n\n"
+"Mogelijk is een PIN vereist om de sleutel te benaderen.\n\n"
+"Het sleutellabel kan ook worden afgeleid van de beschikbare openbare sleutels."
+
+msgid "dlg_token_derive_btn"
+msgstr "Sleutellabel afleiden van openbare sleutel"
+
+msgid "dlg_token_cancel_pin_btn"
+msgstr "Annuleren – token met PIN lezen"
+
+msgid "ap_tab_text"
+msgstr "Tekst"
+
+msgid "ap_tab_image_layout"
+msgstr "Afbeelding / Indeling"
+
+msgid "ap_name_from_cert"
+msgstr "Certificaat"
+
+msgid "ap_name_custom"
+msgstr "Aangepast"
+
+msgid "ap_font_pt"
+msgstr "Grootte (pt):"
+
+msgid "ap_font_family"
+msgstr "Lettertype:"
+
+msgid "ap_img_none"
+msgstr "(geen afbeelding)"
+
+msgid "ap_img_hint"
+msgstr "Transparantie wordt ondersteund."
+
+msgid "ap_layout_left"
+msgstr "Afbeelding links"
+
+msgid "ap_layout_right"
+msgstr "Afbeelding rechts"
+
+msgid "ap_border"
+msgstr "Rand tonen"
+
+msgid "ap_date_custom"
+msgstr "Aangepast formaat…"
+
+msgid "ap_img_label"
+msgstr "◀ Afbeelding {v}%"
+
+msgid "ap_txt_label"
+msgstr "Tekst {r}% ▶"
+
+msgid "ap_txt_label_left"
+msgstr "Tekst {r}% ▶"
+
+msgid "ap_img_label_right"
+msgstr "◀ Afbeelding {v}%"
+
+msgid "ap_preview_hint"
+msgstr "Voeg een handtekeningveld toe voor voorbeeld."
+
+msgid "ap_browse_img"
+msgstr "Handtekeningafbeelding kiezen"
+
+msgid "ap_img_filter"
+msgstr "Afbeeldingen (*.png *.jpg *.jpeg *.bmp);;Alle bestanden (*)"
+
+msgid "about_title"
+msgstr "Over PDF QES Signer"
+
+msgid "about_msg"
+msgstr ""
+"PDF QES Signer  v{version}{commit}\n\n"
+"Visueel plaatsen van handtekeningvelden\n"
+"en gekwalificeerde elektronische handtekening (KEH)\n"
+"via PKCS#11 / smartcard.\n\n"
+"Licentie: GNU General Public License v3 of later (GPL-3.0-or-later)\n\n"
+"Vereiste pakketten:\n"
+"  pip install pymupdf pyhanko python-pkcs11 Pillow PyQt6 cryptography\n\n"
+"Linksklik + slepen    →  handtekeningveld tekenen\n"
+"Rechtsklik op veld    →  opties / verwijderen\n"
+"Ctrl + slepen         →  inzoomen op selectie\n"
+"Middelste knop slepen →  weergave verschuiven"
+
+msgid "downgrade_title"
+msgstr "Oudere versie van de applicatie gestart"
+
+msgid "downgrade_msg"
+msgstr ""
+"Het configuratiebestand is geschreven door een nieuwere versie van deze "
+"applicatie. Onbekende instellingen zijn verwijderd. "
+"De applicatie blijft werken, maar sommige opties kunnen zijn teruggezet "
+"naar hun standaardwaarden."
+
+msgid "downgrade_backup"
+msgstr "Back-up van configuratie"
+
+msgid "about_check_update"
+msgstr "Controleren op updates"
+
+msgid "about_update_checking"
+msgstr "Zoeken…"
+
+msgid "about_update_available"
+msgstr "Nieuwe versie beschikbaar: {version}"
+
+msgid "about_update_current"
+msgstr "Up-to-date – geen update beschikbaar."
+
+msgid "settings_check_on_startup"
+msgstr "Automatisch controleren op updates bij opstarten"
+
+msgid "settings_title"
+msgstr "Instellingen"
+
+msgid "settings_nav_token"
+msgstr "Token / Handtekening"
+
+msgid "settings_nav_tsa"
+msgstr "Tijdstempel"
+
+msgid "settings_nav_validation"
+msgstr "Validatie"
+
+msgid "settings_nav_cache"
+msgstr "Vertrouwensarchief-cache"
+
+msgid "settings_nav_updates"
+msgstr "Updates"
+
+msgid "settings_nav_general"
+msgstr "Algemeen"
+
+msgid "settings_tok_docmdp_label"
+msgstr "Standaard documentbeperking"
+
+msgid "settings_val_auto_fetch_label"
+msgstr "Intrekkingsstatus automatisch ophalen tijdens validatie"
+
+msgid "settings_val_auto_fetch_hint"
+msgstr ""
+"Haalt OCSP-status online op tijdens validatie. Vereist netwerktoegang tot "
+"de OCSP-service van de CA (houd rekening met privacyimplicaties)."
+
+msgid "settings_upd_channel_label"
+msgstr "Updatekanaal"
+
+msgid "settings_upd_stable"
+msgstr "Stabiel (aanbevolen)"
+
+msgid "settings_upd_develop"
+msgstr "Develop (pre-releases)"
+
+msgid "settings_upd_develop_warn_title"
+msgstr "Develop-kanaal inschakelen?"
+
+msgid "settings_upd_develop_warn_body"
+msgstr ""
+"Het develop-kanaal bevat pre-releaseversies die minder getest zijn dan stabiele versies.\n\n"
+"Schakel alleen over als:\n"
+"  • u dringend een nieuwe functie of bugfix nodig heeft,\n"
+"  • een vervelende bug al is opgelost in het develop-kanaal,\n"
+"  • of een beheerder u dit heeft gevraagd.\n\n"
+"Let op: terugschakelen naar Stabiel kan moeilijker zijn en kan configuratieverlies veroorzaken."
+
+msgid "settings_gen_lang_label"
+msgstr "Taal"
+
+msgid "menu_settings_open"
+msgstr "Instellingen…"
+
+msgid "upd_avail_title"
+msgstr "Update beschikbaar"
+
+msgid "upd_avail_versions"
+msgstr "Geïnstalleerd: {current}  →  Nieuw: {latest}"
+
+msgid "upd_avail_changelog"
+msgstr "Wijzigingen in deze versie:"
+
+msgid "upd_avail_no_changelog"
+msgstr "(Geen releaseopmerkingen beschikbaar.)"
+
+msgid "update_btn_install"
+msgstr "Update installeren"
+
+msgid "update_btn_retry"
+msgstr "Opnieuw proberen"
+
+msgid "update_btn_cancel"
+msgstr "Annuleren"
+
+msgid "update_btn_restart"
+msgstr "Herstarten"
+
+msgid "update_dlg_title"
+msgstr "Update installeren"
+
+msgid "update_dlg_info"
+msgstr "Versie {version} is beschikbaar (huidig: {current})."
+
+msgid "update_dry_run_hint"
+msgstr "Testmodus: --dry-run, er wordt niets geïnstalleerd."
+
+msgid "update_status_downloading"
+msgstr "Downloaden…"
+
+msgid "update_status_installing"
+msgstr "Installeren…"
+
+msgid "update_status_success"
+msgstr "Installatie voltooid – herstart de applicatie."
+
+msgid "update_status_error"
+msgstr "Installatie mislukt. Voer handmatig uit:"
+
+msgid "update_dry_run_success"
+msgstr "Test geslaagd (--dry-run, niets geïnstalleerd)."
+
+msgid "update_no_asset"
+msgstr "Geen downloadbestand gevonden voor deze versie."
+
+msgid "license_title"
+msgstr "Licentie-informatie"
+
+msgid "license_msg"
+msgstr ""
+"PDF QES Signer\n"
+"Copyright (C) PDF QES Signer contributors\n\n"
+"Dit programma is vrije software: u kunt het herdistribueren en/of wijzigen\n"
+"onder de voorwaarden van de GNU General Public License, zoals gepubliceerd door\n"
+"de Free Software Foundation, versie 3 of (naar uw keuze) een latere versie.\n\n"
+"Dit programma wordt verspreid in de hoop dat het nuttig zal zijn,\n"
+"maar ZONDER ENIGE GARANTIE; zelfs zonder de impliciete garantie van\n"
+"VERKOOPBAARHEID of GESCHIKTHEID VOOR EEN BEPAALD DOEL.\n"
+"Zie de GNU General Public License voor meer details.\n\n"
+"U zou een kopie van de GNU General Public License moeten hebben ontvangen\n"
+"bij dit programma. Zo niet, zie:\n"
+"  https://www.gnu.org/licenses/gpl-3.0.html\n\n"
+"──────────────────────────────────────────────\n"
+"Bibliotheken van derden:\n\n"
+"  PyMuPDF (fitz)   GNU AGPL v3\n"
+"    https://pymupdf.readthedocs.io\n\n"
+"  pyhanko          MIT License\n"
+"    https://pyhanko.readthedocs.io\n\n"
+"  PyQt6            GPL v3 / Commercial\n"
+"    https://www.riverbankcomputing.com\n\n"
+"  python-pkcs11    MIT License\n"
+"    https://python-pkcs11.readthedocs.io\n\n"
+"  Pillow           HPND License\n"
+"    https://python-pillow.org\n\n"
+"  cryptography     Apache 2.0 / BSD\n"
+"    https://cryptography.io"
+
+msgid "license_close"
+msgstr "Sluiten"
+
+msgid "menu_check_sigs"
+msgstr "Handtekeningen controleren…"
+
+msgid "menu_trust_cache"
+msgstr "Vertrouwensarchief-cache…"
+
+msgid "trust_cache_title"
+msgstr "Vertrouwensarchief-cache (LOTL/TSL)"
+
+msgid "trust_cache_lotl_header"
+msgstr "Europese lijst van vertrouwenslijsten (LOTL)"
+
+msgid "trust_cache_lotl_explain"
+msgstr "Directory van alle nationale vertrouwenslijsten – vereist voor KEH-validatie."
+
+msgid "trust_cache_lotl_urls_valid"
+msgstr "  URL-lijst:  {count} vermelding(en)  ({size} KB)  –  geldig tot {date}"
+
+msgid "trust_cache_lotl_urls_expired"
+msgstr "  URL-lijst:  {count} vermelding(en)  ({size} KB)  –  VERLOPEN op {date}"
+
+msgid "trust_cache_lotl_urls_no_date"
+msgstr "  URL-lijst:  {count} vermelding(en)  ({size} KB)  –  geldigheid onbekend"
+
+msgid "trust_cache_no_lotl_urls"
+msgstr "  URL-lijst:  niet aanwezig"
+
+msgid "trust_cache_tsl_section"
+msgstr "Nationale lijsten van vertrouwensdiensten (TSL)"
+
+msgid "trust_cache_tsl_explain"
+msgstr "Certificaatvingerafdrukken van officieel erkende KEH-verleners van vertrouwensdiensten."
+
+msgid "trust_cache_tsl_header"
+msgstr "Gecachede landen:"
+
+msgid "trust_cache_no_tsl"
+msgstr "  (Geen TSL-cache aanwezig)"
+
+msgid "trust_cache_tsl_valid"
+msgstr "  {country}  –  geldig tot {date}  ({size} KB)"
+
+msgid "trust_cache_tsl_expired"
+msgstr "  {country}  –  verlopen op {date}  ({size} KB)"
+
+msgid "trust_cache_btn_clear_tsl"
+msgstr "TSL-bestanden verwijderen"
+
+msgid "trust_cache_btn_clear_all"
+msgstr "Alles verwijderen"
+
+msgid "trust_cache_btn_clear_aia"
+msgstr "Rootcertificaten verwijderen"
+
+msgid "trust_cache_aia_section"
+msgstr "Root-CA-certificaten (AIA-cache)"
+
+msgid "trust_cache_aia_explain"
+msgstr "Root-CA-certificaten gedownload tijdens ondertekening voor insluiting in toekomstige handtekeningen."
+
+msgid "trust_cache_aia_empty"
+msgstr "  (Geen rootcertificaten in cache)"
+
+msgid "trust_cache_aia_entry"
+msgstr "  {subject}  ·  {fp}  ({size} KB)"
+
+msgid "val_dlg_title"
+msgstr "Handtekeningvalidatie"
+
+msgid "val_col_item"
+msgstr "Item"
+
+msgid "val_col_source"
+msgstr "Herkomst"
+
+msgid "val_col_status"
+msgstr "Geldig"
+
+msgid "val_col_rev"
+msgstr "Rev."
+
+msgid "val_col_element"
+msgstr "Element"
+
+msgid "val_col_name"
+msgstr "Naam"
+
+msgid "val_col_tsa"
+msgstr "TSA"
+
+msgid "val_col_time"
+msgstr "Tijd"
+
+msgid "val_col_valid_until"
+msgstr "Geldigheid"
+
+msgid "val_sub_field"
+msgstr "Identificator: {value}"
+
+msgid "val_sub_name"
+msgstr "Naam: {value}"
+
+msgid "val_sub_issuer"
+msgstr "Uitgever: {value}"
+
+msgid "val_overall_valid"
+msgstr "GELDIG"
+
+msgid "val_overall_unknown"
+msgstr "ONBEKEND"
+
+msgid "val_overall_invalid"
+msgstr "ONGELDIG"
+
+msgid "val_overall_not_checked"
+msgstr "…"
+
+msgid "val_rev_label"
+msgstr "Rev. {n} / {total}"
+
+msgid "val_sig_type_signature"
+msgstr "Handtekening"
+
+msgid "val_sig_type_timestamp"
+msgstr "Archieftijdstempel"
+
+msgid "val_sig_type_lta"
+msgstr "TSA (LTA) tijdstempel"
+
+msgid "val_signer"
+msgstr "Ondertekenaar"
+
+msgid "val_signing_time"
+msgstr "Ondertekeningsdatum"
+
+msgid "val_tsa_time"
+msgstr "TSA-tijdstempel"
+
+msgid "val_checks"
+msgstr "Crypto: {crypto}  Keten: {chain}  Intrekking: {revoc}"
+
+msgid "val_cert_chain"
+msgstr "Certificaatketen"
+
+msgid "val_cert_root"
+msgstr "Root-CA"
+
+msgid "val_cert_self_signed"
+msgstr "zelfondertekend"
+
+msgid "val_cert_intermediate"
+msgstr "CA"
+
+msgid "val_cert_end_entity"
+msgstr "Ondertekeningscertificaat"
+
+msgid "val_ocsp"
+msgstr "OCSP: {status}"
+
+msgid "val_ocsp_good"
+msgstr "geldig"
+
+msgid "val_ocsp_revoked"
+msgstr "ingetrokken"
+
+msgid "val_ocsp_unknown"
+msgstr "onbekend"
+
+msgid "val_src_embedded"
+msgstr "ingesloten"
+
+msgid "val_src_system"
+msgstr "Mozilla"
+
+msgid "val_src_eu_tsl"
+msgstr "nat. TSL"
+
+msgid "val_src_downloaded"
+msgstr "gedownload"
+
+msgid "val_src_not_found"
+msgstr "niet gevonden"
+
+msgid "val_tsa_is_tsa"
+msgstr "(is TSA)"
+
+msgid "val_col_integrity"
+msgstr "Integriteit"
+
+msgid "val_integrity_ok"
+msgstr "✓ ongewijzigd"
+
+msgid "val_integrity_fail"
+msgstr "✗ handtekening ongeldig"
+
+msgid "val_field_name"
+msgstr "Veld: {name}"
+
+msgid "val_self_reported"
+msgstr "Zelfgerapporteerd: {time}"
+
+msgid "val_doc_info"
+msgstr "{n} revisie(s)"
+
+msgid "val_doc_dss"
+msgstr "  · DSS"
+
+msgid "val_doc_lta"
+msgstr "  · LTA"
+
+msgid "val_phase2_running"
+msgstr "Online validatie bezig…"
+
+msgid "val_phase2_done"
+msgstr "Validatie voltooid."
+
+msgid "val_phase2_error"
+msgstr "Fout: {msg}"
+
+msgid "val_btn_recheck"
+msgstr "Opnieuw controleren"
+
+msgid "val_btn_fetch_certs"
+msgstr "Certificaten online ophalen"
+
+msgid "val_no_sigs"
+msgstr "Geen handtekeningen gevonden in document."
+
+msgid "val_no_pdf"
+msgstr "Geen PDF geopend."
+
+msgid "val_rev_type_original"
+msgstr "Origineel document"
+
+msgid "val_rev_type_form_fields"
+msgstr "Formuliervelden"
+
+msgid "val_rev_type_annotations"
+msgstr "Annotaties"
+
+msgid "val_rev_type_dss"
+msgstr "Validatiegegevens (DSS)"
+
+msgid "val_rev_type_metadata"
+msgstr "Documentmetadata (XMP)"
+
+msgid "val_rev_type_unknown"
+msgstr "Incrementele update"
+
+msgid "val_warn_post_sig_title"
+msgstr "Document gewijzigd na laatste handtekening"
+
+msgid "val_warn_post_sig_body"
+msgstr ""
+"De volgende wijzigingen zijn aangebracht na de laatste handtekening "
+"en worden door geen enkele handtekening gedekt: {types}\n"
+"De momenteel weergegeven inhoud kan afwijken van de ondertekende staat."
+
+msgid "val_warn_post_sig_short"
+msgstr "⚠  Document gewijzigd na de laatste handtekening ({types}).  Controleer de handtekeningen."
+
+msgid "val_warn_between_sig_title"
+msgstr "Wijzigingen tussen handtekeningen"
+
+msgid "val_warn_between_sig_body"
+msgstr ""
+"De volgende wijzigingen zijn aangebracht na de eerste handtekening "
+"en worden alleen gedekt door een latere handtekening: {types}\n"
+"De eerste handtekening dekt deze inhoud niet."
+
+msgid "val_warn_between_sig_short"
+msgstr "⚠  Wijzigingen tussen handtekeningen ({types}) – niet door alle handtekeningen gedekt."
+
+msgid "val_sig_type_doc_ts"
+msgstr "Documenttijdstempel"
+
+msgid "val_rev_no_sig"
+msgstr "–  (geen handtekening)"
+
+msgid "val_show_all_revisions"
+msgstr "Alle revisies tonen"
+
+msgid "val_detail_date"
+msgstr "Datum"
+
+msgid "val_detail_integrity"
+msgstr "Integriteit"
+
+msgid "val_detail_profile"
+msgstr "Profiel"
+
+msgid "val_date_tsa"
+msgstr "{time}  (TSA-bevestigd)"
+
+msgid "val_date_self"
+msgstr "{time}  (zelfgerapporteerd)"
+
+msgid "val_date_doc_ts"
+msgstr "{time}"
+
+msgid "val_profile_is_doc_ts"
+msgstr "–  (is zelf de documenttijdstempel)"
+
+msgid "val_profile_details_B"
+msgstr "TSA-token –, DSS –"
+
+msgid "val_profile_details_T"
+msgstr "TSA-token ✓, DSS –"
+
+msgid "val_profile_details_LT"
+msgstr "TSA-token ✓, DSS ✓, LTA-tijdstempel –"
+
+msgid "val_profile_details_LTA"
+msgstr "TSA-token ✓, DSS ✓, LTA-tijdstempel ✓"
+
+msgid "val_profile_meaning_B"
+msgstr "Geen aanvullende validatiegegevens ingesloten"
+
+msgid "val_profile_meaning_T"
+msgstr "Ondertekeningsdatum beveiligd, validatiegegevens niet ingesloten"
+
+msgid "val_profile_meaning_LT"
+msgstr "Validatiegegevens ingesloten, maar niet cryptografisch beveiligd"
+
+msgid "val_profile_meaning_LTA"
+msgstr "Alle validatiegegevens ingesloten en cryptografisch beveiligd"
+
+msgid "val_detail_sig_chain"
+msgstr "Handtek.-keten"
+
+msgid "val_detail_tsa_chain"
+msgstr "TSA-keten"
+
+msgid "val_chain_details_btn"
+msgstr "Details →"
+
+msgid "val_chain_valid"
+msgstr "✓ Geldig"
+
+msgid "val_chain_incomplete"
+msgstr "✗ Onvolledig"
+
+msgid "val_chain_expired"
+msgstr "✗ Verlopen"
+
+msgid "val_chain_revoked"
+msgstr "✗ Ingetrokken"
+
+msgid "val_chain_unknown_root"
+msgstr "Compleet · Root onbekend"
+
+msgid "val_chain_unknown_revoc"
+msgstr "Compleet · Intrekking onbekend"
+
+msgid "val_chain_not_checked"
+msgstr "–"
+
+msgid "val_chain_valid_tip"
+msgstr "Keten compleet, root vertrouwd (certifi/Mozilla-bundel), intrekking ingesloten en geldig."
+
+msgid "val_chain_incomplete_tip"
+msgstr "De certificaatketen is onderbroken – een tussenliggend CA-certificaat ontbreekt."
+
+msgid "val_chain_expired_tip"
+msgstr "Minstens één certificaat in de keten was buiten zijn geldigheidsduur op het moment van ondertekening."
+
+msgid "val_chain_revoked_tip"
+msgstr "Het ondertekeningscertificaat werd ingetrokken volgens de ingesloten OCSP-reactie."
+
+msgid "val_chain_unknown_root_tip"
+msgstr "De keten is compleet maar het rootcertificaat werd niet gevonden in de certifi/Mozilla-bundel of de Europese vertrouwenslijst (LOTL/TSL)."
+
+msgid "val_chain_unknown_revoc_tip"
+msgstr "Het rootcertificaat is vertrouwd (certifi/Mozilla-bundel) maar de intrekkingsstatus van het ondertekeningscertificaat is niet gecontroleerd."
+
+msgid "val_chain_indic_out_of_bounds"
+msgstr "Compleet · Certificaat verlopen, geen bewijs van bestaan"
+
+msgid "val_chain_indic_out_of_bounds_tip"
+msgstr "Het ondertekeningscertificaat was verlopen op het moment van online validatie. Zonder ingesloten OCSP-reactie (PAdES-LT/LTA) kan niet worden aangetoond dat het nog geldig was op het moment van ondertekening."
+
+msgid "val_chain_indic_revoked_no_poe"
+msgstr "Compleet · Ingetrokken, geen bewijs van bestaan"
+
+msgid "val_chain_indic_revoked_no_poe_tip"
+msgstr "Het certificaat is ingetrokken, maar zonder bewijs van bestaan (PAdES-LT/LTA) kan niet worden bepaald of de intrekking voor of na de handtekening plaatsvond."
+
+msgid "val_chain_indic_try_later"
+msgstr "Compleet · OCSP-service niet beschikbaar"
+
+msgid "val_chain_indic_try_later_tip"
+msgstr "De OCSP-service van de uitgever was niet bereikbaar op het moment van validatie. Een latere controle kan slagen."
+
+msgid "val_chain_indic_no_poe"
+msgstr "Compleet · Geen bewijs van bestaan"
+
+msgid "val_chain_indic_no_poe_tip"
+msgstr "Een cryptografisch bewijs van bestaan voor het ondertekeningsmoment ontbreekt (bijv. een RFC-3161-tijdstempel)."
+
+msgid "val_chain_indic_crypto_no_poe"
+msgstr "Compleet · Cryptografische beperking, geen bewijs van bestaan"
+
+msgid "val_chain_indic_crypto_no_poe_tip"
+msgstr "Een gebruikt algoritme voldoet niet meer aan de huidige vereisten en er is geen bewijs van bestaan dat het gebruik op het moment van ondertekening bevestigt."
+
+msgid "val_chain_self_signed"
+msgstr "Zelfondertekend · geen CA-vertrouwen"
+
+msgid "val_chain_self_signed_tip"
+msgstr "Het certificaat is zelf uitgegeven – er is geen uitgevende certificeringsinstantie. Het certificaat is ingesloten in het document maar is niet aanwezig in een bekend vertrouwensarchief."
+
+msgid "cert_win_title_sig"
+msgstr "Handtekeningketen – {cn}"
+
+msgid "cert_win_title_tsa"
+msgstr "TSA-keten – {cn}"
+
+msgid "cert_win_role_ee"
+msgstr "Eindentiteit"
+
+msgid "cert_win_role_intermediate"
+msgstr "Tussenliggend"
+
+msgid "cert_win_role_root"
+msgstr "Root"
+
+msgid "cert_win_role_self_signed"
+msgstr "Zelfondertekend"
+
+msgid "cert_win_self_signed_issuer"
+msgstr "(zelfondertekend)"
+
+msgid "cert_win_label_issuer"
+msgstr "Uitgever"
+
+msgid "cert_win_label_valid"
+msgstr "Geldig"
+
+msgid "cert_win_label_source"
+msgstr "Bron"
+
+msgid "cert_win_label_trust"
+msgstr "Vertrouwen"
+
+msgid "cert_win_label_fingerprint"
+msgstr "Vingerafdruk (SHA-256)"
+
+msgid "cert_win_label_ocsp"
+msgstr "OCSP"
+
+msgid "cert_win_label_overall"
+msgstr "Algehele status"
+
+msgid "cert_win_lotl_confirmed"
+msgstr "EU LOTL bevestigd (vertrouwensanker)"
+
+msgid "cert_win_root_informational"
+msgstr "Alleen informatief · niet geverifieerd"
+
+msgid "cert_win_not_found_trust"
+msgstr "Afwezig · vertrouwen niet verifieerbaar"
+
+msgid "cert_win_trust_verified"
+msgstr "Cryptografisch geverifieerd door uitgever"
+
+msgid "cert_win_issuer_sig_invalid"
+msgstr "Handtekening uitgever ongeldig!"
+
+msgid "cert_win_source_embedded"
+msgstr "Ingesloten (PDF)"
+
+msgid "cert_win_source_certifi"
+msgstr "certifi (Mozilla-bundel)"
+
+msgid "cert_win_source_system"
+msgstr "Systeemvertrouwensarchief"
+
+msgid "cert_win_source_eu_tsl"
+msgstr "Europese vertrouwenslijst (LOTL/TSL)"
+
+msgid "cert_win_source_downloaded"
+msgstr "Gedownload (AIA)"
+
+msgid "cert_win_source_not_found"
+msgstr "Niet gevonden"
+
+msgid "cert_win_source_unknown"
+msgstr "Onbekend"
+
+msgid "cert_win_ocsp_good"
+msgstr "geldig ✓"
+
+msgid "cert_win_ocsp_revoked"
+msgstr "ingetrokken ✗"
+
+msgid "cert_win_ocsp_unknown"
+msgstr "onbekend"
+
+msgid "cert_win_ocsp_not_checked"
+msgstr "niet gecontroleerd"
+
+msgid "cert_win_close"
+msgstr "Sluiten"
+
+msgid "keygen_title"
+msgstr "Sleutel en certificaat genereren"
+
+msgid "keygen_section_key"
+msgstr "Sleutelparameters"
+
+msgid "keygen_section_subject"
+msgstr "Certificaathouder"
+
+msgid "keygen_section_file"
+msgstr "Uitvoerbestand en wachtwoordbeveiliging"
+
+msgid "keygen_keytype_label"
+msgstr "Sleuteltype:"
+
+msgid "keygen_keytype_tip"
+msgstr ""
+"Cryptografisch algoritme en sleutelgrootte.\n\n"
+"EC P-521 ★ (standaard)\n"
+"  Hoogste EC-beveiligingsniveau (≈ 260 bits). Aanbevolen voor langdurig gebruik.\n\n"
+"EC P-384\n"
+"  Goede keuze voor compatibiliteit met oudere software.\n\n"
+"EC P-256\n"
+"  Snelste optie, maar beperkte beveiliging vanaf 2027.\n\n"
+"RSA 3072 / 4096\n"
+"  Klassiek algoritme; maximale compatibiliteit met verouderde software.\n"
+"  Generatie duurt enkele seconden langer dan EC."
+
+msgid "keygen_smime_enc_label"
+msgstr "Ook gebruiken voor S/MIME-versleuteling"
+
+msgid "keygen_smime_enc_tip"
+msgstr ""
+"Stelt aanvullende Key Usage-bits in voor S/MIME e-mailversleuteling:\n"
+"  EC-sleutel:  keyAgreement (ECDH-sleuteluitwisseling)\n"
+"  RSA-sleutel: keyEncipherment (directe sleuteltransport)\n\n"
+"Hiermee kan hetzelfde sleutelpaar worden gebruikt voor ondertekening en versleuteling.\n\n"
+"Niet nodig voor alleen PDF-handtekeningen."
+
+msgid "keygen_fixed_attrs"
+msgstr ""
+"Vast: Key Usage = digitalSignature + nonRepudiation  ·  "
+"Extended Key Usage = emailProtection  ·  Basic Constraints: CA=Nee"
+
+msgid "keygen_fixed_attrs_tip"
+msgstr ""
+"Deze certificaatattributen worden altijd ingesteld:\n\n"
+"Key Usage:\n"
+"  digitalSignature – ondertekening van documenten en gegevens\n"
+"  nonRepudiation   – onweerlegbaarheid (eIDAS: bindende toezegging)\n"
+"  + keyAgreement / keyEncipherment als S/MIME-versleuteling is ingeschakeld\n\n"
+"Extended Key Usage:\n"
+"  emailProtection  – S/MIME en PDF-handtekeningen\n\n"
+"Basic Constraints: CA=Nee\n"
+"  Dit certificaat mag geen andere certificaten uitgeven."
+
+msgid "keygen_validity_label"
+msgstr "Geldigheid:"
+
+msgid "keygen_validity_tip"
+msgstr ""
+"Hoe lang het certificaat geldig is.\n\n"
+"Let op: zelfondertekende certificaten kunnen na vervaldatum niet meer worden\n"
+"gebruikt voor nieuwe handtekeningen. Bestaande handtekeningen blijven\n"
+"cryptografisch geldig als ze zijn aangemaakt binnen de geldigheidsduur.\n\n"
+"Aanbevelingen:\n"
+"• 3 jaar voor algemeen gebruik\n"
+"• 10 jaar voor archiefdocumenten met lange wettelijke bewaartermijn\n\n"
+"Voor een gekwalificeerde elektronische handtekening (KEH) onder eIDAS is een\n"
+"certificaat van een geaccrediteerde verlener van vertrouwensdiensten (TSP) vereist."
+
+msgid "keygen_validity_years"
+msgstr "{n} jaar"
+
+msgid "keygen_cn_label"
+msgstr "Naam (CN):"
+
+msgid "keygen_cn_tip"
+msgstr ""
+"Common Name (CN) – de primaire naam in het certificaat.\n\n"
+"Deze naam verschijnt in PDF-viewers als de ondertekenaar en in\n"
+"het uiterlijk van het handtekeningveld (als 'Naam uit certificaat' is geselecteerd).\n\n"
+"Voorbeelden:\n"
+"  Jan de Vries\n"
+"  Dr. Maria Jansen\n"
+"  Bedrijf Voorbeeld – Directie\n\n"
+"Verplicht veld – mag niet leeg zijn."
+
+msgid "keygen_org_label"
+msgstr "Organisatie (O):"
+
+msgid "keygen_org_tip"
+msgstr ""
+"Organisatie (O) – optionele bedrijfs- of instelling snaam.\n\n"
+"Wordt weergegeven in de certificaatdetailweergave en helpt het certificaat\n"
+"te associëren met een organisatie.\n\n"
+"Voorbeelden:\n"
+"  Bedrijf Voorbeeld B.V.\n"
+"  Overheidsinstelling voor Voorbeelden\n\n"
+"Kan leeg worden gelaten."
+
+msgid "keygen_country_label"
+msgstr "Land (C):"
+
+msgid "keygen_country_invalid"
+msgstr "ongeldige code"
+
+msgid "keygen_country_tip"
+msgstr ""
+"Landcode (C) – tweelettrige ISO 3166-1 alfa-2-code.\n\n"
+"Voorbeelden: DE, AT, CH, FR, NL\n\n"
+"De landcode is verplicht in veel PKI-infrastructuren.\n"
+"Leeg laten is mogelijk maar kan compatibiliteitsproblemen veroorzaken.\n\n"
+"Hoofdletters/kleine letters worden automatisch omgezet naar hoofdletters."
+
+msgid "keygen_email_label"
+msgstr "E-mail:"
+
+msgid "keygen_email_tip"
+msgstr ""
+"E-mailadres als Subject Alternative Name (SAN, rfc822Name).\n\n"
+"Het e-mailadres wordt niet in de Subject DN geplaatst maar als SAN-extensie,\n"
+"conform de huidige standaard.\n\n"
+"Relevantie:\n"
+"• Maakt het eenvoudiger het certificaat aan een persoon te koppelen\n"
+"• Vereist door sommige e-mailclients (S/MIME)\n"
+"• Optioneel voor alleen PDF-handtekeningen\n\n"
+"Kan leeg worden gelaten."
+
+msgid "keygen_path_label"
+msgstr "Opslagpad:"
+
+msgid "keygen_path_tip"
+msgstr ""
+"Bestandspad voor het PKCS#12-bestand (.p12 of .pfx).\n\n"
+"PKCS#12 is een containerformaat dat de privésleutel en het certificaat\n"
+"samenvoegt in één bestand. Dit bestand wordt vervolgens geselecteerd in de\n"
+"ondertekeningsconfiguratie als 'P12/PFX-bestand'.\n\n"
+"Aanbeveling: sla het bestand op een veilige, geback-upte locatie op.\n"
+"De privésleutel is het kernelement van uw handtekening.\n"
+"Verlies betekent dat er geen nieuwe handtekeningen kunnen worden aangemaakt.\n"
+"Kopieer het bestand naar een back-upmedium."
+
+msgid "keygen_password_label"
+msgstr "Wachtwoord:"
+
+msgid "keygen_password_placeholder"
+msgstr "Wachtwoord om de privésleutel te beveiligen"
+
+msgid "keygen_password_tip"
+msgstr ""
+"Wachtwoord om de privésleutel in het P12-bestand te beveiligen.\n\n"
+"De privésleutel wordt versleuteld met AES-256 als er een wachtwoord wordt opgegeven.\n\n"
+"Aanbeveling: stel altijd een sterk wachtwoord in!\n"
+"Wie het P12-bestand zonder wachtwoordbeveiliging verkrijgt, kan direct\n"
+"handtekeningen in uw naam aanmaken.\n\n"
+"Zonder wachtwoord (leeg laten): bestand is niet versleuteld.\n"
+"Alleen aangeraden als het bestand op een versleuteld station staat."
+
+msgid "keygen_password2_label"
+msgstr "Wachtwoord (herhaling):"
+
+msgid "keygen_password2_placeholder"
+msgstr "Wachtwoord herhalen ter bevestiging"
+
+msgid "keygen_password2_tip"
+msgstr ""
+"Herhaling van het wachtwoord ter bevestiging.\n\n"
+"Moet overeenkomen met het wachtwoord in het veld 'Wachtwoord'."
+
+msgid "keygen_btn_generate"
+msgstr "Genereren"
+
+msgid "keygen_save_title"
+msgstr "Sleutelbestand opslaan als…"
+
+msgid "keygen_save_filter"
+msgstr "PKCS#12-bestanden (*.p12 *.pfx);;Alle bestanden (*)"
+
+msgid "keygen_error_title"
+msgstr "Invoerfout"
+
+msgid "keygen_error_cn_empty"
+msgstr "Voer een naam (CN) in."
+
+msgid "keygen_error_path_empty"
+msgstr "Geef een opslagpad op."
+
+msgid "keygen_error_pw_mismatch"
+msgstr "De wachtwoorden komen niet overeen."
+
+msgid "keygen_error_country_len"
+msgstr "De landcode moet exact 2 letters bevatten (bijv. NL)."
+
+msgid "keygen_error_failed"
+msgstr "Sleutelgeneratie mislukt:\n\n{error}"
+
+msgid "keygen_success_title"
+msgstr "Sleutel gegenereerd ✓"
+
+msgid "keygen_success_msg"
+msgstr ""
+"Sleutel en zelfondertekend certificaat zijn succesvol gegenereerd.\n\n"
+"Bestand: {path}\n\n"
+"Het pad is automatisch toegepast op de configuratie.\n"
+"Klik op 'Opslaan' om de instellingen op te slaan."
+
+msgid "keygen_section_openssl"
+msgstr "openssl-equivalent"
+
+msgid "keygen_openssl_tip"
+msgstr ""
+"Equivalent openssl-commando om hetzelfde bestand te produceren –\n"
+"voor transparantie en handmatige uitvoering.\n"
+"openssl vraagt interactief om het wachtwoord bij uitvoering."
+
+msgid "keygen_btn_run"
+msgstr "Uitvoeren"
+
+msgid "keygen_btn_run_tip"
+msgstr ""
+"openssl uitvoeren in een terminalvenster.\n"
+"openssl vraagt daar interactief om het wachtwoord –\n"
+"er wordt geen wachtwoord overgedragen vanuit dit venster.\n"
+"Vereist: openssl en een terminalemulator (xterm enz.)."
+
+msgid "keygen_btn_copy"
+msgstr "Kopiëren"
+
+msgid "keygen_btn_copy_tip"
+msgstr "Het openssl-commando naar het klembord kopiëren."
+
+msgid "keygen_openssl_not_found"
+msgstr ""
+"openssl niet gevonden in het PATH.\n\n"
+"Installeer openssl of gebruik de knop 'Genereren' "
+"(interne implementatie, geen externe afhankelijkheden)."
+
+msgid "keygen_openssl_no_terminal"
+msgstr ""
+"Geen terminalemulator gevonden in het PATH.\n\n"
+"Gezocht: x-terminal-emulator, xterm, konsole, xfce4-terminal, "
+"mate-terminal, gnome-terminal.\n\n"
+"Installeer een terminalemulator of kopieer het commando "
+"en voer het handmatig uit in een terminal."
+
+msgid "keygen_openssl_failed"
+msgstr "openssl-uitvoering mislukt:\n\n{error}"

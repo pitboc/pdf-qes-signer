@@ -1,0 +1,1812 @@
+# PDF QES Signer – Português translations
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Translators: AI-generated – needs native review
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: pdf-qes-signer\n"
+"Report-Msgid-Bugs-To: https://codeberg.org/pitbo/pdf-qes-signer/issues\n"
+"PO-Revision-Date: 2026-04-11\n"
+"Last-Translator: AI-generated – needs native review\n"
+"Language: pt\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "btn_ok"
+msgstr "OK"
+
+msgid "btn_cancel"
+msgstr "Cancelar"
+
+msgid "btn_close"
+msgstr "Fechar"
+
+msgid "btn_yes"
+msgstr "Sim"
+
+msgid "btn_no"
+msgstr "Não"
+
+msgid "menu_profile"
+msgstr "Perfis…"
+
+msgid "dlg_profile_mgr_title"
+msgstr "Gerir perfis"
+
+msgid "dlg_profile_new_short"
+msgstr "Novo"
+
+msgid "dlg_profile_select_title"
+msgstr "Selecionar perfil"
+
+msgid "dlg_profile_active"
+msgstr "(ativo)"
+
+msgid "dlg_profile_activate"
+msgstr "Ativar"
+
+msgid "dlg_profile_new_title"
+msgstr "Novo perfil"
+
+msgid "dlg_profile_new_label"
+msgstr "Nome do perfil:"
+
+msgid "dlg_profile_new_btn"
+msgstr "Criar"
+
+msgid "dlg_profile_exists_title"
+msgstr "O perfil já existe"
+
+msgid "dlg_profile_exists_msg"
+msgstr ""
+"Já existe um perfil com o nome '{name}'.\n"
+"Deseja substituí-lo?"
+
+msgid "dlg_profile_rename_title"
+msgstr "Renomear perfil"
+
+msgid "dlg_profile_rename_label"
+msgstr "Novo nome:"
+
+msgid "dlg_profile_rename_btn"
+msgstr "Renomear"
+
+msgid "dlg_profile_delete_title"
+msgstr "Eliminar perfil"
+
+msgid "dlg_profile_delete_btn"
+msgstr "Eliminar"
+
+msgid "dlg_profile_delete_active_msg"
+msgstr ""
+"'{name}' é o perfil ativo.\n"
+"Após a eliminação, '{next}' ficará ativo.\n"
+"Eliminar mesmo assim?"
+
+msgid "dlg_profile_delete_confirm_msg"
+msgstr "Eliminar mesmo o perfil '{name}'?"
+
+msgid "dlg_profile_last_title"
+msgstr "Último perfil"
+
+msgid "dlg_profile_last_msg"
+msgstr ""
+"Tem de existir pelo menos um perfil.\n"
+"\n"
+"Pretende repor os parâmetros para os valores predefinidos?"
+
+msgid "dlg_profile_reset_btn"
+msgstr "Repor predefinições"
+
+msgid "dlg_profile_invalid_name"
+msgstr "Nome de perfil inválido. Utilize apenas letras, dígitos, espaços, hífenes e sublinhados."
+
+msgid "dlg_profile_empty_name"
+msgstr "Introduza um nome de perfil."
+
+msgid "dlg_profile_name_exists"
+msgstr "Já existe um perfil com este nome."
+
+msgid "status_profile"
+msgstr "Perfil"
+
+msgid "menu_file"
+msgstr "Ficheiro"
+
+msgid "menu_file_open"
+msgstr "Abrir PDF…"
+
+msgid "menu_file_save_fields"
+msgstr "Guardar com campos (cópia)…"
+
+msgid "menu_file_quit"
+msgstr "Sair"
+
+msgid "menu_sign"
+msgstr "Assinar"
+
+msgid "menu_sign_document"
+msgstr "Assinar documento…"
+
+msgid "menu_settings"
+msgstr "Definições"
+
+msgid "menu_settings_pkcs11"
+msgstr "Configurar assinatura / token…"
+
+msgid "menu_settings_language"
+msgstr "Idioma / Language"
+
+msgid "menu_help"
+msgstr "Ajuda"
+
+msgid "menu_help_about"
+msgstr "Sobre…"
+
+msgid "menu_help_license"
+msgstr "Licença…"
+
+msgid "tb_open"
+msgstr "Abrir PDF"
+
+msgid "tb_prev"
+msgstr "Página anterior"
+
+msgid "tb_next"
+msgstr "Página seguinte"
+
+msgid "tb_zoom_out"
+msgstr "Reduzir  (Ctrl+roda)"
+
+msgid "tb_zoom_in"
+msgstr "Ampliar  (Ctrl+roda)"
+
+msgid "tb_fit_width"
+msgstr "Ajustar largura"
+
+msgid "tb_fit_height"
+msgstr "Ajustar altura"
+
+msgid "tb_sign"
+msgstr "✍ Assinar"
+
+msgid "tb_check_sigs"
+msgstr "🔍 Verificar assinaturas"
+
+msgid "tb_save_fields"
+msgstr "💾 Guardar PDF"
+
+msgid "panel_fields"
+msgstr "Campos de assinatura"
+
+msgid "btn_delete_field"
+msgstr "🗑 Eliminar"
+
+msgid "btn_save_fields"
+msgstr "💾 Guardar como PDF"
+
+msgid "panel_token"
+msgstr "Token / PIN"
+
+msgid "panel_token_pfx"
+msgstr "Ficheiro P12/PFX / Palavra-passe"
+
+msgid "pin_label"
+msgstr "PIN:"
+
+msgid "pin_hint"
+msgstr "deixe vazio para leitor de PIN"
+
+msgid "pin_label_pfx"
+msgstr "Palavra-passe:"
+
+msgid "pin_hint_pfx"
+msgstr "deixe vazio se não protegido por palavra-passe"
+
+msgid "panel_appearance"
+msgstr "Aparência da assinatura"
+
+msgid "app_layout_label"
+msgstr "Disposição:"
+
+msgid "app_layout_img_left"
+msgstr "Imagem à esquerda | Texto à direita"
+
+msgid "app_layout_img_right"
+msgstr "Texto à esquerda | Imagem à direita"
+
+msgid "app_location_label"
+msgstr "Localização:"
+
+msgid "app_reason_label"
+msgstr "Motivo:"
+
+msgid "app_name_label"
+msgstr "Nome:"
+
+msgid "app_name_cert"
+msgstr "(do certificado)"
+
+msgid "app_date_label"
+msgstr "Data:"
+
+msgid "app_show_date"
+msgstr "Mostrar data"
+
+msgid "appdlg_title"
+msgstr "Configurar aparência do campo de assinatura"
+
+msgid "appdlg_tab_image"
+msgstr "Imagem"
+
+msgid "appdlg_tab_text"
+msgstr "Texto"
+
+msgid "appdlg_tab_layout"
+msgstr "Disposição"
+
+msgid "appdlg_img_path"
+msgstr "Imagem PNG:"
+
+msgid "appdlg_img_browse"
+msgstr "…"
+
+msgid "appdlg_img_clear"
+msgstr "Remover"
+
+msgid "appdlg_img_preview"
+msgstr "Pré-visualização"
+
+msgid "appdlg_img_hint"
+msgstr "Transparência suportada. Proporção preservada."
+
+msgid "appdlg_img_filter"
+msgstr "Imagens PNG (*.png);;Todas as imagens (*.png *.jpg *.jpeg *.bmp);;Todos os ficheiros (*)"
+
+msgid "appdlg_browse_img"
+msgstr "Escolher imagem de assinatura"
+
+msgid "appdlg_font_size"
+msgstr "Tamanho da fonte (pt):"
+
+msgid "appdlg_text_color"
+msgstr "Cor do texto:"
+
+msgid "appdlg_border"
+msgstr "Mostrar borda"
+
+msgid "appdlg_bg_color"
+msgstr "Cor de fundo:"
+
+msgid "appdlg_save"
+msgstr "Guardar"
+
+msgid "appdlg_cancel"
+msgstr "Cancelar"
+
+msgid "status_ready"
+msgstr "Pronto. Abra um ficheiro PDF."
+
+msgid "status_opened"
+msgstr "Aberto: {path}  ({pages} páginas)"
+
+msgid "status_field_added"
+msgstr "Campo de assinatura '{name}' adicionado na página {page}."
+
+msgid "status_field_deleted"
+msgstr "Campo '{name}' eliminado."
+
+msgid "status_saving_fields"
+msgstr "A incorporar campos de assinatura…"
+
+msgid "status_saved"
+msgstr "Guardado: {path}"
+
+msgid "status_signing"
+msgstr "Assinatura em curso…"
+
+msgid "status_signed"
+msgstr "Documento assinado: {path}"
+
+msgid "status_sign_failed"
+msgstr "Assinatura falhou."
+
+msgid "status_save_failed"
+msgstr "Erro ao guardar."
+
+msgid "status_token_ok"
+msgstr "Token OK: {label} | {keys} chave(s), {certs} certificado(s)"
+
+msgid "status_token_failed"
+msgstr "Teste de token falhou."
+
+msgid "status_token_reading"
+msgstr "A ler token…"
+
+msgid "dlg_field_name_title"
+msgstr "Nome do campo"
+
+msgid "dlg_field_name_prompt"
+msgstr "Nome do campo de assinatura:"
+
+msgid "dlg_field_name_default"
+msgstr "Sig_{page}_{count}"
+
+msgid "dlg_field_name_duplicate"
+msgstr "Já existe um campo com o nome '{name}'. Escolha um nome diferente."
+
+msgid "dlg_delete_title"
+msgstr "Eliminar"
+
+msgid "dlg_delete_msg"
+msgstr "Eliminar campo de assinatura '{name}'?"
+
+msgid "dlg_delete_sel_msg"
+msgstr "Eliminar mesmo o campo '{name}'?"
+
+msgid "dlg_no_doc"
+msgstr "Sem documento"
+
+msgid "dlg_no_doc_msg"
+msgstr "Por favor abra primeiro um ficheiro PDF."
+
+msgid "dlg_no_fields"
+msgstr "Sem campos"
+
+msgid "dlg_no_fields_msg"
+msgstr "Por favor desenhe primeiro pelo menos um campo de assinatura."
+
+msgid "dlg_no_field_sel"
+msgstr "Nenhum campo selecionado"
+
+msgid "dlg_no_field_sel_msg"
+msgstr "Por favor selecione um campo na lista."
+
+msgid "dlg_missing_deps"
+msgstr "Dependências em falta"
+
+msgid "dlg_missing_deps_msg"
+msgstr ""
+"Os seguintes pacotes são necessários para assinar:\n"
+"\n"
+"{packages}\n"
+"\n"
+"A colocação de campos de assinatura ainda é possível."
+
+msgid "dlg_open_pdf_title"
+msgstr "Abrir PDF"
+
+msgid "dlg_save_fields_title"
+msgstr "Guardar como…"
+
+msgid "dlg_save_fields_suffix"
+msgstr "_com_campos"
+
+msgid "dlg_save_signed_title"
+msgstr "Guardar PDF assinado como…"
+
+msgid "dlg_save_signed_suffix"
+msgstr "_assinado"
+
+msgid "dlg_pdf_filter"
+msgstr "Ficheiros PDF (*.pdf);;Todos os ficheiros (*)"
+
+msgid "dlg_lib_filter"
+msgstr "Bibliotecas partilhadas (*.so *.so.*);;DLL (*.dll);;Todos os ficheiros (*)"
+
+msgid "dlg_open_error_title"
+msgstr "Erro"
+
+msgid "dlg_open_error_msg"
+msgstr ""
+"Não foi possível abrir o PDF:\n"
+"{error}"
+
+msgid "dlg_save_error_title"
+msgstr "Erro"
+
+msgid "dlg_save_error_msg"
+msgstr ""
+"Erro:\n"
+"{error}"
+
+msgid "dlg_save_success_title"
+msgstr "Êxito"
+
+msgid "dlg_save_success_msg"
+msgstr ""
+"PDF com campos de assinatura guardado:\n"
+"{path}"
+
+msgid "dlg_sign_success_title"
+msgstr "Assinatura bem-sucedida ✓"
+
+msgid "dlg_sign_success_msg"
+msgstr ""
+"Assinatura aplicada com êxito.\n"
+"\n"
+"Ficheiro: {path}"
+
+msgid "dlg_sign_error_title"
+msgstr "Erro de assinatura"
+
+msgid "dlg_sign_error_msg"
+msgstr ""
+"Erro durante a assinatura QES:\n"
+"\n"
+"{error}\n"
+"\n"
+"Causas comuns:\n"
+"• Deixe o campo PIN vazio para leitor de PIN CyberJack\n"
+"• Token não inserido\n"
+"• Caminho de biblioteca errado\n"
+"• Rótulo de chave não corresponde\n"
+"• Sem certificado no token\n"
+"\n"
+"Rastreio completo na consola (stderr)."
+
+msgid "dlg_sign_error_msg_pfx"
+msgstr ""
+"Erro durante a assinatura:\n"
+"\n"
+"{error}\n"
+"\n"
+"Causas comuns:\n"
+"• Palavra-passe errada (ou deixe vazia se não protegida)\n"
+"• Ficheiro P12/PFX não encontrado ou corrompido\n"
+"• Sem chave privada no ficheiro\n"
+"\n"
+"Rastreio completo na consola (stderr)."
+
+msgid "dlg_field_already_signed"
+msgstr "Este campo já está assinado e não pode ser utilizado novamente."
+
+msgid "warn_crypto_invalid_short"
+msgstr "⚠  Verificação de integridade criptográfica falhou ({count}) – o conteúdo pode ter sido adulterado ou o ficheiro está corrompido.  Verifique as assinaturas."
+
+msgid "warn_docmdp_p1"
+msgstr "Documento bloqueado – sem alterações permitidas (docMDP P=1)"
+
+msgid "warn_docmdp_p2"
+msgstr "Documento restringido – apenas campos de formulário e assinaturas permitidos (docMDP P=2)"
+
+msgid "dlg_docmdp_title"
+msgstr "Restrição do documento"
+
+msgid "dlg_docmdp_info"
+msgstr ""
+"Esta é a primeira assinatura neste documento.\n"
+"Escolha que alterações ainda serão permitidas a seguir:"
+
+msgid "dlg_docmdp_none"
+msgstr "Sem restrição"
+
+msgid "dlg_docmdp_p2"
+msgstr "Campos de formulário e mais assinaturas permitidos (recomendado)"
+
+msgid "dlg_docmdp_p1"
+msgstr "Sem mais alterações permitidas"
+
+msgid "dlg_locked_field_title"
+msgstr "Campo bloqueado"
+
+msgid "dlg_locked_field_msg"
+msgstr ""
+"O campo '{name}' está protegido por uma assinatura existente no documento\n"
+"e não pode ser eliminado ou movido.\n"
+"\n"
+"Só pode ser assinado."
+
+msgid "dlg_pyhanko_missing"
+msgstr ""
+"pyhanko não está instalado.\n"
+"pip install pyhanko python-pkcs11"
+
+msgid "dlg_choose_field_title"
+msgstr "Escolher campo de assinatura"
+
+msgid "dlg_choose_field_label"
+msgstr "Assinar com que campo?"
+
+msgid "dlg_invisible_field"
+msgstr "✦ Assinatura sem campo (invisível)"
+
+msgid "tsa_enabled_label"
+msgstr "🕐 Ativar carimbo de tempo (TSA)"
+
+msgid "cfg_chain_aia_label"
+msgstr "Completar cadeia de certificados ao assinar (AIA)"
+
+msgid "cfg_chain_aia_hint"
+msgstr "Descarrega o certificado root CA em falta via AIA (Authority Information Access) e incorpora-o na assinatura. Recomendado para arquivo de longo prazo (PAdES-LT / ETSI EN 319 132). Na primeira assinatura é mostrada uma confirmação; o certificado é depois armazenado localmente e incorporado sem perguntar nas assinaturas futuras."
+
+msgid "dlg_root_fetch_title"
+msgstr "Incorporar certificado root CA"
+
+msgid "dlg_root_fetch_msg"
+msgstr ""
+"A assinatura não contém um certificado root CA.\n"
+"\n"
+"Deve ser descarregado da internet (AIA) e incorporado agora?\n"
+"\n"
+"Root CA: {subject}\n"
+"\n"
+"O certificado será armazenado localmente. Assinaturas futuras irão incorporá-lo sem perguntar.\n"
+"\n"
+"Nota: Esta pergunta pode ser desativada na configuração de assinatura."
+
+msgid "cfg_ocsp_lta_label"
+msgstr "Incorporar estado de revogação para arquivo de longo prazo (OCSP/PAdES-LTA)"
+
+msgid "cfg_ocsp_lta_hint"
+msgstr "Incorpora o estado atual de revogação de todos os certificados e adiciona um carimbo de tempo de arquivo. Requer um certificado emitido por CA com serviço OCSP."
+
+msgid "cfg_ocsp_self_signed_hint"
+msgstr "Não disponível: o certificado selecionado é autoassinado. É necessário um certificado emitido por CA para arquivo de longo prazo."
+
+msgid "dlg_ocsp_warning_title"
+msgstr "Arquivo de longo prazo não incorporado"
+
+msgid "dlg_ocsp_warning_msg"
+msgstr ""
+"Não foi possível obter o estado de revogação – o documento foi assinado sem dados de arquivo de longo prazo.\n"
+"\n"
+"Carimbo de tempo e assinatura foram adicionados com êxito.\n"
+"\n"
+"Causa técnica: {error}"
+
+msgid "cfg_title"
+msgstr "Configurar assinatura / token"
+
+msgid "cfg_tab_pkcs11"
+msgstr "Método de assinatura"
+
+msgid "cfg_tab_tsa"
+msgstr "Carimbo de tempo (TSA)"
+
+msgid "cfg_mode_label"
+msgstr "Método:"
+
+msgid "cfg_mode_pkcs11"
+msgstr "Token de hardware (PKCS#11)"
+
+msgid "cfg_mode_pfx"
+msgstr "Chave e certificado (P12/PFX)"
+
+msgid "cfg_pfx_path_label"
+msgstr "Ficheiro P12/PFX:"
+
+msgid "cfg_pfx_browse_title"
+msgstr "Escolher ficheiro P12/PFX"
+
+msgid "cfg_pfx_filter"
+msgstr "Ficheiros P12/PFX (*.p12 *.pfx);;Todos os ficheiros (*)"
+
+msgid "cfg_pfx_show_cert_btn"
+msgstr "Mostrar certificado"
+
+msgid "cfg_pfx_keygen_btn"
+msgstr "Gerar chave…"
+
+msgid "cfg_pfx_keygen_tip"
+msgstr ""
+"Abre o diálogo para gerar um certificado autoassinado.\n"
+"A chave gerada será guardada como ficheiro P12/PFX e\n"
+"automaticamente inserida neste campo."
+
+msgid "cfg_pfx_encrypted_yes"
+msgstr "Protegido por palavra-passe"
+
+msgid "cfg_pfx_encrypted_no"
+msgstr "Sem proteção por palavra-passe"
+
+msgid "cfg_pfx_no_file"
+msgstr "Nenhum ficheiro P12/PFX selecionado."
+
+msgid "cfg_pfx_password_title"
+msgstr "Palavra-passe necessária"
+
+msgid "cfg_pfx_password_prompt"
+msgstr ""
+"O ficheiro P12/PFX está protegido por palavra-passe.\n"
+"Introduza a palavra-passe (não será guardada):"
+
+msgid "cfg_pfx_wrong_password_prompt"
+msgstr "Palavra-passe errada. Por favor tente novamente:"
+
+msgid "cfg_tsa_url"
+msgstr "URL TSA:"
+
+msgid "cfg_tsa_hint"
+msgstr "Serviço de carimbo de tempo RFC 3161. Deixe vazio para o padrão (BaltStamp)."
+
+msgid "cfg_lib_label"
+msgstr "Caminho da biblioteca (.so / .dll):"
+
+msgid "cfg_lib_browse"
+msgstr "…"
+
+msgid "cfg_key_id_label"
+msgstr "ID da chave:"
+
+msgid "cfg_key_id_placeholder"
+msgstr "ID hex (preenchido automaticamente no teste de token)"
+
+msgid "cfg_key_id_hint"
+msgstr "↑ CKA_ID da chave privada (do diálogo de token)"
+
+msgid "cfg_cert_cn_label"
+msgstr "Nome:"
+
+msgid "cfg_pin_label"
+msgstr "PIN (só teste):"
+
+msgid "cfg_pin_placeholder"
+msgstr "deixe vazio para leitor de PIN"
+
+msgid "cfg_pin_hint"
+msgstr "↑ apenas para teste de token, não guardado"
+
+msgid "cfg_test_btn_no_pin"
+msgstr "🔑 Testar token (sem PIN)"
+
+msgid "cfg_test_btn_with_pin"
+msgstr "🔑 Testar token (com PIN)"
+
+msgid "cfg_pinpad_test_title"
+msgstr "Leitor de PIN não testável"
+
+msgid "cfg_pinpad_test_msg"
+msgstr ""
+"O leitor de PIN não pode ser acionado no teste de token,\n"
+"porque o python-pkcs11 não expõe uma chamada de login separada.\n"
+"\n"
+"Alternativas:\n"
+"• Introduza o PIN aqui para listar as chaves privadas diretamente\n"
+"• 'Testar token (sem PIN)' – lê o ID da chave a partir do certificado\n"
+"• O leitor de PIN funciona normalmente durante a assinatura"
+
+msgid "cfg_save_btn"
+msgstr "Guardar"
+
+msgid "cfg_cancel_btn"
+msgstr "Cancelar"
+
+msgid "dlg_browse_lib"
+msgstr "Escolher biblioteca PKCS#11"
+
+msgid "dlg_token_error_title"
+msgstr "Erro de token"
+
+msgid "dlg_token_info_title"
+msgstr "Conteúdo do token"
+
+msgid "dlg_token_info_label"
+msgstr "Nome: {label}    Fabricante: {manufacturer}"
+
+msgid "dlg_token_class_private_key"
+msgstr "Chaves privadas"
+
+msgid "dlg_token_class_private_key_derived"
+msgstr "Chaves privadas (derivadas da chave pública)"
+
+msgid "dlg_token_class_certificate"
+msgstr "Certificados"
+
+msgid "dlg_token_class_public_key"
+msgstr "Chaves públicas"
+
+msgid "dlg_token_use_key"
+msgstr "Usar ID"
+
+msgid "dlg_token_close"
+msgstr "Fechar"
+
+msgid "dlg_pfx_info_title"
+msgstr "Informações do certificado"
+
+msgid "dlg_pfx_private_key"
+msgstr "Chave privada"
+
+msgid "dlg_pfx_signing_cert"
+msgstr "Certificado de assinatura"
+
+msgid "dlg_pfx_subject"
+msgstr "Titular:"
+
+msgid "dlg_pfx_issuer"
+msgstr "Emissor:"
+
+msgid "dlg_pfx_valid_from"
+msgstr "Válido de:"
+
+msgid "dlg_pfx_valid_to"
+msgstr "Válido até:"
+
+msgid "dlg_pfx_serial"
+msgstr "Número de série:"
+
+msgid "dlg_pfx_self_signed"
+msgstr "(autoassinado)"
+
+msgid "dlg_pfx_chain_header"
+msgstr "Cadeia de certificados ({n} certificado(s))"
+
+msgid "dlg_pfx_use_cn"
+msgstr "Usar CN"
+
+msgid "dlg_pfx_load_error_title"
+msgstr "Erro"
+
+msgid "dlg_pfx_load_error"
+msgstr ""
+"Não foi possível carregar o ficheiro P12/PFX:\n"
+"{error}"
+
+msgid "dlg_token_no_key_title"
+msgstr "Nenhuma chave privada encontrada"
+
+msgid "dlg_token_no_key_msg"
+msgstr ""
+"Nenhuma chave privada encontrada.\n"
+"\n"
+"Pode ser necessário um PIN para aceder à chave.\n"
+"\n"
+"Em alternativa, o rótulo da chave pode ser derivado das chaves públicas disponíveis."
+
+msgid "dlg_token_derive_btn"
+msgstr "Derivar rótulo de chave da chave pública"
+
+msgid "dlg_token_cancel_pin_btn"
+msgstr "Cancelar – ler token com PIN"
+
+msgid "ap_tab_text"
+msgstr "Texto"
+
+msgid "ap_tab_image_layout"
+msgstr "Imagem / Disposição"
+
+msgid "ap_name_from_cert"
+msgstr "Certificado"
+
+msgid "ap_name_custom"
+msgstr "Personalizado"
+
+msgid "ap_font_pt"
+msgstr "Tamanho (pt):"
+
+msgid "ap_font_family"
+msgstr "Fonte:"
+
+msgid "ap_img_none"
+msgstr "(sem imagem)"
+
+msgid "ap_img_hint"
+msgstr "Transparência suportada."
+
+msgid "ap_layout_left"
+msgstr "Imagem à esquerda"
+
+msgid "ap_layout_right"
+msgstr "Imagem à direita"
+
+msgid "ap_border"
+msgstr "Mostrar borda"
+
+msgid "ap_date_custom"
+msgstr "Formato personalizado…"
+
+msgid "ap_img_label"
+msgstr "◀ Imagem {v}%"
+
+msgid "ap_txt_label"
+msgstr "Texto {r}% ▶"
+
+msgid "ap_txt_label_left"
+msgstr "Texto {r}% ▶"
+
+msgid "ap_img_label_right"
+msgstr "◀ Imagem {v}%"
+
+msgid "ap_preview_hint"
+msgstr "Adicione um campo de assinatura para pré-visualização."
+
+msgid "ap_browse_img"
+msgstr "Escolher imagem de assinatura"
+
+msgid "ap_img_filter"
+msgstr "Imagens (*.png *.jpg *.jpeg *.bmp);;Todos os ficheiros (*)"
+
+msgid "about_title"
+msgstr "Sobre o PDF QES Signer"
+
+msgid "about_msg"
+msgstr ""
+"PDF QES Signer  v{version}{commit}\n"
+"\n"
+"Colocação visual de campos de assinatura\n"
+"e assinatura eletrónica qualificada (QES)\n"
+"via PKCS#11 / Cartão inteligente.\n"
+"\n"
+"Licença: GNU General Public License v3 ou posterior (GPL-3.0-or-later)\n"
+"\n"
+"Pacotes necessários:\n"
+"  pip install pymupdf pyhanko python-pkcs11 Pillow PyQt6 cryptography\n"
+"\n"
+"Clique esquerdo + arrastar  →  desenhar campo de assinatura\n"
+"Clique direito no campo     →  opções / eliminar\n"
+"Ctrl + arrastar             →  zoom para seleção\n"
+"Botão do meio               →  mover vista"
+
+msgid "downgrade_title"
+msgstr "Versão mais antiga da aplicação iniciada"
+
+msgid "downgrade_msg"
+msgstr "O ficheiro de configuração foi escrito por uma versão mais recente desta aplicação. As definições desconhecidas foram removidas. A aplicação continuará a funcionar, mas algumas opções podem ter sido repostas para os valores predefinidos."
+
+msgid "downgrade_backup"
+msgstr "Cópia de segurança da configuração"
+
+msgid "about_check_update"
+msgstr "Verificar atualizações"
+
+msgid "about_update_checking"
+msgstr "A verificar…"
+
+msgid "about_update_available"
+msgstr "Nova versão disponível: {version}"
+
+msgid "about_update_current"
+msgstr "Versão atual – sem atualizações disponíveis."
+
+msgid "settings_check_on_startup"
+msgstr "Verificar atualizações automaticamente ao iniciar"
+
+msgid "settings_title"
+msgstr "Definições"
+
+msgid "settings_nav_token"
+msgstr "Token / Assinatura"
+
+msgid "settings_nav_tsa"
+msgstr "Carimbo de tempo"
+
+msgid "settings_nav_validation"
+msgstr "Validação"
+
+msgid "settings_nav_cache"
+msgstr "Cache de confiança"
+
+msgid "settings_nav_updates"
+msgstr "Atualizações"
+
+msgid "settings_nav_general"
+msgstr "Geral"
+
+msgid "settings_tok_docmdp_label"
+msgstr "Restrição de documento predefinida"
+
+msgid "settings_val_auto_fetch_label"
+msgstr "Obter automaticamente estado de revogação durante a validação"
+
+msgid "settings_val_auto_fetch_hint"
+msgstr "Obtém o estado OCSP online durante a validação. Requer acesso à rede ao serviço OCSP da CA (considere implicações de privacidade de dados)."
+
+msgid "settings_upd_channel_label"
+msgstr "Canal de atualização"
+
+msgid "settings_upd_stable"
+msgstr "Estável (recomendado)"
+
+msgid "settings_upd_develop"
+msgstr "Develop (pré-lançamentos)"
+
+msgid "settings_upd_develop_warn_title"
+msgstr "Ativar canal Develop?"
+
+msgid "settings_upd_develop_warn_body"
+msgstr ""
+"O canal develop contém versões pré-lançamento que são menos testadas do que as versões estáveis.\n"
+"\n"
+"Mude apenas se:\n"
+"  • precisar urgentemente de uma nova funcionalidade ou correção de erro,\n"
+"  • um erro perturbador já tiver sido corrigido no canal develop,\n"
+"  • ou tiver sido solicitado a fazê-lo por um mantenedor.\n"
+"\n"
+"Nota: Voltar ao canal estável pode ser mais difícil e pode resultar na perda de configuração."
+
+msgid "settings_gen_lang_label"
+msgstr "Idioma"
+
+msgid "menu_settings_open"
+msgstr "Definições…"
+
+msgid "upd_avail_title"
+msgstr "Atualização disponível"
+
+msgid "upd_avail_versions"
+msgstr "Instalada: {current}  →  Nova: {latest}"
+
+msgid "upd_avail_changelog"
+msgstr "Alterações nesta versão:"
+
+msgid "upd_avail_no_changelog"
+msgstr "(Sem notas de lançamento disponíveis.)"
+
+msgid "update_btn_install"
+msgstr "Instalar atualização"
+
+msgid "update_btn_retry"
+msgstr "Tentar novamente"
+
+msgid "update_btn_cancel"
+msgstr "Cancelar"
+
+msgid "update_btn_restart"
+msgstr "Reiniciar"
+
+msgid "update_dlg_title"
+msgstr "Instalar atualização"
+
+msgid "update_dlg_info"
+msgstr "Versão {version} disponível (atual: {current})."
+
+msgid "update_dry_run_hint"
+msgstr "Modo de teste: --dry-run, nada será instalado."
+
+msgid "update_status_downloading"
+msgstr "A descarregar…"
+
+msgid "update_status_installing"
+msgstr "A instalar…"
+
+msgid "update_status_success"
+msgstr "Instalação concluída – por favor reinicie a aplicação."
+
+msgid "update_status_error"
+msgstr "Instalação falhou. Por favor execute manualmente:"
+
+msgid "update_dry_run_success"
+msgstr "Teste bem-sucedido (--dry-run, nada instalado)."
+
+msgid "update_no_asset"
+msgstr "Nenhum recurso de download encontrado para esta versão."
+
+msgid "license_title"
+msgstr "Informações de licença"
+
+msgid "license_msg"
+msgstr ""
+"PDF QES Signer\n"
+"Copyright (C) PDF QES Signer contributors\n"
+"\n"
+"Este programa é software livre: pode redistribuí-lo e/ou modificá-lo\n"
+"nos termos da Licença Pública Geral GNU publicada pela Free Software\n"
+"Foundation, na versão 3 da licença ou (à sua escolha) qualquer versão posterior.\n"
+"\n"
+"Este programa é distribuído na esperança de que seja útil,\n"
+"mas SEM QUALQUER GARANTIA; mesmo sem a garantia implícita de\n"
+"COMERCIALIZAÇÃO ou ADEQUAÇÃO A UM DETERMINADO FIM.\n"
+"Consulte a Licença Pública Geral GNU para mais detalhes.\n"
+"\n"
+"Pode encontrar o texto completo da licença em:\n"
+"  https://www.gnu.org/licenses/gpl-3.0.html\n"
+"\n"
+"──────────────────────────────────────────────\n"
+"Bibliotecas de terceiros:\n"
+"\n"
+"  PyMuPDF (fitz)   GNU AGPL v3\n"
+"    https://pymupdf.readthedocs.io\n"
+"\n"
+"  pyhanko          MIT License\n"
+"    https://pyhanko.readthedocs.io\n"
+"\n"
+"  PyQt6            GPL v3 / Commercial\n"
+"    https://www.riverbankcomputing.com\n"
+"\n"
+"  python-pkcs11    MIT License\n"
+"    https://python-pkcs11.readthedocs.io\n"
+"\n"
+"  Pillow           HPND License\n"
+"    https://python-pillow.org\n"
+"\n"
+"  cryptography     Apache 2.0 / BSD\n"
+"    https://cryptography.io"
+
+msgid "license_close"
+msgstr "Fechar"
+
+msgid "menu_check_sigs"
+msgstr "Verificar assinaturas…"
+
+msgid "menu_trust_cache"
+msgstr "Cache de confiança…"
+
+msgid "trust_cache_title"
+msgstr "Cache de confiança (LOTL/TSL)"
+
+msgid "trust_cache_lotl_header"
+msgstr "Lista Europeia de Listas de Confiança (LOTL)"
+
+msgid "trust_cache_lotl_explain"
+msgstr "Diretório de todas as listas de confiança nacionais – necessário para validação QES."
+
+msgid "trust_cache_lotl_urls_valid"
+msgstr "  Lista URL:  {count} entradas  ({size} KB)  –  válida até {date}"
+
+msgid "trust_cache_lotl_urls_expired"
+msgstr "  Lista URL:  {count} entradas  ({size} KB)  –  EXPIRADA em {date}"
+
+msgid "trust_cache_lotl_urls_no_date"
+msgstr "  Lista URL:  {count} entradas  ({size} KB)  –  validade desconhecida"
+
+msgid "trust_cache_no_lotl_urls"
+msgstr "  Lista URL:  não presente"
+
+msgid "trust_cache_tsl_section"
+msgstr "Listas de Serviços de Confiança Nacionais (TSL)"
+
+msgid "trust_cache_tsl_explain"
+msgstr "Impressões digitais de certificados de prestadores de serviços de confiança QES oficialmente reconhecidos."
+
+msgid "trust_cache_tsl_header"
+msgstr "Países em cache:"
+
+msgid "trust_cache_no_tsl"
+msgstr "  (Sem cache TSL presente)"
+
+msgid "trust_cache_tsl_valid"
+msgstr "  {country}  –  válida até {date}  ({size} KB)"
+
+msgid "trust_cache_tsl_expired"
+msgstr "  {country}  –  expirada em {date}  ({size} KB)"
+
+msgid "trust_cache_btn_clear_tsl"
+msgstr "Eliminar ficheiros TSL"
+
+msgid "trust_cache_btn_clear_all"
+msgstr "Eliminar tudo"
+
+msgid "trust_cache_btn_clear_aia"
+msgstr "Eliminar certificados root"
+
+msgid "trust_cache_aia_section"
+msgstr "Certificados root CA (cache AIA)"
+
+msgid "trust_cache_aia_explain"
+msgstr "Certificados root CA descarregados durante a assinatura para incorporação em assinaturas futuras."
+
+msgid "trust_cache_aia_empty"
+msgstr "  (Sem certificados root em cache)"
+
+msgid "trust_cache_aia_entry"
+msgstr "  {subject}  ·  {fp}  ({size} KB)"
+
+msgid "val_dlg_title"
+msgstr "Validação de assinatura"
+
+msgid "val_col_item"
+msgstr "Item"
+
+msgid "val_col_source"
+msgstr "Origem"
+
+msgid "val_col_status"
+msgstr "Válido"
+
+msgid "val_col_rev"
+msgstr "Rev."
+
+msgid "val_col_element"
+msgstr "Elemento"
+
+msgid "val_col_name"
+msgstr "Nome"
+
+msgid "val_col_tsa"
+msgstr "TSA"
+
+msgid "val_col_time"
+msgstr "Hora"
+
+msgid "val_col_valid_until"
+msgstr "Validade"
+
+msgid "val_sub_field"
+msgstr "Identificador: {value}"
+
+msgid "val_sub_name"
+msgstr "Nome: {value}"
+
+msgid "val_sub_issuer"
+msgstr "Emissor: {value}"
+
+msgid "val_overall_valid"
+msgstr "VÁLIDO"
+
+msgid "val_overall_unknown"
+msgstr "DESCONHECIDO"
+
+msgid "val_overall_invalid"
+msgstr "INVÁLIDO"
+
+msgid "val_overall_not_checked"
+msgstr "…"
+
+msgid "val_rev_label"
+msgstr "Rev. {n} / {total}"
+
+msgid "val_sig_type_signature"
+msgstr "Assinatura"
+
+msgid "val_sig_type_timestamp"
+msgstr "Carimbo de tempo de arquivo"
+
+msgid "val_sig_type_lta"
+msgstr "Carimbo de tempo TSA (LTA)"
+
+msgid "val_signer"
+msgstr "Signatário"
+
+msgid "val_signing_time"
+msgstr "Hora de assinatura"
+
+msgid "val_tsa_time"
+msgstr "Carimbo de tempo TSA"
+
+msgid "val_checks"
+msgstr "Cripto: {crypto}  Cadeia: {chain}  Revogação: {revoc}"
+
+msgid "val_cert_chain"
+msgstr "Cadeia de certificados"
+
+msgid "val_cert_root"
+msgstr "Root CA"
+
+msgid "val_cert_self_signed"
+msgstr "autoassinado"
+
+msgid "val_cert_intermediate"
+msgstr "CA"
+
+msgid "val_cert_end_entity"
+msgstr "Certificado de assinatura"
+
+msgid "val_ocsp"
+msgstr "OCSP: {status}"
+
+msgid "val_ocsp_good"
+msgstr "bom"
+
+msgid "val_ocsp_revoked"
+msgstr "revogado"
+
+msgid "val_ocsp_unknown"
+msgstr "desconhecido"
+
+msgid "val_src_embedded"
+msgstr "incorporado"
+
+msgid "val_src_system"
+msgstr "Mozilla"
+
+msgid "val_src_eu_tsl"
+msgstr "TSL nac."
+
+msgid "val_src_downloaded"
+msgstr "descarregado"
+
+msgid "val_src_not_found"
+msgstr "não encontrado"
+
+msgid "val_tsa_is_tsa"
+msgstr "(é TSA)"
+
+msgid "val_col_integrity"
+msgstr "Integridade"
+
+msgid "val_integrity_ok"
+msgstr "✓ inalterado"
+
+msgid "val_integrity_fail"
+msgstr "✗ assinatura inválida"
+
+msgid "val_field_name"
+msgstr "Campo: {name}"
+
+msgid "val_self_reported"
+msgstr "Auto-reportado: {time}"
+
+msgid "val_doc_info"
+msgstr "{n} revisão(ões)"
+
+msgid "val_doc_dss"
+msgstr "  · DSS"
+
+msgid "val_doc_lta"
+msgstr "  · LTA"
+
+msgid "val_phase2_running"
+msgstr "Validação online em curso…"
+
+msgid "val_phase2_done"
+msgstr "Validação concluída."
+
+msgid "val_phase2_error"
+msgstr "Erro: {msg}"
+
+msgid "val_btn_recheck"
+msgstr "Reverificar"
+
+msgid "val_btn_fetch_certs"
+msgstr "Obter certificados online"
+
+msgid "val_no_sigs"
+msgstr "Nenhuma assinatura encontrada no documento."
+
+msgid "val_no_pdf"
+msgstr "Nenhum PDF aberto."
+
+msgid "val_rev_type_original"
+msgstr "Documento original"
+
+msgid "val_rev_type_form_fields"
+msgstr "Campos de formulário"
+
+msgid "val_rev_type_annotations"
+msgstr "Anotações"
+
+msgid "val_rev_type_dss"
+msgstr "Dados de validação (DSS)"
+
+msgid "val_rev_type_metadata"
+msgstr "Metadados do documento (XMP)"
+
+msgid "val_rev_type_unknown"
+msgstr "Atualização incremental"
+
+msgid "val_warn_post_sig_title"
+msgstr "Documento modificado após a última assinatura"
+
+msgid "val_warn_post_sig_body"
+msgstr ""
+"As seguintes alterações foram adicionadas após a última assinatura e não estão cobertas por nenhuma assinatura: {types}\n"
+"O conteúdo atualmente exibido pode diferir do estado assinado."
+
+msgid "val_warn_post_sig_short"
+msgstr "⚠  Documento modificado após a última assinatura ({types}).  Verifique as assinaturas."
+
+msgid "val_warn_between_sig_title"
+msgstr "Alterações entre assinaturas"
+
+msgid "val_warn_between_sig_body"
+msgstr ""
+"As seguintes alterações foram adicionadas após a primeira assinatura e estão apenas cobertas por uma assinatura posterior: {types}\n"
+"A primeira assinatura não cobre este conteúdo."
+
+msgid "val_warn_between_sig_short"
+msgstr "⚠  Alterações entre assinaturas ({types}) – não cobertas por todas as assinaturas."
+
+msgid "val_sig_type_doc_ts"
+msgstr "Carimbo de tempo de documento"
+
+msgid "val_rev_no_sig"
+msgstr "–  (sem assinatura)"
+
+msgid "val_show_all_revisions"
+msgstr "Mostrar todas as revisões"
+
+msgid "val_detail_date"
+msgstr "Data"
+
+msgid "val_detail_integrity"
+msgstr "Integridade"
+
+msgid "val_detail_profile"
+msgstr "Perfil"
+
+msgid "val_date_tsa"
+msgstr "{time}  (confirmado por TSA)"
+
+msgid "val_date_self"
+msgstr "{time}  (auto-reportado)"
+
+msgid "val_date_doc_ts"
+msgstr "{time}"
+
+msgid "val_profile_is_doc_ts"
+msgstr "–  (é ele próprio o carimbo de tempo do documento)"
+
+msgid "val_profile_details_B"
+msgstr "Token TSA –, DSS –"
+
+msgid "val_profile_details_T"
+msgstr "Token TSA ✓, DSS –"
+
+msgid "val_profile_details_LT"
+msgstr "Token TSA ✓, DSS ✓, carimbo LTA –"
+
+msgid "val_profile_details_LTA"
+msgstr "Token TSA ✓, DSS ✓, carimbo LTA ✓"
+
+msgid "val_profile_meaning_B"
+msgstr "Sem dados de validação adicionais incorporados"
+
+msgid "val_profile_meaning_T"
+msgstr "Hora de assinatura assegurada, dados de validação não incorporados"
+
+msgid "val_profile_meaning_LT"
+msgstr "Dados de validação incorporados, mas não assegurados criptograficamente"
+
+msgid "val_profile_meaning_LTA"
+msgstr "Todos os dados de validação incorporados e assegurados criptograficamente"
+
+msgid "val_detail_sig_chain"
+msgstr "Cadeia de assinatura"
+
+msgid "val_detail_tsa_chain"
+msgstr "Cadeia TSA"
+
+msgid "val_chain_details_btn"
+msgstr "Detalhes →"
+
+msgid "val_chain_valid"
+msgstr "✓ Válido"
+
+msgid "val_chain_incomplete"
+msgstr "✗ Incompleto"
+
+msgid "val_chain_expired"
+msgstr "✗ Expirado"
+
+msgid "val_chain_revoked"
+msgstr "✗ Revogado"
+
+msgid "val_chain_unknown_root"
+msgstr "Completo · Root desconhecido"
+
+msgid "val_chain_unknown_revoc"
+msgstr "Completo · Revogação desconhecida"
+
+msgid "val_chain_not_checked"
+msgstr "–"
+
+msgid "val_chain_valid_tip"
+msgstr "Cadeia completa, root de confiança (pacote certifi/Mozilla), revogação incorporada e válida."
+
+msgid "val_chain_incomplete_tip"
+msgstr "A cadeia de certificados está incompleta – falta um certificado CA intermédio."
+
+msgid "val_chain_expired_tip"
+msgstr "Pelo menos um certificado na cadeia estava fora do seu período de validade no momento da assinatura."
+
+msgid "val_chain_revoked_tip"
+msgstr "O certificado de assinatura foi revogado de acordo com a resposta OCSP incorporada."
+
+msgid "val_chain_unknown_root_tip"
+msgstr "A cadeia está completa, mas o certificado root não foi encontrado no pacote certifi/Mozilla ou na lista de confiança EU (LOTL/TSL)."
+
+msgid "val_chain_unknown_revoc_tip"
+msgstr "O certificado root é de confiança (pacote certifi/Mozilla), mas o estado de revogação do certificado de assinatura não foi verificado."
+
+msgid "val_chain_indic_out_of_bounds"
+msgstr "Completo · Certificado expirado, sem prova de existência"
+
+msgid "val_chain_indic_out_of_bounds_tip"
+msgstr "O certificado de assinatura tinha expirado no momento da validação online. Sem uma resposta OCSP incorporada (PAdES-LT/LTA) não é possível provar que o certificado ainda era válido no momento da assinatura."
+
+msgid "val_chain_indic_revoked_no_poe"
+msgstr "Completo · Revogado, sem prova de existência"
+
+msgid "val_chain_indic_revoked_no_poe_tip"
+msgstr "O certificado está revogado, mas sem prova de existência (PAdES-LT/LTA) não é possível determinar se a revogação ocorreu antes ou depois da assinatura."
+
+msgid "val_chain_indic_try_later"
+msgstr "Completo · Serviço OCSP indisponível"
+
+msgid "val_chain_indic_try_later_tip"
+msgstr "O serviço OCSP do emissor estava inacessível no momento da validação. Uma verificação posterior pode ter êxito."
+
+msgid "val_chain_indic_no_poe"
+msgstr "Completo · Sem prova de existência"
+
+msgid "val_chain_indic_no_poe_tip"
+msgstr "Falta uma prova criptográfica de existência para o tempo de assinatura (por exemplo, um carimbo de tempo RFC-3161)."
+
+msgid "val_chain_indic_crypto_no_poe"
+msgstr "Completo · Restrição criptográfica, sem prova de existência"
+
+msgid "val_chain_indic_crypto_no_poe_tip"
+msgstr "Um algoritmo utilizado já não satisfaz os requisitos atuais e não há prova de existência que confirme a sua utilização no momento da assinatura."
+
+msgid "val_chain_self_signed"
+msgstr "Autoassinado · sem confiança CA"
+
+msgid "val_chain_self_signed_tip"
+msgstr "O certificado é auto-emitido – não há autoridade de certificação superior. O certificado está incorporado no documento, mas não está presente em nenhum repositório de confiança conhecido."
+
+msgid "cert_win_title_sig"
+msgstr "Cadeia de assinatura – {cn}"
+
+msgid "cert_win_title_tsa"
+msgstr "Cadeia TSA – {cn}"
+
+msgid "cert_win_role_ee"
+msgstr "End-Entity"
+
+msgid "cert_win_role_intermediate"
+msgstr "Intermédio"
+
+msgid "cert_win_role_root"
+msgstr "Root"
+
+msgid "cert_win_role_self_signed"
+msgstr "Autoassinado"
+
+msgid "cert_win_self_signed_issuer"
+msgstr "(autoassinado)"
+
+msgid "cert_win_label_issuer"
+msgstr "Emissor"
+
+msgid "cert_win_label_valid"
+msgstr "Válido"
+
+msgid "cert_win_label_source"
+msgstr "Fonte"
+
+msgid "cert_win_label_trust"
+msgstr "Confiança"
+
+msgid "cert_win_label_fingerprint"
+msgstr "Impressão digital (SHA-256)"
+
+msgid "cert_win_label_ocsp"
+msgstr "OCSP"
+
+msgid "cert_win_label_overall"
+msgstr "Estado geral"
+
+msgid "cert_win_lotl_confirmed"
+msgstr "EU LOTL confirmado (âncora de confiança)"
+
+msgid "cert_win_root_informational"
+msgstr "Apenas informativo · não verificado"
+
+msgid "cert_win_not_found_trust"
+msgstr "Não presente · confiança não verificável"
+
+msgid "cert_win_trust_verified"
+msgstr "Verificado criptograficamente pelo emissor"
+
+msgid "cert_win_issuer_sig_invalid"
+msgstr "Assinatura do emissor inválida!"
+
+msgid "cert_win_source_embedded"
+msgstr "Incorporado (PDF)"
+
+msgid "cert_win_source_certifi"
+msgstr "certifi (pacote Mozilla)"
+
+msgid "cert_win_source_system"
+msgstr "Repositório de confiança do sistema"
+
+msgid "cert_win_source_eu_tsl"
+msgstr "Lista de confiança EU (LOTL/TSL)"
+
+msgid "cert_win_source_downloaded"
+msgstr "Descarregado (AIA)"
+
+msgid "cert_win_source_not_found"
+msgstr "Não encontrado"
+
+msgid "cert_win_source_unknown"
+msgstr "Desconhecido"
+
+msgid "cert_win_ocsp_good"
+msgstr "bom ✓"
+
+msgid "cert_win_ocsp_revoked"
+msgstr "revogado ✗"
+
+msgid "cert_win_ocsp_unknown"
+msgstr "desconhecido"
+
+msgid "cert_win_ocsp_not_checked"
+msgstr "não verificado"
+
+msgid "cert_win_close"
+msgstr "Fechar"
+
+msgid "keygen_title"
+msgstr "Gerar chave e certificado"
+
+msgid "keygen_section_key"
+msgstr "Parâmetros da chave"
+
+msgid "keygen_section_subject"
+msgstr "Titular do certificado"
+
+msgid "keygen_section_file"
+msgstr "Ficheiro de saída e proteção por palavra-passe"
+
+msgid "keygen_keytype_label"
+msgstr "Tipo de chave:"
+
+msgid "keygen_keytype_tip"
+msgstr ""
+"Algoritmo criptográfico e tamanho da chave.\n"
+"\n"
+"EC P-521 ★ (predefinição)\n"
+"  Nível de segurança EC mais elevado (≈ 260 bits). A partir de 2027 o mínimo\n"
+"  BSI é P-384 – P-521 excede-o permanentemente. Assinatura por software com\n"
+"  P-521 é significativamente mais rápida do que qualquer cartão inteligente.\n"
+"\n"
+"EC P-384\n"
+"  Norma mínima BSI a partir de 2027 (TR-02102-1). Boa escolha quando\n"
+"  a compatibilidade com software ligeiramente mais antigo é importante.\n"
+"\n"
+"EC P-256\n"
+"  Opção mais rápida, mas conforme com BSI apenas até ao final de 2026 para\n"
+"  novas assinaturas. Insuficiente a partir de 2027 (BSI TR-02102-1).\n"
+"\n"
+"RSA 3072 / 4096\n"
+"  Algoritmo clássico; máxima compatibilidade com software legado.\n"
+"  Mínimo BSI: 3000 bits. A geração demora alguns segundos a mais do que EC."
+
+msgid "keygen_smime_enc_label"
+msgstr "Usar também para encriptação S/MIME"
+
+msgid "keygen_smime_enc_tip"
+msgstr ""
+"Define bits Key Usage adicionais para encriptação de e-mail S/MIME:\n"
+"  Chave EC:  keyAgreement (troca de chaves ECDH)\n"
+"  Chave RSA: keyEncipherment (transporte direto de chave)\n"
+"\n"
+"Permite usar o mesmo par de chaves para assinatura e\n"
+"encriptação – análogo ao GnuPG/OpenPGP.\n"
+"\n"
+"Não necessário apenas para assinaturas PDF."
+
+msgid "keygen_fixed_attrs"
+msgstr "Fixo: Key Usage = digitalSignature + nonRepudiation  ·  Extended Key Usage = emailProtection  ·  Basic Constraints: CA=Não"
+
+msgid "keygen_fixed_attrs_tip"
+msgstr ""
+"Estes atributos de certificado são sempre definidos:\n"
+"\n"
+"Key Usage (uso da chave):\n"
+"  digitalSignature – assinatura de documentos e dados\n"
+"  nonRepudiation   – não-repúdio (eIDAS: compromisso vinculativo)\n"
+"  + keyAgreement / keyEncipherment quando a encriptação S/MIME está ativa\n"
+"\n"
+"Extended Key Usage:\n"
+"  emailProtection  – S/MIME e assinaturas PDF\n"
+"\n"
+"Basic Constraints: CA=Não\n"
+"  Este certificado não pode emitir outros certificados."
+
+msgid "keygen_validity_label"
+msgstr "Validade:"
+
+msgid "keygen_validity_tip"
+msgstr ""
+"Durante quanto tempo o certificado será válido.\n"
+"\n"
+"Nota: Os certificados autoassinados não podem ser usados para novas assinaturas\n"
+"após a expiração. As assinaturas existentes permanecem criptograficamente válidas\n"
+"desde que tenham sido criadas dentro do período de validade.\n"
+"\n"
+"Recomendações:\n"
+"• 3 anos para uso geral\n"
+"• 10 anos para documentos de arquivo com longa retenção legal\n"
+"\n"
+"Para assinaturas eletrónicas qualificadas (QES) sob eIDAS é necessário um certificado\n"
+"de um prestador de serviços de confiança (TSP) acreditado."
+
+msgid "keygen_validity_years"
+msgstr "{n} ano(s)"
+
+msgid "keygen_cn_label"
+msgstr "Nome (CN):"
+
+msgid "keygen_cn_tip"
+msgstr ""
+"Common Name (CN) – o nome principal no certificado.\n"
+"\n"
+"Este nome aparece nos visualizadores de PDF como o signatário e na\n"
+"aparência do campo de assinatura (quando 'Nome do certificado' está selecionado).\n"
+"\n"
+"Exemplos:\n"
+"  João Silva\n"
+"  Dra. Ana Pereira\n"
+"  Empresa Exemplo Lda. – Administração\n"
+"\n"
+"Campo obrigatório – não pode ficar vazio."
+
+msgid "keygen_org_label"
+msgstr "Organização (O):"
+
+msgid "keygen_org_tip"
+msgstr ""
+"Organização (O) – nome opcional de empresa ou autoridade.\n"
+"\n"
+"Mostrado na vista de detalhes do certificado e ajuda a associar\n"
+"o certificado a uma organização.\n"
+"\n"
+"Exemplos:\n"
+"  Empresa Exemplo Lda.\n"
+"  Organismo Federal para Exemplos\n"
+"\n"
+"Pode ficar vazio."
+
+msgid "keygen_country_label"
+msgstr "País (C):"
+
+msgid "keygen_country_invalid"
+msgstr "código inválido"
+
+msgid "keygen_country_tip"
+msgstr ""
+"Código de país (C) – código ISO 3166-1 alpha-2 de duas letras.\n"
+"\n"
+"Exemplos: DE, AT, CH, FR, PT\n"
+"\n"
+"O código de país é um campo obrigatório em muitas infraestruturas PKI\n"
+"e validadores de certificados. Deixar vazio é possível, mas pode\n"
+"causar problemas de compatibilidade com algum software.\n"
+"\n"
+"Maiúsculas/minúsculas são automaticamente convertidas para maiúsculas."
+
+msgid "keygen_email_label"
+msgstr "E-Mail:"
+
+msgid "keygen_email_tip"
+msgstr ""
+"Endereço de e-mail como Subject Alternative Name (SAN, rfc822Name).\n"
+"\n"
+"O e-mail não é colocado no Subject DN mas como extensão SAN,\n"
+"o que segue o padrão atual.\n"
+"\n"
+"Relevância:\n"
+"• Facilita a associação do certificado a uma pessoa\n"
+"• Exigido por alguns clientes de e-mail (S/MIME)\n"
+"• Opcional para assinaturas PDF puras\n"
+"\n"
+"Pode ficar vazio."
+
+msgid "keygen_path_label"
+msgstr "Caminho de gravação:"
+
+msgid "keygen_path_tip"
+msgstr ""
+"Caminho do ficheiro para o ficheiro PKCS#12 (.p12 ou .pfx).\n"
+"\n"
+"PKCS#12 é um formato de contentor que agrupa a chave privada e\n"
+"o certificado num único ficheiro. Este ficheiro é depois selecionado\n"
+"na configuração de assinatura como 'ficheiro P12/PFX'.\n"
+"\n"
+"Recomendação: Guarde o ficheiro num local seguro com cópia de segurança.\n"
+"A chave privada é o elemento central da sua assinatura.\n"
+"A perda significa que não podem ser criadas novas assinaturas.\n"
+"Copie o ficheiro para um suporte de cópia de segurança."
+
+msgid "keygen_password_label"
+msgstr "Palavra-passe:"
+
+msgid "keygen_password_placeholder"
+msgstr "Palavra-passe para proteger a chave privada"
+
+msgid "keygen_password_tip"
+msgstr ""
+"Palavra-passe para proteger a chave privada no ficheiro P12.\n"
+"\n"
+"A chave privada é encriptada com AES-256 quando é fornecida uma palavra-passe.\n"
+"\n"
+"Recomendação: Defina sempre uma palavra-passe forte!\n"
+"Quem obtiver o ficheiro P12 sem proteção por palavra-passe pode\n"
+"imediatamente criar assinaturas em seu nome.\n"
+"\n"
+"Sem palavra-passe (deixe em branco): o ficheiro não está encriptado.\n"
+"Apenas aconselhável se o ficheiro residir numa unidade encriptada."
+
+msgid "keygen_password2_label"
+msgstr "Palavra-passe (repetir):"
+
+msgid "keygen_password2_placeholder"
+msgstr "Repetir palavra-passe para confirmar"
+
+msgid "keygen_password2_tip"
+msgstr ""
+"Repita a palavra-passe para confirmar.\n"
+"\n"
+"Deve coincidir com a palavra-passe no campo 'Palavra-passe'."
+
+msgid "keygen_btn_generate"
+msgstr "Gerar"
+
+msgid "keygen_save_title"
+msgstr "Guardar ficheiro de chave como…"
+
+msgid "keygen_save_filter"
+msgstr "Ficheiros PKCS#12 (*.p12 *.pfx);;Todos os ficheiros (*)"
+
+msgid "keygen_error_title"
+msgstr "Erro de entrada"
+
+msgid "keygen_error_cn_empty"
+msgstr "Introduza um nome (CN)."
+
+msgid "keygen_error_path_empty"
+msgstr "Especifique um caminho de gravação."
+
+msgid "keygen_error_pw_mismatch"
+msgstr "As palavras-passe não coincidem."
+
+msgid "keygen_error_country_len"
+msgstr "O código de país deve ter exatamente 2 letras (por exemplo PT)."
+
+msgid "keygen_error_failed"
+msgstr ""
+"Geração de chave falhou:\n"
+"\n"
+"{error}"
+
+msgid "keygen_success_title"
+msgstr "Chave gerada ✓"
+
+msgid "keygen_success_msg"
+msgstr ""
+"Chave e certificado autoassinado foram gerados com êxito.\n"
+"\n"
+"Ficheiro: {path}\n"
+"\n"
+"O caminho foi automaticamente aplicado à configuração.\n"
+"Clique em 'Guardar' para armazenar as definições."
+
+msgid "keygen_section_openssl"
+msgstr "Equivalente openssl"
+
+msgid "keygen_openssl_tip"
+msgstr ""
+"Comando openssl equivalente para produzir o mesmo ficheiro – para transparência e execução manual.\n"
+"o openssl pedirá a palavra-passe interativamente quando executado."
+
+msgid "keygen_btn_run"
+msgstr "Executar"
+
+msgid "keygen_btn_run_tip"
+msgstr ""
+"Executar openssl numa janela de terminal.\n"
+"o openssl pedirá interativamente a palavra-passe aí –\n"
+"nenhuma palavra-passe é transferida deste diálogo.\n"
+"Requer: openssl e um emulador de terminal (xterm etc.)."
+
+msgid "keygen_btn_copy"
+msgstr "Copiar"
+
+msgid "keygen_btn_copy_tip"
+msgstr "Copiar o comando openssl para a área de transferência."
+
+msgid "keygen_openssl_not_found"
+msgstr ""
+"openssl não foi encontrado no PATH.\n"
+"\n"
+"Por favor instale o openssl ou use o botão 'Gerar' (implementação interna, sem dependências externas)."
+
+msgid "keygen_openssl_no_terminal"
+msgstr ""
+"Nenhum emulador de terminal encontrado no PATH.\n"
+"\n"
+"Procurado: x-terminal-emulator, xterm, konsole, xfce4-terminal, mate-terminal, gnome-terminal.\n"
+"\n"
+"Por favor instale um emulador de terminal ou copie o comando e execute-o manualmente num terminal."
+
+msgid "keygen_openssl_failed"
+msgstr ""
+"Execução do openssl falhou:\n"
+"\n"
+"{error}"
