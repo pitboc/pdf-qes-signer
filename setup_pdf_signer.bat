@@ -49,8 +49,6 @@ if ($savedDir -and (Test-Path $savedDir)) { $DEFAULT_DIR = $savedDir }
 # Registry is not used – settings.ini is the single source of truth.
 $savedChannel = "stable"
 $_cfgIni = Join-Path $env:APPDATA "pdf-signer\settings.ini"
-Write-Host "[DBG] settings.ini path: $_cfgIni"
-Write-Host "[DBG] settings.ini exists: $(Test-Path $_cfgIni)"
 if (Test-Path $_cfgIni) {
     $_inUpd = $false
     foreach ($_line in (Get-Content $_cfgIni -Encoding UTF8 -ErrorAction SilentlyContinue)) {
@@ -61,7 +59,6 @@ if (Test-Path $_cfgIni) {
         }
     }
 }
-Write-Host "[DBG] savedChannel: $savedChannel"
 $arch    = $env:PROCESSOR_ARCHITECTURE          # AMD64 or ARM64
 $pyArch  = if ($arch -eq "ARM64") { "arm64" } else { "amd64" }
 $vcArch  = if ($arch -eq "ARM64") { "arm64" } else { "x64" }
@@ -76,11 +73,9 @@ $VC_URL  = "https://aka.ms/vs/17/release/vc_redist.$vcArch.exe"
 # ---------------------------------------------------------------------------
 $resolvedVersion = ""
 $resolvedWhlUrl  = ""
-Write-Host "[DBG] installVersion: '$installVersion'"
 if ($installVersion) {
     $resolvedVersion = $installVersion -replace "^v", ""
     $resolvedWhlUrl  = "https://codeberg.org/pitbo/pdf-qes-signer/releases/download/$installVersion/pdf_qes_signer-$resolvedVersion-py3-none-any.whl"
-    Write-Host "[DBG] resolvedVersion (from --installversion): $resolvedVersion"
 } else {
     try {
         if ($savedChannel -eq "develop") {
@@ -96,10 +91,7 @@ if ($installVersion) {
                 $resolvedWhlUrl  = $whl.browser_download_url
             }
         }
-        Write-Host "[DBG] resolvedVersion (from API): '$resolvedVersion'"
-    } catch {
-        Write-Host "[DBG] API call failed: $_"
-    }  # fallback: $resolvedVersion stays "" → dialogs show generic text
+    } catch { }  # fallback: $resolvedVersion stays "" → dialogs show generic text
 }
 
 # ---------------------------------------------------------------------------
@@ -275,21 +267,16 @@ function Show-UpdateDialog {
     # before this dialog is shown, either from --installversion or from the API call).
     $isDowngrade   = $false
     $targetVersion = $resolvedVersion   # "" if API call failed
-    Write-Host "[DBG] Show-UpdateDialog: installedVersion='$installedVersion' targetVersion='$targetVersion'"
-    Write-Host "[DBG] venvPy: '$venvPy'  exists=$(Test-Path $venvPy)"
     if ($targetVersion -and $installedVersion -ne "unknown") {
         $cmp = & $venvPy -c "
 import sys
 try:
     from packaging.version import Version as V
     print('gt' if V(sys.argv[1]) > V(sys.argv[2]) else 'le')
-except Exception as e:
-    print('err:' + str(e))
-" $installedVersion $targetVersion 2>&1
-        Write-Host "[DBG] version compare result: '$cmp'  isDowngrade=$($cmp -eq 'gt')"
+except Exception:
+    print('le')
+" $installedVersion $targetVersion 2>$null
         $isDowngrade = ($cmp -eq 'gt')
-    } else {
-        Write-Host "[DBG] skipping compare: targetVersion empty or installedVersion unknown"
     }
 
     $dialogTitle = if ($isDowngrade) { "PDF QES Signer – Downgrade Warning" } else { "PDF QES Signer – Update" }
@@ -524,15 +511,13 @@ $form.Controls.AddRange(@(
 
 $script:cancelled = $false
 
-# Upgrade detection – updates button label live as the user changes the path
+# Upgrade detection – updates subtitle live as the user changes the path
 function Update-InstallButton {
     $vp = Join-Path $txtDir.Text ".venv\Scripts\pythonw.exe"
     if (Test-Path $vp) {
-        $btnInstall.Text = "Update"
-        $lblSub.Text     = "Windows Installer  –  existing installation detected"
+        $lblSub.Text = "Windows Installer  –  existing installation detected"
     } else {
-        $btnInstall.Text = "Install"
-        $lblSub.Text     = "Windows Installer"
+        $lblSub.Text = "Windows Installer"
     }
 }
 
