@@ -221,18 +221,56 @@ function Show-UpdateDialog {
     } else { "" }
     if (-not $installedVersion) { $installedVersion = "unknown" }
 
+    # Detect downgrade when the target version is already known (--installversion flag).
+    # For "latest" installs the version is only known after the API call in Start-Install,
+    # where a second check runs.
+    $isDowngrade   = $false
+    $targetVersion = ""
+    if ($installVersion -and $installedVersion -ne "unknown") {
+        $targetVersion = $installVersion -replace "^v", ""
+        $pyCompare = @'
+import sys
+try:
+    from packaging.version import Version as V
+    print("gt" if V(sys.argv[1]) > V(sys.argv[2]) else "le")
+except Exception:
+    print("unknown")
+'@
+        $cmp = & $venvPy -c $pyCompare $installedVersion $targetVersion 2>$null
+        $isDowngrade = ($cmp -eq 'gt')
+    }
+
+    $dialogTitle = if ($isDowngrade) { "PDF QES Signer – Downgrade Warning" } else { "PDF QES Signer – Update" }
+    $headingText = if ($isDowngrade) { "PDF QES Signer – Downgrade Warning" } else { "PDF QES Signer – Update" }
+    $btnText     = if ($isDowngrade) { "Downgrade" } else { "Update" }
+    $infoText    = if ($isDowngrade) {
+        "WARNING: This is a downgrade to an older version!`n`n" +
+        "  Installed :  $installedVersion`n" +
+        "  Target    :  $targetVersion`n" +
+        "  Location  :  $DEFAULT_DIR`n`n" +
+        "Click 'Downgrade' only if you are sure."
+    } else {
+        $verLine = if ($targetVersion) { "  Target    :  $targetVersion`n" } else { "" }
+        "An existing installation was found.`n`n" +
+        "  Installed :  $installedVersion`n" +
+        $verLine +
+        "  Location  :  $DEFAULT_DIR`n`n" +
+        "Click 'Update' to upgrade to the latest version."
+    }
+
     $uf                 = New-Object System.Windows.Forms.Form
-    $uf.Text            = "PDF QES Signer – Update"
-    $uf.Size            = New-Object System.Drawing.Size(500, 260)
+    $uf.Text            = $dialogTitle
+    $uf.Size            = New-Object System.Drawing.Size(500, 270)
     $uf.StartPosition   = "CenterScreen"
     $uf.FormBorderStyle = "FixedDialog"
     $uf.MaximizeBox     = $false
 
     $lblTitle          = New-Object System.Windows.Forms.Label
-    $lblTitle.Text     = "PDF QES Signer – Update"
+    $lblTitle.Text     = $headingText
     $lblTitle.Font     = New-Object System.Drawing.Font("Segoe UI", 13, [System.Drawing.FontStyle]::Bold)
     $lblTitle.Location = New-Object System.Drawing.Point(16, 14)
     $lblTitle.Size     = New-Object System.Drawing.Size(460, 28)
+    if ($isDowngrade) { $lblTitle.ForeColor = [System.Drawing.Color]::DarkOrange }
 
     $sep              = New-Object System.Windows.Forms.Label
     $sep.BorderStyle  = "Fixed3D"
@@ -240,31 +278,34 @@ function Show-UpdateDialog {
     $sep.Size         = New-Object System.Drawing.Size(460, 2)
 
     $lblInfo          = New-Object System.Windows.Forms.Label
-    $lblInfo.Text     = "An existing installation was found.`n`n" +
-                        "Installed version :  $installedVersion`n" +
-                        "Install location  :  $DEFAULT_DIR`n`n" +
-                        "Click 'Update' to upgrade to the latest version."
+    $lblInfo.Text     = $infoText
     $lblInfo.Font     = New-Object System.Drawing.Font("Segoe UI", 9)
     $lblInfo.Location = New-Object System.Drawing.Point(16, 58)
-    $lblInfo.Size     = New-Object System.Drawing.Size(460, 100)
+    $lblInfo.Size     = New-Object System.Drawing.Size(460, 110)
 
     $btnUpdate                = New-Object System.Windows.Forms.Button
-    $btnUpdate.Text           = "Update"
+    $btnUpdate.Text           = $btnText
     $btnUpdate.Font           = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $btnUpdate.Location       = New-Object System.Drawing.Point(304, 162)
+    $btnUpdate.Location       = New-Object System.Drawing.Point(304, 175)
     $btnUpdate.Size           = New-Object System.Drawing.Size(80, 28)
     $btnUpdate.DialogResult   = [System.Windows.Forms.DialogResult]::OK
 
     $btnCancel                = New-Object System.Windows.Forms.Button
     $btnCancel.Text           = "Cancel"
     $btnCancel.Font           = New-Object System.Drawing.Font("Segoe UI", 9)
-    $btnCancel.Location       = New-Object System.Drawing.Point(398, 162)
+    $btnCancel.Location       = New-Object System.Drawing.Point(398, 175)
     $btnCancel.Size           = New-Object System.Drawing.Size(80, 28)
     $btnCancel.DialogResult   = [System.Windows.Forms.DialogResult]::Cancel
 
     $uf.Controls.AddRange(@($lblTitle, $sep, $lblInfo, $btnUpdate, $btnCancel))
-    $uf.AcceptButton = $btnUpdate
-    $uf.CancelButton = $btnCancel
+    # For downgrades Cancel is the safe default (Enter = Cancel, Esc = Cancel)
+    if ($isDowngrade) {
+        $uf.CancelButton = $btnCancel
+        $uf.AcceptButton = $btnCancel
+    } else {
+        $uf.AcceptButton = $btnUpdate
+        $uf.CancelButton = $btnCancel
+    }
     return $uf.ShowDialog()
 }
 
