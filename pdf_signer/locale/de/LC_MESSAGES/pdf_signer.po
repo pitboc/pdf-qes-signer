@@ -1492,6 +1492,9 @@ msgstr "Durch Aussteller kryptografisch verifiziert"
 msgid "cert_win_issuer_sig_invalid"
 msgstr "Aussteller-Signatur ungültig!"
 
+msgid "cert_win_trust_not_checked"
+msgstr "Nicht geprüft"
+
 msgid "cert_win_source_embedded"
 msgstr "Eingebettet (PDF)"
 

@@ -18,6 +18,8 @@ test PDFs in tools/create_test_pdfs.py.
 | test_phase2_preserves_invalid  | Phase 2 must never downgrade INVALID to UNKNOWN        |
 | test_multi_warning_red_yellow  | Tampered + post-sig → crypto INVALID + post-sig warning|
 | test_two_yellow_warnings       | Between-sig + post-last-sig → two separate warnings    |
+| test_expired_cert_issuer_verified_set | Expired cert → issuer_verified set on signer chain in Phase 2 |
+| test_untrusted_root_issuer_verified_set | Untrusted root → issuer_verified set on signer chain in Phase 2 |
 
 Phase 2 runs synchronously (worker.run() called directly) with
 auto_fetch=False so the tests are deterministic and require no network access.
@@ -297,3 +299,77 @@ def test_two_yellow_warnings(pdf_dir):
     assert "annotations" in between, (
         f"Expected 'annotations' in between, got {between}"
     )
+
+
+# ── Fingerprint chain visibility (Issue 5) ────────────────────────────────────
+
+def test_expired_cert_issuer_verified_set(pdf_dir):
+    """After Phase 2, issuer_verified must be set for all verifiable certs in an
+    expired-cert chain, even though chain_status remains INVALID.
+
+    Regression: the else-branch in _validate_one skipped chain annotation when
+    status.trusted=False, leaving issuer_verified=None for all signer chain
+    certs.  The UI uses issuer_verified to decide whether to show the issuer
+    fingerprint; None means no fingerprint is shown even though the data is
+    available.
+
+    This test FAILS before the fix and PASSES after.
+    """
+    for filename, label in (
+        ("03_expired_signing_cert.pdf", "expired signing cert"),
+        ("04_expired_ca_cert.pdf",      "expired CA cert"),
+    ):
+        pdf = (pdf_dir / filename).read_bytes()
+        doc = _run_validation(pdf)
+        sig = _first_sig(doc)
+
+        # chain_status must still be INVALID (regression guard – must not regress)
+        assert sig.chain_status == ValidationStatus.INVALID, (
+            f"{label}: chain_status must remain INVALID, got {sig.chain_status}"
+        )
+
+        # All non-root, non-placeholder certs must have issuer_verified set so
+        # that the UI can display the fingerprint link in the cert detail window.
+        verifiable = [c for c in sig.cert_chain
+                      if not c.is_root and c.source != CertSource.NOT_FOUND]
+        assert verifiable, f"{label}: expected at least one verifiable cert in chain"
+
+        for cert in verifiable:
+            assert cert.issuer_verified is not None, (
+                f"{label}: cert '{cert.subject[:60]}' has issuer_verified=None "
+                f"after Phase 2 – issuer fingerprint cannot be shown in the UI"
+            )
+
+        # cert_fingerprint must be set for all non-placeholder certs
+        for cert in verifiable:
+            assert cert.cert_fingerprint is not None, (
+                f"{label}: cert '{cert.subject[:60]}' missing cert_fingerprint"
+            )
+
+
+def test_untrusted_root_issuer_verified_set(pdf_dir):
+    """issuer_verified must be set for signer chain certs even with an untrusted root.
+
+    When the chain is structurally valid but the root CA is unknown (not in
+    certifi or LOTL), the fingerprint chain should still be displayable.
+
+    This test FAILS before the fix and PASSES after.
+    """
+    pdf = (pdf_dir / "01_untrusted_root.pdf").read_bytes()
+    doc = _run_validation(pdf)
+    sig = _first_sig(doc)
+
+    # chain must not be VALID with an untrusted root (security property)
+    assert sig.chain_status != ValidationStatus.VALID, (
+        f"Untrusted root chain must not be VALID, got {sig.chain_status}"
+    )
+
+    verifiable = [c for c in sig.cert_chain
+                  if not c.is_root and c.source != CertSource.NOT_FOUND]
+    assert verifiable, "Expected at least one non-root cert in chain"
+
+    for cert in verifiable:
+        assert cert.issuer_verified is not None, (
+            f"Untrusted root: cert '{cert.subject[:60]}' has issuer_verified=None "
+            f"after Phase 2 – issuer fingerprint cannot be shown in the UI"
+        )

@@ -1492,6 +1492,9 @@ msgstr "Zweryfikowane kryptograficznie przez wystawcę"
 msgid "cert_win_issuer_sig_invalid"
 msgstr "Podpis wystawcy nieważny!"
 
+msgid "cert_win_trust_not_checked"
+msgstr "Nie zweryfikowano"
+
 msgid "cert_win_source_embedded"
 msgstr "Osadzony (PDF)"
 

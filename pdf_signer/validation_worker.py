@@ -818,6 +818,49 @@ def _validate_one(rev: RevisionInfo,
             if any(c.lotl_confirmed for c in sig_info.timestamp.cert_chain):
                 sig_info.timestamp.chain_status = ValidationStatus.VALID
 
+        # Annotate the signer chain: even when the chain is untrusted (expired
+        # cert, unknown root), mark LOTL-confirmed certs and verify issuer
+        # signatures so the UI can show the fingerprint chain correctly.
+        # Mirrors Steps 6+7 from the trusted branch, without changing chain_status.
+        confirmed_fps_signer: set[bytes] = {
+            hashlib.sha256(c.dump()).digest() for c in confirmed_trusted}
+        for cert_info in sig_info.cert_chain:
+            if (cert_info.cert_fingerprint is not None
+                    and cert_info.cert_fingerprint in confirmed_fps_signer):
+                cert_info.lotl_confirmed = True
+
+        # Build fingerprint→DER lookup for explicit issuer sig verification.
+        fp_to_der_else: dict[bytes, bytes] = {}
+        if signer_cert_der:
+            fp_to_der_else[hashlib.sha256(signer_cert_der).digest()] = signer_cert_der
+        for _der in all_check_ders:
+            _fp = hashlib.sha256(_der).digest()
+            if _fp not in fp_to_der_else:
+                fp_to_der_else[_fp] = _der
+        for _c in cms_certs + confirmed_trusted:
+            try:
+                _der = _c.dump()
+                _fp = hashlib.sha256(_der).digest()
+                if _fp not in fp_to_der_else:
+                    fp_to_der_else[_fp] = _der
+            except Exception:
+                pass
+
+        for idx, cert_info in enumerate(sig_info.cert_chain):
+            if cert_info.is_root or cert_info.issuer_verified is True:
+                continue
+            issuer_info = (sig_info.cert_chain[idx + 1]
+                           if idx + 1 < len(sig_info.cert_chain) else None)
+            if issuer_info is None or issuer_info.cert_fingerprint is None:
+                continue
+            cert_der_   = fp_to_der_else.get(cert_info.cert_fingerprint)
+            issuer_der_ = fp_to_der_else.get(issuer_info.cert_fingerprint)
+            if cert_der_ is None or issuer_der_ is None:
+                continue
+            cert_info.issuer_verified = _verify_issuer_sig(cert_der_, issuer_der_)
+            _log.debug("certchain [else-step7]: %s issuer_sig=%s",
+                       cert_info.subject[:60], cert_info.issuer_verified)
+
         # Capture the AdES subindication so the UI can show a precise reason.
         # OUT_OF_BOUNDS_NO_POE, REVOKED_NO_POE, TRY_LATER etc. imply that
         # pyhanko successfully built and verified the chain; only a subsequent

@@ -25,6 +25,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Dates in certificate viewer and settings always used the system locale
   instead of the app language
 - Settings → General tab renamed to "Language" in all 8 locales
+- Certificate detail window: issuer fingerprint and LOTL annotation now shown
+  even when the chain is untrusted (expired cert, unknown root) — Phase 2
+  now annotates the signer chain in the untrusted branch too
+- Certificate detail window: LOTL anchor shown in amber (not green) when
+  issuer signature not yet verified; invalid issuer signature shown in red
 
 ---
 

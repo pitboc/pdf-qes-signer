@@ -2883,6 +2883,7 @@ class CertChainDetailWindow(QWidget):
     _GREEN = "#1a7a1a"
     _RED   = "#9a0000"
     _GREY  = "#666666"
+    _AMBER = "#8a6000"
 
     def __init__(self, config, parent=None) -> None:
         from PyQt6.QtCore import Qt
@@ -3009,7 +3010,7 @@ class CertChainDetailWindow(QWidget):
                 trust_color = self._RED
             else:
                 trust_val  = t("cert_win_lotl_confirmed")
-                trust_color = self._GREEN
+                trust_color = self._AMBER
             sub = self._add_sub(top, t("cert_win_label_trust"), trust_val)
             sub.setForeground(1, QColor(trust_color))
 
@@ -3025,14 +3026,22 @@ class CertChainDetailWindow(QWidget):
             sub.setForeground(1, QColor("#8a6000"))
 
         else:
-            # Non-root, non-anchor: pyhanko verified issuer signature.
-            if issuer_verified is True and issuer_fp is not None:
-                trust_val = (t("cert_win_trust_verified") + "  ·  "
-                             + _abbrev_fp(issuer_fp))
+            # Non-root, non-anchor: issuer signature verified explicitly.
+            if issuer_verified is True:
+                if issuer_fp is not None:
+                    trust_val = (t("cert_win_trust_verified") + "  ·  "
+                                 + _abbrev_fp(issuer_fp))
+                else:
+                    trust_val = t("cert_win_trust_verified")
+                trust_color = self._GREEN
+            elif issuer_verified is False:
+                trust_val  = t("cert_win_issuer_sig_invalid")
+                trust_color = self._RED
             else:
-                trust_val = t("cert_win_trust_verified")
+                trust_val  = t("cert_win_trust_not_checked")
+                trust_color = self._AMBER
             sub = self._add_sub(top, t("cert_win_label_trust"), trust_val)
-            sub.setForeground(1, QColor(self._GREEN))
+            sub.setForeground(1, QColor(trust_color))
 
         # Full fingerprint of this cert, grouped in 8-hex-digit blocks
         if cert.cert_fingerprint is not None:

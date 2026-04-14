@@ -1456,6 +1456,9 @@ msgstr "Vérifié cryptographiquement par l'émetteur"
 msgid "cert_win_issuer_sig_invalid"
 msgstr "Signature de l'émetteur invalide !"
 
+msgid "cert_win_trust_not_checked"
+msgstr "Non vérifié"
+
 msgid "cert_win_source_embedded"
 msgstr "Intégré (PDF)"
 

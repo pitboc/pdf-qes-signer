@@ -1493,6 +1493,9 @@ msgstr "Cryptographically verified by issuer"
 msgid "cert_win_issuer_sig_invalid"
 msgstr "Issuer signature invalid!"
 
+msgid "cert_win_trust_not_checked"
+msgstr "Not verified"
+
 msgid "cert_win_source_embedded"
 msgstr "Embedded (PDF)"
 

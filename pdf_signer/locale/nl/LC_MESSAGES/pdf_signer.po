@@ -1454,6 +1454,9 @@ msgstr "Cryptografisch geverifieerd door uitgever"
 msgid "cert_win_issuer_sig_invalid"
 msgstr "Handtekening uitgever ongeldig!"
 
+msgid "cert_win_trust_not_checked"
+msgstr "Niet geverifieerd"
+
 msgid "cert_win_source_embedded"
 msgstr "Ingesloten (PDF)"
 
