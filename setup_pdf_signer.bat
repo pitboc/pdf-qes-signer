@@ -276,16 +276,16 @@ function Show-UpdateDialog {
     $isDowngrade   = $false
     $targetVersion = $resolvedVersion   # "" if API call failed
     Write-Host "[DBG] Show-UpdateDialog: installedVersion='$installedVersion' targetVersion='$targetVersion'"
+    Write-Host "[DBG] venvPy: '$venvPy'  exists=$(Test-Path $venvPy)"
     if ($targetVersion -and $installedVersion -ne "unknown") {
-        $pyCompare = @'
+        $cmp = & $venvPy -c "
 import sys
 try:
     from packaging.version import Version as V
-    print("gt" if V(sys.argv[1]) > V(sys.argv[2]) else "le")
-except Exception:
-    print("unknown")
-'@
-        $cmp = & $venvPy -c $pyCompare $installedVersion $targetVersion 2>$null
+    print('gt' if V(sys.argv[1]) > V(sys.argv[2]) else 'le')
+except Exception as e:
+    print('err:' + str(e))
+" $installedVersion $targetVersion 2>&1
         Write-Host "[DBG] version compare result: '$cmp'  isDowngrade=$($cmp -eq 'gt')"
         $isDowngrade = ($cmp -eq 'gt')
     } else {
