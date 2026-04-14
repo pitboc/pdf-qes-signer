@@ -22,12 +22,12 @@ SET INSTALL_VERSION=
 :parse_args
 if "%~1"=="--installversion" (
     SET INSTALL_VERSION=%~2
-    shift
-    shift
+    shift /1
+    shift /1
     goto parse_args
 )
 if not "%~1"=="" (
-    shift
+    shift /1
     goto parse_args
 )
 
