@@ -907,12 +907,16 @@ function Start-Install {
 
         # Write channel to app settings.ini so the app reads it on first start
         # (%APPDATA%\pdf-signer\settings.ini, INI format, [update] section)
-        $cfgDir  = Join-Path $env:APPDATA "pdf-signer"
-        $cfgFile = Join-Path $cfgDir "settings.ini"
+        # Use UTF-8 without BOM – [System.Text.Encoding]::UTF8 emits a BOM which
+        # configparser cannot handle; New-Object System.Text.UTF8Encoding $false does not.
+        $cfgDir    = Join-Path $env:APPDATA "pdf-signer"
+        $cfgFile   = Join-Path $cfgDir "settings.ini"
+        $utf8NoBOM = New-Object System.Text.UTF8Encoding $false
         New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
         if (Test-Path $cfgFile) {
-            # Update existing file: replace or append channel= in [update] section
-            $lines   = [System.IO.File]::ReadAllLines($cfgFile, [System.Text.Encoding]::UTF8)
+            # Update existing file: replace or append channel= in [update] section.
+            # Read with utf8NoBOM so any existing BOM is stripped and not re-written.
+            $lines   = [System.IO.File]::ReadAllLines($cfgFile, $utf8NoBOM)
             $inUpd   = $false; $written = $false; $out = [System.Collections.Generic.List[string]]::new()
             foreach ($line in $lines) {
                 if ($line -match '^\[update\]') { $inUpd = $true }
@@ -921,10 +925,10 @@ function Start-Install {
                 $out.Add($line)
             }
             if (-not $written) { $out.Add("[update]"); $out.Add("channel = $channel") }
-            [System.IO.File]::WriteAllLines($cfgFile, $out, [System.Text.Encoding]::UTF8)
+            [System.IO.File]::WriteAllLines($cfgFile, $out, $utf8NoBOM)
         } else {
             # Create minimal settings.ini with just the channel
-            [System.IO.File]::WriteAllText($cfgFile, "[update]`nchannel = $channel`n", [System.Text.Encoding]::UTF8)
+            [System.IO.File]::WriteAllText($cfgFile, "[update]`nchannel = $channel`n", $utf8NoBOM)
         }
         Write-Log "Channel saved: $channel"
 

@@ -259,7 +259,7 @@ class AppConfig:
 
     def _load_settings(self) -> None:
         if _SETTINGS_FILE.exists():
-            self._global.read(_SETTINGS_FILE, encoding="utf-8")
+            self._global.read(_SETTINGS_FILE, encoding="utf-8-sig")
             stored = self._global.getint("meta", "schema_version", fallback=0)
             self._run_schema_migrations(stored)
             self._check_schema_version()
@@ -271,7 +271,7 @@ class AppConfig:
         self._init_parser(self._profile, self.PROFILE_DEFAULTS)
         f = self._profile_file(name)
         if f.exists():
-            self._profile.read(f, encoding="utf-8")
+            self._profile.read(f, encoding="utf-8-sig")
         self._cleanup(self._profile, self.PROFILE_DEFAULTS)
 
     def _migrate_if_needed(self) -> None:
@@ -280,7 +280,7 @@ class AppConfig:
             return
 
         old = configparser.RawConfigParser()
-        old.read(_LEGACY_FILE, encoding="utf-8")
+        old.read(_LEGACY_FILE, encoding="utf-8-sig")
 
         # Build profile file from legacy profile sections
         prof = configparser.RawConfigParser()

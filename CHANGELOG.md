@@ -16,6 +16,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Signature fields can no longer be drawn partially outside the page;
   coordinates are clamped to the page boundary using unrotated (mediabox)
   dimensions, which correctly handles all page rotations (0°/90°/180°/270°)
+- Windows installer: `settings.ini` is now written without BOM
+  (`UTF8NoBOM`); previously the BOM caused a startup crash
+  (`MissingSectionHeaderError`) when running on Windows
+- Windows installer: `--installversion` flag now correctly skips its own
+  argument (was: `shift` shifted `%0` as well; fixed with `shift /1`)
+- App startup: INI files with BOM are now read correctly on all platforms
+  (`utf-8-sig` codec strips the BOM automatically)
 
 ---
 
