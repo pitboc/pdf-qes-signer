@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased] – 0.3.4.dev1
+## [0.3.4] – 2026-04-14
 
 ### Fixed
 - Key generation dialog: openssl command text field now sizes itself to its
@@ -16,8 +16,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Signature fields can no longer be drawn partially outside the page;
   coordinates are clamped to the page boundary using unrotated (mediabox)
   dimensions, which correctly handles all page rotations (0°/90°/180°/270°)
-- Windows installer: downgrade is now detected and confirmed before
-  installation proceeds (was always shown as "Update"); default answer is No
+- Windows installer: downgrade is now detected before the first dialog;
+  title and heading show "Downgrade Warning" (orange), action button says
+  "Downgrade", and Enter/Escape default to Cancel
+- Windows installer: update channel is now read from `settings.ini`
+  instead of the Windows Registry; Registry write after install removed –
+  `settings.ini` is the single source of truth for both app and installer
+- Windows installer: main form action button always labelled "Install"
+  (was dynamically changed to "Update" for existing installations)
 - Windows installer: `settings.ini` is now written without BOM
   (`UTF8NoBOM`); previously the BOM caused a startup crash
   (`MissingSectionHeaderError`) when running on Windows
