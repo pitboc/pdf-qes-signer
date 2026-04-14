@@ -53,6 +53,36 @@ $vcArch  = if ($arch -eq "ARM64") { "arm64" } else { "x64" }
 $VC_URL  = "https://aka.ms/vs/17/release/vc_redist.$vcArch.exe"
 
 # ---------------------------------------------------------------------------
+# Resolve target version early – before any dialog – so upgrade/downgrade can
+# be detected correctly in Show-UpdateDialog.  For --installversion the version
+# is known immediately; otherwise we query the Codeberg API (using the saved
+# channel from the registry).  On network error $resolvedVersion stays "".
+# Start-Install reuses these values and skips the API call when already set.
+# ---------------------------------------------------------------------------
+$resolvedVersion = ""
+$resolvedWhlUrl  = ""
+if ($installVersion) {
+    $resolvedVersion = $installVersion -replace "^v", ""
+    $resolvedWhlUrl  = "https://codeberg.org/pitbo/pdf-qes-signer/releases/download/$installVersion/pdf_qes_signer-$resolvedVersion-py3-none-any.whl"
+} else {
+    try {
+        if ($savedChannel -eq "develop") {
+            $rels = Invoke-RestMethod -Uri "https://codeberg.org/api/v1/repos/pitbo/pdf-qes-signer/releases?limit=5" -UseBasicParsing -TimeoutSec 8
+            $rel  = if ($rels -and $rels.Count -gt 0) { $rels[0] } else { $null }
+        } else {
+            $rel = Invoke-RestMethod -Uri "https://codeberg.org/api/v1/repos/pitbo/pdf-qes-signer/releases/latest" -UseBasicParsing -TimeoutSec 8
+        }
+        if ($rel) {
+            $whl = $rel.assets | Where-Object { $_.name -like "*.whl" } | Select-Object -First 1
+            if ($whl) {
+                $resolvedVersion = $rel.tag_name -replace "^v", ""
+                $resolvedWhlUrl  = $whl.browser_download_url
+            }
+        }
+    } catch { }  # fallback: $resolvedVersion stays "" → dialogs show generic text
+}
+
+# ---------------------------------------------------------------------------
 # Log buffer – flushed to install.log once the install dir exists
 # ---------------------------------------------------------------------------
 $script:logLines = [System.Collections.Generic.List[string]]::new()
@@ -221,13 +251,11 @@ function Show-UpdateDialog {
     } else { "" }
     if (-not $installedVersion) { $installedVersion = "unknown" }
 
-    # Detect downgrade when the target version is already known (--installversion flag).
-    # For "latest" installs the version is only known after the API call in Start-Install,
-    # where a second check runs.
+    # Detect downgrade using the pre-resolved target version ($resolvedVersion is set
+    # before this dialog is shown, either from --installversion or from the API call).
     $isDowngrade   = $false
-    $targetVersion = ""
-    if ($installVersion -and $installedVersion -ne "unknown") {
-        $targetVersion = $installVersion -replace "^v", ""
+    $targetVersion = $resolvedVersion   # "" if API call failed
+    if ($targetVersion -and $installedVersion -ne "unknown") {
         $pyCompare = @'
 import sys
 try:
@@ -796,7 +824,19 @@ function Start-Install {
             Step-Ok "pip upgrade skipped"
         }
 
-        if ($installVersion) {
+        # Reuse the version resolved before the dialogs ($resolvedVersion / $resolvedWhlUrl).
+        # The user may have changed the channel radio button since then, so re-fetch only when
+        # the channel differs from the one used for the early resolve (or early resolve failed).
+        $channel = if ($rbDevelop.Checked) { "develop" } else { "stable" }
+        $earlyChannel = $savedChannel   # channel used for the early API call
+        $reuseEarly = $resolvedVersion -and $resolvedWhlUrl -and ($installVersion -or $channel -eq $earlyChannel)
+
+        if ($reuseEarly) {
+            $version = $resolvedVersion
+            $whlUrl  = $resolvedWhlUrl
+            Write-Log "Reusing pre-resolved version: $version (channel: $channel)"
+            Step-Ok "Target version: $version"
+        } elseif ($installVersion) {
             # Specific version requested – build URL directly
             Step-Start "Preparing install of version $installVersion ..."
             $tag     = $installVersion
@@ -807,7 +847,6 @@ function Start-Install {
         } else {
             Step-Start "Fetching latest release from Codeberg ..."
             try {
-                $channel = if ($rbDevelop.Checked) { "develop" } else { "stable" }
                 Write-Log "Update channel: $channel"
                 if ($channel -eq "develop") {
                     $releases = Invoke-RestMethod -Uri "https://codeberg.org/api/v1/repos/pitbo/pdf-qes-signer/releases?limit=5" -UseBasicParsing
