@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased] – 0.3.4.dev1
 
+### Fixed
+- Key generation dialog: openssl command text field now sizes itself to its
+  content (no vertical scrollbar); entire form wrapped in a scroll area so
+  all widgets remain reachable on small screens
+
 ---
 
 ## [0.3.4.dev0] – 2026-04-14

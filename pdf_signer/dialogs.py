@@ -807,11 +807,24 @@ class KeygenDialog(QDialog):
         self._save_dir = save_dir or str(Path.home())
         self.setWindowTitle(t("keygen_title"))
         self.setMinimumWidth(540)
+        self.setMinimumHeight(500)
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        lay = QVBoxLayout(self)
+        from PyQt6.QtWidgets import QScrollArea
+        outer_lay = QVBoxLayout(self)
+        outer_lay.setSpacing(6)
+
+        # Scrollable form area – ensures all widgets are reachable on
+        # small screens without the buttons overlapping the text field.
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(scroll.Shape.NoFrame)
+        content = QWidget()
+        lay = QVBoxLayout(content)
         lay.setSpacing(10)
+        scroll.setWidget(content)
+        outer_lay.addWidget(scroll)
 
         # ── Schlüssel-Parameter ───────────────────────────────────────────
         key_box = QGroupBox(t("keygen_section_key"))
@@ -923,11 +936,14 @@ class KeygenDialog(QDialog):
         ossl_box = QGroupBox(t("keygen_section_openssl"))
         ossl_vlay = QVBoxLayout(ossl_box)
 
+        from PyQt6.QtCore import Qt
         self._openssl_edit = QPlainTextEdit()
         self._openssl_edit.setReadOnly(True)
         self._openssl_edit.setFont(
             QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
-        self._openssl_edit.setFixedHeight(175)
+        self._openssl_edit.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self._openssl_edit.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._openssl_edit.setToolTip(t("keygen_openssl_tip"))
         ossl_vlay.addWidget(self._openssl_edit)
 
@@ -954,7 +970,7 @@ class KeygenDialog(QDialog):
         self._smime_enc_chk.stateChanged.connect(self._update_openssl_display)
         self._update_openssl_display()
 
-        # ── Buttons ───────────────────────────────────────────────────────
+        # ── Buttons (outside scroll area – always visible) ────────────────
         btn_row = QHBoxLayout()
         self._btn_generate = QPushButton(t("keygen_btn_generate"))
         self._btn_generate.setDefault(True)
@@ -964,7 +980,7 @@ class KeygenDialog(QDialog):
         btn_row.addStretch()
         btn_row.addWidget(self._btn_generate)
         btn_row.addWidget(btn_cancel)
-        lay.addLayout(btn_row)
+        outer_lay.addLayout(btn_row)
 
     def _on_country_changed(self, text: str) -> None:
         """Zeigt Ländername in Echtzeit neben dem Code-Feld an."""
@@ -1097,8 +1113,15 @@ class KeygenDialog(QDialog):
         ])
 
     def _update_openssl_display(self, *_) -> None:
-        """Aktualisiert die openssl-Befehlsanzeige."""
+        """Aktualisiert die openssl-Befehlsanzeige und passt die Höhe an."""
         self._openssl_edit.setPlainText(self._build_openssl_cmd())
+        # Resize to fit content exactly (no line wrap → blockCount = line count).
+        fm = self._openssl_edit.fontMetrics()
+        m  = self._openssl_edit.contentsMargins()
+        fw = self._openssl_edit.frameWidth()
+        lines = self._openssl_edit.document().blockCount()
+        h = lines * fm.lineSpacing() + m.top() + m.bottom() + fw * 2 + 6
+        self._openssl_edit.setFixedHeight(h)
 
     def _copy_openssl_cmd(self) -> None:
         """Kopiert den angezeigten openssl-Befehl in die Zwischenablage."""
