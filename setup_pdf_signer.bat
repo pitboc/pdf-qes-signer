@@ -45,8 +45,20 @@ $PY_URL      = $null   # determined on demand in Start-Install
 $DEFAULT_DIR = Join-Path $env:LOCALAPPDATA "pdf-signer"
 $savedDir    = (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\PDFQESSigner" -ErrorAction SilentlyContinue).InstallLocation
 if ($savedDir -and (Test-Path $savedDir)) { $DEFAULT_DIR = $savedDir }
-$savedChannel = (Get-ItemProperty "HKCU:\Software\PDF-QES-Signer" -ErrorAction SilentlyContinue).Channel
-if (-not $savedChannel) { $savedChannel = "stable" }
+# Read saved channel from settings.ini (same source the app uses).
+# Registry is not used – settings.ini is the single source of truth.
+$savedChannel = "stable"
+$_cfgIni = Join-Path $env:APPDATA "pdf-signer\settings.ini"
+if (Test-Path $_cfgIni) {
+    $_inUpd = $false
+    foreach ($_line in (Get-Content $_cfgIni -Encoding UTF8 -ErrorAction SilentlyContinue)) {
+        if ($_line -match '^\[update\]')         { $_inUpd = $true }
+        elseif ($_line -match '^\[')             { $_inUpd = $false }
+        if ($_inUpd -and $_line -match '^channel\s*=\s*(.+)') {
+            $savedChannel = $Matches[1].Trim(); break
+        }
+    }
+}
 $arch    = $env:PROCESSOR_ARCHITECTURE          # AMD64 or ARM64
 $pyArch  = if ($arch -eq "ARM64") { "arm64" } else { "amd64" }
 $vcArch  = if ($arch -eq "ARM64") { "arm64" } else { "x64" }
@@ -1009,11 +1021,6 @@ except Exception:
         }
         Step-Ok "Registered in Apps & Features"
         Write-Log "Apps & Features entry created (version $version)"
-
-        # Save selected channel to Registry
-        $chReg = "HKCU:\Software\PDF-QES-Signer"
-        New-Item -Path $chReg -Force -ErrorAction SilentlyContinue | Out-Null
-        Set-ItemProperty -Path $chReg -Name "Channel" -Value $channel
 
         # Write channel to app settings.ini so the app reads it on first start
         # (%APPDATA%\pdf-signer\settings.ini, INI format, [update] section)
