@@ -85,7 +85,7 @@ from .dialogs import (Pkcs11ConfigDialog, ProfileManagerDialog,
                        DocMDPDialog)
 from .i18n import t, i18n
 from .appearance_panel import AppearancePanel
-from .continuous_view import ContinuousView
+from .continuous_view import ContinuousView, _adjust_hscroll
 
 
 class PDFSignerApp(QMainWindow):
@@ -806,12 +806,15 @@ class PDFSignerApp(QMainWindow):
         field_top_y    = min(tl.y(), br.y())
         field_bottom_y = max(tl.y(), br.y())
         cur_scroll = vbar.value()
-        if not page_changed and cur_scroll <= field_top_y and field_bottom_y <= cur_scroll + viewport_h:
-            return
-        target = int(field_bottom_y - viewport_h * 0.80)
-        target = max(0, target)
-        target = min(target, vbar.maximum())
-        vbar.setValue(target)
+        if page_changed or cur_scroll > field_top_y or field_bottom_y > cur_scroll + viewport_h:
+            target = int(field_bottom_y - viewport_h * 0.80)
+            vbar.setValue(max(0, min(target, vbar.maximum())))
+
+        hbar      = self._scroll_area.horizontalScrollBar()
+        viewport_w = self._scroll_area.viewport().width()
+        field_left  = self._pdf_view.x() + min(tl.x(), br.x())
+        field_right = self._pdf_view.x() + max(tl.x(), br.x())
+        _adjust_hscroll(hbar, viewport_w, field_left, field_right)
 
     # ── Continuous / single-page view toggle ──────────────────────────────
 

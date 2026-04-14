@@ -153,6 +153,7 @@ class PDFViewWidget(QWidget):
         self._page_w = self._page_h = 1.0
         self._img_w  = self._img_h  = 1
         self._page_rotation: int     = 0        # current page /Rotate value
+        self._mediabox_w: float     = 1.0      # unrotated page width  (PDF points)
         self._mediabox_h: float     = 1.0      # unrotated page height (PDF points)
         self._derot_mat: fitz.Matrix = fitz.Matrix()  # rotated → unrotated fitz coords
         self._rot_mat:   fitz.Matrix = fitz.Matrix()  # unrotated → rotated fitz coords
@@ -184,6 +185,7 @@ class PDFViewWidget(QWidget):
         self._page_w        = page.rect.width
         self._page_h        = page.rect.height
         self._page_rotation = page.rotation
+        self._mediabox_w    = page.mediabox.width
         self._mediabox_h    = page.mediabox.height
         self._derot_mat     = page.derotation_matrix
         self._rot_mat       = page.rotation_matrix
@@ -414,6 +416,16 @@ class PDFViewWidget(QWidget):
 
         px0, py0 = self._w_to_pdf(min(x0, x1), min(y0, y1))
         px1, py1 = self._w_to_pdf(max(x0, x1), max(y0, y1))
+
+        # Clamp to page boundaries using unrotated (mediabox) dimensions,
+        # because _w_to_pdf returns coordinates in the unrotated PDF space.
+        px0 = max(0.0, min(px0, self._mediabox_w))
+        py0 = max(0.0, min(py0, self._mediabox_h))
+        px1 = max(0.0, min(px1, self._mediabox_w))
+        py1 = max(0.0, min(py1, self._mediabox_h))
+        if abs(px1 - px0) < 5 or abs(py1 - py0) < 3:
+            return  # too small after clamping
+
         # Find the first unused default name for this page
         all_names = ({f.name for f in self._sig_fields}
                      | {f.name for f in self._locked_fields}

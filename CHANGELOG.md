@@ -11,6 +11,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Key generation dialog: openssl command text field now sizes itself to its
   content (no vertical scrollbar); entire form wrapped in a scroll area so
   all widgets remain reachable on small screens
+- Selecting a signature field from the list now also adjusts the horizontal
+  scroll position so the field is visible (single-page and continuous mode)
+- Signature fields can no longer be drawn partially outside the page;
+  coordinates are clamped to the page boundary using unrotated (mediabox)
+  dimensions, which correctly handles all page rotations (0°/90°/180°/270°)
 
 ---
 

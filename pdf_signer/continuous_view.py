@@ -127,6 +127,26 @@ from .appearance import SigAppearance
 
 LOOKAHEAD_PX = 1000
 PAGE_GAP = 10
+
+
+def _adjust_hscroll(hbar, viewport_w: int, field_left: int, field_right: int) -> None:
+    """Adjust *hbar* so that [field_left, field_right] is visible.
+
+    Rule (from Issue 3):
+    - If the field's left edge is left of the viewport, or the field is wider
+      than the viewport → align the viewport's left edge to field_left.
+    - Else if the field's right edge is right of the viewport → align the
+      viewport's right edge to field_right.
+    - Otherwise no adjustment.
+    """
+    cur = hbar.value()
+    left  = int(field_left)
+    right = int(field_right)
+    field_w = right - left
+    if left < cur or field_w > viewport_w:
+        hbar.setValue(max(0, min(left, hbar.maximum())))
+    elif right > cur + viewport_w:
+        hbar.setValue(max(0, min(right - viewport_w, hbar.maximum())))
 BG_COLOR = "#404040"
 
 
@@ -347,12 +367,15 @@ class ContinuousView(QScrollArea):
         field_bottom_y = page_top + max(tl.y(), br.y())
 
         cur = vbar.value()
-        if cur <= field_top_y and field_bottom_y <= cur + viewport_h:
-            return  # already fully visible
+        if cur > field_top_y or field_bottom_y > cur + viewport_h:
+            target = int(field_bottom_y - viewport_h * 0.80)
+            vbar.setValue(max(0, min(target, vbar.maximum())))
 
-        target = int(field_bottom_y - viewport_h * 0.80)
-        target = max(0, min(target, vbar.maximum()))
-        vbar.setValue(target)
+        hbar      = self.horizontalScrollBar()
+        viewport_w = self.viewport().width()
+        field_left  = slot.x() + min(tl.x(), br.x())
+        field_right = slot.x() + max(tl.x(), br.x())
+        _adjust_hscroll(hbar, viewport_w, field_left, field_right)
 
     def set_zoom(self, factor: float,
                  cursor_vp: QPoint | None = None) -> None:
