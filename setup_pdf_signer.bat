@@ -49,6 +49,8 @@ if ($savedDir -and (Test-Path $savedDir)) { $DEFAULT_DIR = $savedDir }
 # Registry is not used – settings.ini is the single source of truth.
 $savedChannel = "stable"
 $_cfgIni = Join-Path $env:APPDATA "pdf-signer\settings.ini"
+Write-Host "[DBG] settings.ini path: $_cfgIni"
+Write-Host "[DBG] settings.ini exists: $(Test-Path $_cfgIni)"
 if (Test-Path $_cfgIni) {
     $_inUpd = $false
     foreach ($_line in (Get-Content $_cfgIni -Encoding UTF8 -ErrorAction SilentlyContinue)) {
@@ -59,6 +61,7 @@ if (Test-Path $_cfgIni) {
         }
     }
 }
+Write-Host "[DBG] savedChannel: $savedChannel"
 $arch    = $env:PROCESSOR_ARCHITECTURE          # AMD64 or ARM64
 $pyArch  = if ($arch -eq "ARM64") { "arm64" } else { "amd64" }
 $vcArch  = if ($arch -eq "ARM64") { "arm64" } else { "x64" }
@@ -73,9 +76,11 @@ $VC_URL  = "https://aka.ms/vs/17/release/vc_redist.$vcArch.exe"
 # ---------------------------------------------------------------------------
 $resolvedVersion = ""
 $resolvedWhlUrl  = ""
+Write-Host "[DBG] installVersion: '$installVersion'"
 if ($installVersion) {
     $resolvedVersion = $installVersion -replace "^v", ""
     $resolvedWhlUrl  = "https://codeberg.org/pitbo/pdf-qes-signer/releases/download/$installVersion/pdf_qes_signer-$resolvedVersion-py3-none-any.whl"
+    Write-Host "[DBG] resolvedVersion (from --installversion): $resolvedVersion"
 } else {
     try {
         if ($savedChannel -eq "develop") {
@@ -91,7 +96,10 @@ if ($installVersion) {
                 $resolvedWhlUrl  = $whl.browser_download_url
             }
         }
-    } catch { }  # fallback: $resolvedVersion stays "" → dialogs show generic text
+        Write-Host "[DBG] resolvedVersion (from API): '$resolvedVersion'"
+    } catch {
+        Write-Host "[DBG] API call failed: $_"
+    }  # fallback: $resolvedVersion stays "" → dialogs show generic text
 }
 
 # ---------------------------------------------------------------------------
@@ -267,6 +275,7 @@ function Show-UpdateDialog {
     # before this dialog is shown, either from --installversion or from the API call).
     $isDowngrade   = $false
     $targetVersion = $resolvedVersion   # "" if API call failed
+    Write-Host "[DBG] Show-UpdateDialog: installedVersion='$installedVersion' targetVersion='$targetVersion'"
     if ($targetVersion -and $installedVersion -ne "unknown") {
         $pyCompare = @'
 import sys
@@ -277,7 +286,10 @@ except Exception:
     print("unknown")
 '@
         $cmp = & $venvPy -c $pyCompare $installedVersion $targetVersion 2>$null
+        Write-Host "[DBG] version compare result: '$cmp'  isDowngrade=$($cmp -eq 'gt')"
         $isDowngrade = ($cmp -eq 'gt')
+    } else {
+        Write-Host "[DBG] skipping compare: targetVersion empty or installedVersion unknown"
     }
 
     $dialogTitle = if ($isDowngrade) { "PDF QES Signer – Downgrade Warning" } else { "PDF QES Signer – Update" }
