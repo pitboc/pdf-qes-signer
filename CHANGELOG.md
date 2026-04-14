@@ -5,7 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased] – 0.3.4.dev0
+## [Unreleased] – 0.3.4.dev1
+
+---
+
+## [0.3.4.dev0] – 2026-04-14
 
 ### Added
 - Multilingual interface: French, Spanish, Italian, Dutch, Polish, Portuguese
