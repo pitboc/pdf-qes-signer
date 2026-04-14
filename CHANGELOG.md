@@ -16,6 +16,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Signature fields can no longer be drawn partially outside the page;
   coordinates are clamped to the page boundary using unrotated (mediabox)
   dimensions, which correctly handles all page rotations (0°/90°/180°/270°)
+- Windows installer: downgrade is now detected and confirmed before
+  installation proceeds (was always shown as "Update"); default answer is No
 - Windows installer: `settings.ini` is now written without BOM
   (`UTF8NoBOM`); previously the BOM caused a startup crash
   (`MissingSectionHeaderError`) when running on Windows

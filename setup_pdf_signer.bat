@@ -788,6 +788,36 @@ function Start-Install {
             }
         }
 
+        # --- Downgrade check (upgrade path only) ---
+        if ($isUpgrade) {
+            $installedVer = & $VENV_PYTHON -c "import importlib.metadata; print(importlib.metadata.version('pdf-qes-signer'))" 2>$null
+            if ($installedVer) {
+                $pyCompare = @'
+import sys
+try:
+    from packaging.version import Version as V
+    print("gt" if V(sys.argv[1]) > V(sys.argv[2]) else "le")
+except Exception:
+    print("unknown")
+'@
+                $cmp = & $VENV_PYTHON -c $pyCompare $installedVer $version 2>$null
+                if ($cmp -eq 'gt') {
+                    Write-Log "Downgrade detected: $installedVer -> $version"
+                    $ans = [System.Windows.Forms.MessageBox]::Show(
+                        "Downgrade detected!`n`n  Installed : $installedVer`n  Target    : $version`n`nDo you want to continue with the downgrade?",
+                        "PDF QES Signer – Downgrade Warning",
+                        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+                        [System.Windows.Forms.MessageBoxIcon]::Warning,
+                        [System.Windows.Forms.MessageBoxDefaultButton]::Button2)
+                    if ($ans -ne [System.Windows.Forms.DialogResult]::Yes) {
+                        Write-Log "Downgrade cancelled by user"
+                        $form.Close(); return
+                    }
+                    Write-Log "Downgrade confirmed by user"
+                }
+            }
+        }
+
         Step-Start "$(if ($isUpgrade) { "Updating to $version" } else { "Installing pdf-signer $version" }) ..."
         $lblStatus.Text = "pip is running – this may take a moment ..."
         [System.Windows.Forms.Application]::DoEvents()
