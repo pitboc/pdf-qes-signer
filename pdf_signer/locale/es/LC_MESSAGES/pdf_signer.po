@@ -172,6 +172,18 @@ msgstr "🔍 Verificar firma"
 msgid "tb_save_fields"
 msgstr "💾 Guardar PDF"
 
+msgid "tb_text_mode"
+msgstr "Insertar campo de texto"
+
+msgid "tb2_font_size"
+msgstr "Tamaño de fuente (pt)"
+
+msgid "tb2_char_spacing"
+msgstr "Espaciado de caracteres (pt)"
+
+msgid "tb2_color"
+msgstr "Color del texto"
+
 msgid "panel_fields"
 msgstr "Campos de firma"
 
@@ -336,6 +348,9 @@ msgstr "Eliminar"
 
 msgid "dlg_delete_msg"
 msgstr "¿Eliminar el campo de firma '{name}'?"
+
+msgid "dlg_text_annot_delete_msg"
+msgstr "¿Eliminar la anotación de texto?"
 
 msgid "dlg_delete_sel_msg"
 msgstr "¿Eliminar realmente el campo '{name}'?"

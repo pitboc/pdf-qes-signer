@@ -179,6 +179,18 @@ msgstr "🔍 Signatur prüfen"
 msgid "tb_save_fields"
 msgstr "💾 PDF speichern"
 
+msgid "tb_text_mode"
+msgstr "Textfeld einfügen"
+
+msgid "tb2_font_size"
+msgstr "Schriftgröße (pt)"
+
+msgid "tb2_char_spacing"
+msgstr "Zeichenabstand (pt)"
+
+msgid "tb2_color"
+msgstr "Textfarbe"
+
 msgid "panel_fields"
 msgstr "Signaturfelder"
 
@@ -343,6 +355,9 @@ msgstr "Löschen"
 
 msgid "dlg_delete_msg"
 msgstr "Signaturfeld '{name}' löschen?"
+
+msgid "dlg_text_annot_delete_msg"
+msgstr "Text-Annotation löschen?"
 
 msgid "dlg_delete_sel_msg"
 msgstr "Feld '{name}' wirklich löschen?"

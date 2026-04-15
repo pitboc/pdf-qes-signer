@@ -26,6 +26,8 @@ ICON_PAGE_WIDTH = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">\
 
 ICON_SINGLE_PAGE = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">\n  <rect x="4" y="2" width="8" height="10" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.2"/>\n  <line x1="6" y1="5.5" x2="10" y2="5.5" stroke="currentColor" stroke-width="1"/>\n  <line x1="6" y1="7.5" x2="10" y2="7.5" stroke="currentColor" stroke-width="1"/>\n  <line x1="6" y1="9.5" x2="9" y2="9.5" stroke="currentColor" stroke-width="1"/>\n  <rect x="4" y="13" width="8" height="1.2" rx="0.3" fill="currentColor" opacity="0.25"/>\n</svg>'
 
+ICON_TEXT_MODE = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">\n  <line x1="3" y1="3.5" x2="13" y2="3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>\n  <line x1="8" y1="3.5" x2="8" y2="13.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>\n</svg>'
+
 ICON_TOP = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">\n  <path fill="currentColor" d="M3 7 L8 1 L13 7 Z"/>\n  <path fill="currentColor" d="M3 11 L8 5 L13 11 Z"/>\n</svg>'
 
 ICON_ZOOM_IN = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">\n  <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.2"/>\n  <line x1="5" y1="7" x2="9" y2="7" stroke="currentColor" stroke-width="1.2"/>\n  <line x1="7" y1="5" x2="7" y2="9" stroke="currentColor" stroke-width="1.2"/>\n  <line x1="10.5" y1="10.5" x2="14" y2="14" stroke="currentColor" stroke-width="1.3"/>\n</svg>'
@@ -41,6 +43,7 @@ ICONS: dict[str, str] = {
     'page_height': ICON_PAGE_HEIGHT,
     'page_width': ICON_PAGE_WIDTH,
     'single_page': ICON_SINGLE_PAGE,
+    'text_mode': ICON_TEXT_MODE,
     'top': ICON_TOP,
     'zoom_in': ICON_ZOOM_IN,
     'zoom_out': ICON_ZOOM_OUT,

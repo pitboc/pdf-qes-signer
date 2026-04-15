@@ -179,6 +179,18 @@ msgstr "🔍 Check signatures"
 msgid "tb_save_fields"
 msgstr "💾 Save PDF"
 
+msgid "tb_text_mode"
+msgstr "Insert text field"
+
+msgid "tb2_font_size"
+msgstr "Font size (pt)"
+
+msgid "tb2_char_spacing"
+msgstr "Character spacing (pt)"
+
+msgid "tb2_color"
+msgstr "Text color"
+
 msgid "panel_fields"
 msgstr "Signature Fields"
 
@@ -343,6 +355,9 @@ msgstr "Delete"
 
 msgid "dlg_delete_msg"
 msgstr "Delete signature field '{name}'?"
+
+msgid "dlg_text_annot_delete_msg"
+msgstr "Delete text annotation?"
 
 msgid "dlg_delete_sel_msg"
 msgstr "Really delete field '{name}'?"

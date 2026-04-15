@@ -172,6 +172,18 @@ msgstr "🔍 Handtekening controleren"
 msgid "tb_save_fields"
 msgstr "💾 PDF opslaan"
 
+msgid "tb_text_mode"
+msgstr "Tekstveld invoegen"
+
+msgid "tb2_font_size"
+msgstr "Lettergrootte (pt)"
+
+msgid "tb2_char_spacing"
+msgstr "Tekenafstand (pt)"
+
+msgid "tb2_color"
+msgstr "Tekstkleur"
+
 msgid "panel_fields"
 msgstr "Handtekeningvelden"
 
@@ -336,6 +348,9 @@ msgstr "Verwijderen"
 
 msgid "dlg_delete_msg"
 msgstr "Handtekeningveld '{name}' verwijderen?"
+
+msgid "dlg_text_annot_delete_msg"
+msgstr "Tekstannotatie verwijderen?"
 
 msgid "dlg_delete_sel_msg"
 msgstr "Veld '{name}' echt verwijderen?"

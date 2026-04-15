@@ -179,6 +179,18 @@ msgstr "🔍 Verificar assinaturas"
 msgid "tb_save_fields"
 msgstr "💾 Guardar PDF"
 
+msgid "tb_text_mode"
+msgstr "Inserir campo de texto"
+
+msgid "tb2_font_size"
+msgstr "Tamanho da fonte (pt)"
+
+msgid "tb2_char_spacing"
+msgstr "Espaçamento de caracteres (pt)"
+
+msgid "tb2_color"
+msgstr "Cor do texto"
+
 msgid "panel_fields"
 msgstr "Campos de assinatura"
 
@@ -343,6 +355,9 @@ msgstr "Eliminar"
 
 msgid "dlg_delete_msg"
 msgstr "Eliminar campo de assinatura '{name}'?"
+
+msgid "dlg_text_annot_delete_msg"
+msgstr "Eliminar anotação de texto?"
 
 msgid "dlg_delete_sel_msg"
 msgstr "Eliminar mesmo o campo '{name}'?"

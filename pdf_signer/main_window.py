@@ -64,13 +64,14 @@ from pdf_signer.icons import (
     ICON_SINGLE_PAGE, ICON_MULTI_PAGE,
     ICON_ZOOM_IN, ICON_ZOOM_OUT,
     ICON_PAGE_WIDTH, ICON_PAGE_HEIGHT,
+    ICON_TEXT_MODE,
 )
-from PyQt6.QtGui import QAction, QFont, QKeySequence
+from PyQt6.QtGui import QAction, QColor, QFont, QKeySequence
 from PyQt6.QtWidgets import (
-    QApplication, QFileDialog, QFormLayout, QGroupBox,
-    QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow,
-    QMessageBox, QPushButton, QScrollArea, QSizePolicy, QStackedWidget,
-    QSplitter, QVBoxLayout, QWidget, QCheckBox,
+    QApplication, QColorDialog, QComboBox, QDoubleSpinBox, QFileDialog,
+    QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QMainWindow, QMessageBox, QPushButton, QScrollArea, QSizePolicy,
+    QStackedWidget, QSplitter, QVBoxLayout, QWidget, QCheckBox,
 )
 
 from .config import AppConfig
@@ -79,13 +80,62 @@ from .signer import (
     SaveFieldsWorker, SignWorker,
     _pyhanko_available, _pkcs11_available,
 )
-from .pdf_view import PDFViewWidget, SignatureFieldDef
+from .pdf_view import PDFViewWidget, SignatureFieldDef, TextAnnotDef, TextAnnotOverlay
 from .dialogs import (Pkcs11ConfigDialog, ProfileManagerDialog,
                        ProfileSelectDialog, _pfx_load_cert_info,
                        DocMDPDialog)
 from .i18n import t, i18n
 from .appearance_panel import AppearancePanel
 from .continuous_view import ContinuousView, _adjust_hscroll
+
+
+class _PlaceStepper(QDoubleSpinBox):
+    """QDoubleSpinBox that steps by the place value of the digit left of
+    the cursor.
+
+    Pressing ↑/↓ (or the spin arrows) increments / decrements the digit
+    immediately to the left of the text cursor by 1.  Examples::
+
+        "12.5|"  →  cursor after "5"  (tenths)  → step 0.1
+        "12.|5"  →  cursor after "."             → fallback to singleStep
+        "1|2.5"  →  cursor after "1"  (tens)     → step 10
+        "12|.5"  →  cursor after "2"  (ones)     → step 1
+    """
+
+    def stepBy(self, steps: int) -> None:
+        le  = self.lineEdit()
+        pos = le.cursorPosition()
+        txt = le.text()
+
+        # Strip suffix so we work with the numeric part only
+        sfx = self.suffix()
+        if sfx and txt.endswith(sfx):
+            txt = txt[: -len(sfx)]
+        pos = min(pos, len(txt))
+
+        # Only use positional stepping when a digit is directly left of cursor
+        if pos == 0 or not txt[pos - 1].isdigit():
+            super().stepBy(steps)
+            return
+
+        dec     = self.locale().decimalPoint()   # "." or "," depending on locale
+        dec_idx = txt.find(dec)
+
+        if dec_idx == -1:
+            # No decimal separator – integer-only display
+            place = 10 ** (len(txt) - pos)
+        elif pos - 1 < dec_idx:
+            # Digit is left of the decimal point
+            place = 10 ** (dec_idx - pos)
+        else:
+            # Digit is right of the decimal point
+            # First decimal digit (pos-1 == dec_idx+1) → n_after=1 → 10^-1=0.1
+            n_after = (pos - 1) - dec_idx
+            place   = 10.0 ** (-n_after)
+
+        self.setValue(self.value() + steps * place)
+        # Restore cursor (text length may have changed by ±1 character)
+        le.setCursorPosition(min(pos, len(le.text()) - len(sfx)))
 
 
 class PDFSignerApp(QMainWindow):
@@ -119,6 +169,10 @@ class PDFSignerApp(QMainWindow):
         self.sig_fields:    list[SignatureFieldDef] = []  # free unsigned (editable)
         self.locked_fields: list[SignatureFieldDef] = []  # unsigned but frozen by existing sig
         self.signed_fields: list[SignatureFieldDef] = []  # already signed (display only)
+        # Text-Annotationen: editierbar bis zur ersten Signatur; beim Signieren eingebrannt
+        self.text_annots:    list[TextAnnotDef]       = []
+        # Aktuell fokussierte Text-Overlay-Box (für Toolbar-Kopplung)
+        self._focused_overlay: Optional[TextAnnotOverlay] = None
         # Worker-Referenzen halten damit GC sie nicht vorzeitig zerstört
         self._worker      = None
         self._sign_worker = None
@@ -271,6 +325,14 @@ class PDFSignerApp(QMainWindow):
         self._tb_fit_height.triggered.connect(self._on_zoom_fit_height)
         tb.addAction(self._tb_fit_height)
         tb.addSeparator()
+        # Textfeld-Modus: Toggle-Button öffnet zweite Toolbar
+        self._tb_text_mode = QAction(self)
+        self._tb_text_mode.setIcon(svg_to_icon(ICON_TEXT_MODE))
+        self._tb_text_mode.setCheckable(True)
+        self._tb_text_mode.setChecked(False)
+        self._tb_text_mode.triggered.connect(self._toggle_text_mode)
+        tb.addAction(self._tb_text_mode)
+        tb.addSeparator()
         # Signieren und Felder speichern als Toolbar-Schnellzugriff
         self._tb_sign = QAction(self)
         self._tb_sign.triggered.connect(self.sign_document)
@@ -281,6 +343,51 @@ class PDFSignerApp(QMainWindow):
         self._tb_save_fields = QAction(self)
         self._tb_save_fields.triggered.connect(self.save_with_fields)
         tb.addAction(self._tb_save_fields)
+
+        # Zweite Toolbar: Textfeld-Steuerelemente (nur sichtbar im Textfeld-Modus)
+        self._text_tb = self.addToolBar("text")
+        self._text_tb.setMovable(False)
+        self._text_tb.setVisible(False)
+        # Font-Auswahl
+        self._text_tb.addWidget(QLabel(" A "))
+        self._tb2_font = QComboBox()
+        self._tb2_font.addItems(["Helvetica", "Times", "Courier"])
+        self._tb2_font.setFixedWidth(110)
+        self._text_tb.addWidget(self._tb2_font)
+        self._text_tb.addSeparator()
+        # Schriftgröße
+        self._text_tb.addWidget(QLabel(" A↕ "))
+        self._tb2_font_size = _PlaceStepper()
+        self._tb2_font_size.setRange(6.0, 72.0)
+        self._tb2_font_size.setSingleStep(1.0)
+        self._tb2_font_size.setDecimals(1)
+        self._tb2_font_size.setValue(10.0)
+        self._tb2_font_size.setSuffix(" pt")
+        self._tb2_font_size.setFixedWidth(80)
+        self._text_tb.addWidget(self._tb2_font_size)
+        self._text_tb.addSeparator()
+        # Zeichenabstand
+        self._text_tb.addWidget(QLabel(" A↔ "))
+        self._tb2_char_spacing = _PlaceStepper()
+        self._tb2_char_spacing.setRange(0.0, 50.0)
+        self._tb2_char_spacing.setSingleStep(0.1)
+        self._tb2_char_spacing.setDecimals(2)
+        self._tb2_char_spacing.setValue(0.0)
+        self._tb2_char_spacing.setSuffix(" pt")
+        self._tb2_char_spacing.setFixedWidth(85)
+        self._text_tb.addWidget(self._tb2_char_spacing)
+        self._text_tb.addSeparator()
+        # Textfarbe
+        self._tb2_color = QColor(0, 0, 0)
+        self._tb2_color_btn = QPushButton()
+        self._tb2_color_btn.setFixedSize(24, 24)
+        self._tb2_color_btn.clicked.connect(self._pick_text_color)
+        self._text_tb.addWidget(self._tb2_color_btn)
+        self._update_text_color_btn()
+        # Toolbar-Änderungen → auf fokussierte Box anwenden
+        self._tb2_font.currentIndexChanged.connect(self._on_text_prop_changed)
+        self._tb2_font_size.valueChanged.connect(self._on_text_prop_changed)
+        self._tb2_char_spacing.valueChanged.connect(self._on_text_prop_changed)
 
         # Central widget: warning banner (hidden by default) + main splitter
         _central = QWidget()
@@ -325,6 +432,8 @@ class PDFSignerApp(QMainWindow):
         self._pdf_view.pan_started.connect(self._on_pan_started_single)
         self._pdf_view.pan_requested.connect(self._on_pan_single)
         self._pdf_view.hscroll_requested.connect(self._on_hscroll_single)
+        self._pdf_view.text_annot_placed.connect(self._on_text_annot_placed)
+        self._pdf_view.text_annot_deleted.connect(self._on_text_annot_deleted)
         self._outer_layout.addWidget(self._pdf_view)
         self._scroll_area.setWidget(self._outer_container)
         self._scroll_area.setWidgetResizable(False)
@@ -471,6 +580,10 @@ class PDFSignerApp(QMainWindow):
         self._tb_zoom_in.setToolTip(t("tb_zoom_in"))
         self._tb_fit_width.setToolTip(t("tb_fit_width"))
         self._tb_fit_height.setToolTip(t("tb_fit_height"))
+        self._tb_text_mode.setToolTip(t("tb_text_mode"))
+        self._tb2_font_size.setToolTip(t("tb2_font_size"))
+        self._tb2_char_spacing.setToolTip(t("tb2_char_spacing"))
+        self._tb2_color_btn.setToolTip(t("tb2_color"))
         self._fields_group.setTitle(t("panel_fields"))
         self._btn_delete.setText(t("btn_delete_field"))
         self._update_token_panel_for_mode()
@@ -839,6 +952,129 @@ class PDFSignerApp(QMainWindow):
             hval = dst_max // 2
         dst_hbar.setValue(max(0, min(hval, dst_max)))
 
+    def _toggle_text_mode(self, checked: bool) -> None:
+        """Show/hide the text-annotation toolbar and switch the canvas mode."""
+        self._text_tb.setVisible(checked)
+        self._pdf_view.text_mode = checked
+        if not checked:
+            # Deselect rule 2: text mode turned off.
+            # Empty overlays are deleted silently; non-empty lose keyboard focus.
+            for ov in list(self._pdf_view._text_overlays):
+                if not ov.annot.text.strip():
+                    self._pdf_view.delete_overlay_silent(ov)
+                else:
+                    ov._edit.clearFocus()
+            self._focused_overlay = None
+
+    def _on_text_annot_placed(self, page: int, x: float, y: float) -> None:
+        """Create a TextAnnotDef from toolbar settings and add an overlay."""
+        _font_map = {"Helvetica": "helv", "Times": "tiro", "Courier": "cour"}
+        ann = TextAnnotDef(
+            page=page,
+            x=x,
+            y=y,
+            font_size=self._tb2_font_size.value(),
+            font_name=_font_map.get(self._tb2_font.currentText(), "helv"),
+            color=(
+                self._tb2_color.redF(),
+                self._tb2_color.greenF(),
+                self._tb2_color.blueF(),
+            ),
+            char_spacing=self._tb2_char_spacing.value(),
+        )
+        self.text_annots.append(ann)
+        ov = self._pdf_view.add_text_overlay(ann)
+        # Connect BEFORE setFocus so the FocusIn event finds the signal wired up
+        # and _focused_overlay is correctly assigned to this new overlay.
+        ov.focused.connect(self._on_text_overlay_focused)
+        ov._edit.setFocus()
+
+    def _on_text_annot_deleted(self, ann: TextAnnotDef) -> None:
+        """Remove *ann* from the list when its overlay is deleted by the user."""
+        if ann in self.text_annots:
+            self.text_annots.remove(ann)
+        if self._focused_overlay and self._focused_overlay.annot is ann:
+            self._focused_overlay = None
+
+    def _on_text_overlay_focused(self, ov: TextAnnotOverlay) -> None:
+        """Update toolbar to reflect the settings of the focused overlay."""
+        # Deselect rule 1: another box is focused.
+        # Silently delete the previously focused overlay if it is empty.
+        old = self._focused_overlay
+        if old is not None and old is not ov and not old.annot.text.strip():
+            self._pdf_view.delete_overlay_silent(old)
+
+        self._focused_overlay = ov
+        # Auto-enable text mode when an overlay receives focus so that
+        # the toolbar is visible even if the user clicked without enabling it.
+        if not self._tb_text_mode.isChecked():
+            self._tb_text_mode.setChecked(True)
+            self._text_tb.setVisible(True)
+            self._pdf_view.text_mode = True
+        ann = ov.annot
+        _name_map = {"helv": "Helvetica", "tiro": "Times", "cour": "Courier"}
+        # Block signals to avoid triggering _on_text_prop_changed while updating
+        for w in (self._tb2_font, self._tb2_font_size, self._tb2_char_spacing):
+            w.blockSignals(True)
+        self._tb2_font.setCurrentText(_name_map.get(ann.font_name, "Helvetica"))
+        self._tb2_font_size.setValue(ann.font_size)
+        self._tb2_char_spacing.setValue(ann.char_spacing)
+        self._tb2_color = QColor(
+            int(ann.color[0] * 255),
+            int(ann.color[1] * 255),
+            int(ann.color[2] * 255),
+        )
+        self._update_text_color_btn()
+        for w in (self._tb2_font, self._tb2_font_size, self._tb2_char_spacing):
+            w.blockSignals(False)
+
+    def _on_text_prop_changed(self) -> None:
+        """Apply current toolbar values to the focused overlay (if any).
+
+        Prefers the overlay whose ``_is_focused`` flag is True (set by the
+        FocusIn event filter) over the cached ``_focused_overlay`` reference.
+        This handles the case where the toolbar widget took Qt focus from the
+        overlay but the overlay is still the intended edit target.
+        """
+        # Primary: overlay that currently shows the active-focus border
+        target = next(
+            (ov for ov in self._pdf_view._text_overlays if ov._is_focused),
+            self._focused_overlay,
+        )
+        if not target:
+            return
+        self._focused_overlay = target   # keep in sync
+        _font_map = {"Helvetica": "helv", "Times": "tiro", "Courier": "cour"}
+        ann = target.annot
+        ann.font_name    = _font_map.get(self._tb2_font.currentText(), "helv")
+        ann.font_size    = self._tb2_font_size.value()
+        ann.char_spacing = self._tb2_char_spacing.value()
+        ann.color = (
+            self._tb2_color.redF(),
+            self._tb2_color.greenF(),
+            self._tb2_color.blueF(),
+        )
+        target._apply_style()
+        target._relayout()
+        # Re-anchor: widget top = baseline_y - new_font_px, so the text
+        # baseline stays at the original click position regardless of font size.
+        self._pdf_view._position_overlay(target, update_style=False)
+
+    def _pick_text_color(self) -> None:
+        """Open color dialog and update text color button."""
+        color = QColorDialog.getColor(self._tb2_color, self, t("tb2_color"))
+        if color.isValid():
+            self._tb2_color = color
+            self._update_text_color_btn()
+            self._on_text_prop_changed()  # apply to focused overlay
+
+    def _update_text_color_btn(self) -> None:
+        """Refresh the color swatch on the text-color button."""
+        c = self._tb2_color
+        self._tb2_color_btn.setStyleSheet(
+            f"background-color: rgb({c.red()},{c.green()},{c.blue()});"
+            " border: 1px solid #888;")
+
     def _toggle_view_mode(self) -> None:
         """Switch between single-page and continuous scroll view."""
         self._continuous_mode = self._tb_view_toggle.isChecked()
@@ -1089,6 +1325,8 @@ class PDFSignerApp(QMainWindow):
         self.sig_fields.clear()
         self.locked_fields.clear()
         self.signed_fields.clear()
+        self.text_annots.clear()
+        self._pdf_view.clear_text_overlays()
 
         # First pass: collect all signature widgets
         # all_unsigned: Sammlung aller noch nicht signierten Widget-Felder mit ihrem xref.

@@ -172,6 +172,18 @@ msgstr "🔍 Vérifier la signature"
 msgid "tb_save_fields"
 msgstr "💾 Enregistrer le PDF"
 
+msgid "tb_text_mode"
+msgstr "Insérer un champ de texte"
+
+msgid "tb2_font_size"
+msgstr "Taille de police (pt)"
+
+msgid "tb2_char_spacing"
+msgstr "Espacement des caractères (pt)"
+
+msgid "tb2_color"
+msgstr "Couleur du texte"
+
 msgid "panel_fields"
 msgstr "Champs de signature"
 
@@ -336,6 +348,9 @@ msgstr "Supprimer"
 
 msgid "dlg_delete_msg"
 msgstr "Supprimer le champ de signature '{name}' ?"
+
+msgid "dlg_text_annot_delete_msg"
+msgstr "Supprimer l'annotation de texte ?"
 
 msgid "dlg_delete_sel_msg"
 msgstr "Vraiment supprimer le champ '{name}' ?"

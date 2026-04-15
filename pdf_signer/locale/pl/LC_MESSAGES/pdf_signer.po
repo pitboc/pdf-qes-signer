@@ -179,6 +179,18 @@ msgstr "🔍 Sprawdź podpisy"
 msgid "tb_save_fields"
 msgstr "💾 Zapisz PDF"
 
+msgid "tb_text_mode"
+msgstr "Wstaw pole tekstowe"
+
+msgid "tb2_font_size"
+msgstr "Rozmiar czcionki (pt)"
+
+msgid "tb2_char_spacing"
+msgstr "Odstęp między znakami (pt)"
+
+msgid "tb2_color"
+msgstr "Kolor tekstu"
+
 msgid "panel_fields"
 msgstr "Pola podpisu"
 
@@ -343,6 +355,9 @@ msgstr "Usuń"
 
 msgid "dlg_delete_msg"
 msgstr "Usunąć pole podpisu '{name}'?"
+
+msgid "dlg_text_annot_delete_msg"
+msgstr "Usunąć adnotację tekstową?"
 
 msgid "dlg_delete_sel_msg"
 msgstr "Naprawdę usunąć pole '{name}'?"
