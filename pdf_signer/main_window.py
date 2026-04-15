@@ -89,6 +89,40 @@ from .appearance_panel import AppearancePanel
 from .continuous_view import ContinuousView, _adjust_hscroll
 
 
+def _parse_da_string(da: str) -> tuple:
+    """Parse a PDF /DA (Default Appearance) string into (font_name, font_size, color).
+
+    Expected format (as written by pyMuPDF):  ``"R G B rg /FontAlias Size Tf"``
+    Falls back to safe defaults when a token cannot be parsed.
+
+    Returns:
+        font_name  – internal PDF font alias  (``"helv"`` / ``"tiro"`` / ``"cour"``)
+        font_size  – size in points           (float, minimum 6.0)
+        color      – RGB tuple of floats 0–1  (default black)
+    """
+    # Mapping from pyMuPDF alias in DA (capitalized) to our internal names
+    _alias_map = {"/Helv": "helv", "/TiRo": "tiro", "/Cour": "cour"}
+    font_name = "helv"
+    font_size = 10.0
+    color     = (0.0, 0.0, 0.0)
+    try:
+        # Color: "R G B rg"
+        m_color = re.search(
+            r'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+rg', da)
+        if m_color:
+            color = (float(m_color.group(1)),
+                     float(m_color.group(2)),
+                     float(m_color.group(3)))
+        # Font + size: "/Alias size Tf"
+        m_font = re.search(r'(/\w+)\s+([\d.]+)\s+Tf', da)
+        if m_font:
+            font_name = _alias_map.get(m_font.group(1), "helv")
+            font_size = max(6.0, float(m_font.group(2)))
+    except Exception:
+        pass
+    return font_name, font_size, color
+
+
 class _PlaceStepper(QDoubleSpinBox):
     """QDoubleSpinBox that steps by the place value of the digit left of
     the cursor.
@@ -173,6 +207,10 @@ class PDFSignerApp(QMainWindow):
         self.text_annots:    list[TextAnnotDef]       = []
         # Aktuell fokussierte Text-Overlay-Box (für Toolbar-Kopplung)
         self._focused_overlay: Optional[TextAnnotOverlay] = None
+        # Ungespeicherte Änderungen: True wenn sig_fields oder text_annots verändert wurden
+        self._has_unsaved_changes: bool = False
+        # Schließen ausstehend (nach async Save abschließen)
+        self._pending_close: bool = False
         # Worker-Referenzen halten damit GC sie nicht vorzeitig zerstört
         self._worker      = None
         self._sign_worker = None
@@ -274,6 +312,9 @@ class PDFSignerApp(QMainWindow):
         self._tb_open = QAction(self)
         self._tb_open.triggered.connect(self.open_pdf)
         tb.addAction(self._tb_open)
+        self._tb_save_fields = QAction(self)
+        self._tb_save_fields.triggered.connect(self.save_with_fields)
+        tb.addAction(self._tb_save_fields)
         tb.addSeparator()
         # Seitennavigation: vorherige/nächste Seite
         self._tb_prev = QAction(self)
@@ -340,9 +381,6 @@ class PDFSignerApp(QMainWindow):
         self._tb_check_sigs = QAction(self)
         self._tb_check_sigs.triggered.connect(self.check_signatures)
         tb.addAction(self._tb_check_sigs)
-        self._tb_save_fields = QAction(self)
-        self._tb_save_fields.triggered.connect(self.save_with_fields)
-        tb.addAction(self._tb_save_fields)
 
         # Zweite Toolbar: Textfeld-Steuerelemente (nur sichtbar im Textfeld-Modus)
         self._text_tb = self.addToolBar("text")
@@ -351,7 +389,7 @@ class PDFSignerApp(QMainWindow):
         # Font-Auswahl
         self._text_tb.addWidget(QLabel(" A "))
         self._tb2_font = QComboBox()
-        self._tb2_font.addItems(["Helvetica", "Times", "Courier"])
+        self._tb2_font.addItems(["Helvetica", "Times", "Courier (monospaced)"])
         self._tb2_font.setFixedWidth(110)
         self._text_tb.addWidget(self._tb2_font)
         self._text_tb.addSeparator()
@@ -968,7 +1006,7 @@ class PDFSignerApp(QMainWindow):
 
     def _on_text_annot_placed(self, page: int, x: float, y: float) -> None:
         """Create a TextAnnotDef from toolbar settings and add an overlay."""
-        _font_map = {"Helvetica": "helv", "Times": "tiro", "Courier": "cour"}
+        _font_map = {"Helvetica": "helv", "Times": "tiro", "Courier (monospaced)": "cour"}
         ann = TextAnnotDef(
             page=page,
             x=x,
@@ -983,6 +1021,7 @@ class PDFSignerApp(QMainWindow):
             char_spacing=self._tb2_char_spacing.value(),
         )
         self.text_annots.append(ann)
+        self._has_unsaved_changes = True
         ov = self._pdf_view.add_text_overlay(ann)
         # Connect BEFORE setFocus so the FocusIn event finds the signal wired up
         # and _focused_overlay is correctly assigned to this new overlay.
@@ -993,6 +1032,7 @@ class PDFSignerApp(QMainWindow):
         """Remove *ann* from the list when its overlay is deleted by the user."""
         if ann in self.text_annots:
             self.text_annots.remove(ann)
+            self._has_unsaved_changes = True
         if self._focused_overlay and self._focused_overlay.annot is ann:
             self._focused_overlay = None
 
@@ -1012,7 +1052,7 @@ class PDFSignerApp(QMainWindow):
             self._text_tb.setVisible(True)
             self._pdf_view.text_mode = True
         ann = ov.annot
-        _name_map = {"helv": "Helvetica", "tiro": "Times", "cour": "Courier"}
+        _name_map = {"helv": "Helvetica", "tiro": "Times", "cour": "Courier (monospaced)"}
         # Block signals to avoid triggering _on_text_prop_changed while updating
         for w in (self._tb2_font, self._tb2_font_size, self._tb2_char_spacing):
             w.blockSignals(True)
@@ -1044,7 +1084,7 @@ class PDFSignerApp(QMainWindow):
         if not target:
             return
         self._focused_overlay = target   # keep in sync
-        _font_map = {"Helvetica": "helv", "Times": "tiro", "Courier": "cour"}
+        _font_map = {"Helvetica": "helv", "Times": "tiro", "Courier (monospaced)": "cour"}
         ann = target.annot
         ann.font_name    = _font_map.get(self._tb2_font.currentText(), "helv")
         ann.font_size    = self._tb2_font_size.value()
@@ -1183,6 +1223,7 @@ class PDFSignerApp(QMainWindow):
         # das neue Feld als aktive Auswahl setzen.
         # Das neue Feld ist immer das letzte in sig_fields → Zeile len(sig_fields).
         # (Nicht count()-1, da locked/signed-Felder danach in der Liste stehen.)
+        self._has_unsaved_changes = True
         self._update_field_list()
         self._field_list.setCurrentRow(len(self.sig_fields))
         # currentRowChanged fires above and calls _on_field_selection_changed
@@ -1192,6 +1233,7 @@ class PDFSignerApp(QMainWindow):
     def _on_field_deleted(self, fdef: SignatureFieldDef) -> None:
         # Feld wurde per Tastatur oder Kontextmenü im Canvas gelöscht →
         # Feldliste aktualisieren und Status-Meldung anzeigen
+        self._has_unsaved_changes = True
         self._update_field_list()
         self._set_status(t("status_field_deleted", name=fdef.name))
 
@@ -1215,6 +1257,10 @@ class PDFSignerApp(QMainWindow):
             self.current_page = 0
             # Bestehende Signaturfelder klassifizieren und _working_bytes setzen
             self._load_existing_fields(doc)
+            # Geladene Text-Annotationen als Overlays aufbauen (ohne Focus)
+            for _ann in self.text_annots:
+                _ov = self._pdf_view.add_text_overlay(_ann)
+                _ov.focused.connect(self._on_text_overlay_focused)
             self._update_field_list()
             # Beim Öffnen immer das letzte unsigned freie Feld selektieren
             # (unabhängig von der Auswahl im vorherigen Dokument).
@@ -1227,6 +1273,7 @@ class PDFSignerApp(QMainWindow):
                 self._field_list.setCurrentRow(n_sig + n_locked)  # letztes locked_field
             else:
                 self._field_list.setCurrentRow(0)              # unsichtbar / keine Felder
+            self._has_unsaved_changes = False
             self._render_current_page()
             self.setWindowTitle(f"PDF QES Signer – {os.path.basename(path)}")
             self._set_status(t("status_opened", path=path, pages=len(doc)))
@@ -1458,6 +1505,35 @@ class PDFSignerApp(QMainWindow):
                     if widget.xref in strip_set:
                         page.delete_widget(widget)
 
+        # ── Schritt: eigene Text-Annotationen laden und aus fitz-Doc entfernen ───
+        # FreeText-Annotationen mit /Subj "QESTextAnnot" werden als TextAnnotDef
+        # rekonstruiert und aus dem in-memory fitz-Dokument entfernt, damit fitz
+        # keine statischen Annotationen über den Overlays rendert.
+        text_annots_stripped = False
+        for _page_num in range(len(doc)):
+            _page = doc[_page_num]
+            for _annot in list(_page.annots(types=[fitz.PDF_ANNOT_FREE_TEXT])):
+                if _annot.info.get("subject") != "QESTextAnnot":
+                    continue
+                _xref  = _annot.xref
+                _bx    = doc.xref_get_key(_xref, "QESBaselineX")
+                _by    = doc.xref_get_key(_xref, "QESBaselineY")
+                _cs    = doc.xref_get_key(_xref, "QESCharSpacing")
+                _da    = doc.xref_get_key(_xref, "DA")
+                _bx_v  = float(_bx[1])  if _bx[0]  in ("int", "float") else 0.0
+                _by_v  = float(_by[1])  if _by[0]  in ("int", "float") else 0.0
+                _cs_v  = float(_cs[1])  if _cs[0]  in ("int", "float") else 0.0
+                _da_s  = _da[1]         if _da[0]  == "string"         else ""
+                _fn, _fs, _col = _parse_da_string(_da_s)
+                _text  = _annot.info.get("content", "")
+                ann = TextAnnotDef(
+                    page=_page_num, x=_bx_v, y=_by_v, text=_text,
+                    font_size=_fs, font_name=_fn, color=_col, char_spacing=_cs_v,
+                )
+                self.text_annots.append(ann)
+                _page.delete_annot(_annot)
+                text_annots_stripped = True
+
         # Store working bytes.
         # For signed documents we use the full raw file bytes so that any
         # content added after the last signature (e.g. form values filled by
@@ -1469,7 +1545,16 @@ class PDFSignerApp(QMainWindow):
         # _working_bytes setzen: vollständige Roh-Bytes damit externe
         # Post-Signatur-Inhalte (z.B. Okular-Formularwerte) erhalten bleiben.
         if signed_end > 0:
-            self._working_bytes = _raw  # type: ignore[name-defined]
+            if text_annots_stripped:
+                # Text-Annotationen wurden aus doc entfernt → inkrementell speichern
+                # damit _working_bytes unsere Annotationen nicht mehr enthält
+                # und SaveFieldsWorker sie nicht doppelt einbettet.
+                import io as _io2
+                _out2 = _io2.BytesIO()
+                doc.save(_out2, incremental=True, encryption=fitz.PDF_ENCRYPT_KEEP)
+                self._working_bytes = _out2.getvalue()
+            else:
+                self._working_bytes = _raw  # type: ignore[name-defined]
         else:
             # Keine Signaturen → Bytes aus dem bereinigten fitz-Dokument exportieren
             # (garbage=0, deflate=False: keine Komprimierung, keine Bereinigung
@@ -1534,14 +1619,19 @@ class PDFSignerApp(QMainWindow):
             self._render_current_page()
 
     def save_with_fields(self) -> None:
-        # Vorbedingungen prüfen: Dokument geladen, Felder vorhanden, pyhanko verfügbar
+        # Vorbedingungen prüfen: Dokument geladen, etwas zum Speichern vorhanden
         if not self.pdf_doc:
+            self._pending_close = False
             QMessageBox.warning(self, t("dlg_no_doc"), t("dlg_no_doc_msg"))
             return
-        if not self.sig_fields:
+        has_text = bool([a for a in self.text_annots if a.text.strip()])
+        if not self.sig_fields and not has_text:
+            self._pending_close = False
             QMessageBox.warning(self, t("dlg_no_fields"), t("dlg_no_fields_msg"))
             return
-        if not _pyhanko_available:
+        # sig_fields benötigen pyhanko; text_annots allein brauchen es nicht
+        if self.sig_fields and not _pyhanko_available:
+            self._pending_close = False
             QMessageBox.critical(
                 self, t("dlg_save_error_title"), t("dlg_pyhanko_missing"))
             return
@@ -1553,28 +1643,69 @@ class PDFSignerApp(QMainWindow):
         out, _  = QFileDialog.getSaveFileName(
             self, t("dlg_save_fields_title"), default, t("dlg_pdf_filter"))
         if not out:
+            self._pending_close = False
             return
         self._set_status(t("status_saving_fields"))
         # SaveFieldsWorker im Hintergrund-Thread starten; UI bleibt reaktionsfähig
         self._worker = SaveFieldsWorker(
-            self._working_bytes, out, list(self.sig_fields))
+            self._working_bytes, out,
+            list(self.sig_fields), list(self.text_annots))
         self._worker.finished.connect(self._on_save_done)
         self._worker.error.connect(self._on_save_error)
         self._worker.start()
 
     def _on_save_done(self, path: str) -> None:
         # Erfolgsmeldung in Statusleiste und Dialogfenster anzeigen
+        self._has_unsaved_changes = False
         self._set_status(t("status_saved", path=path))
         QMessageBox.information(
             self, t("dlg_save_success_title"),
             t("dlg_save_success_msg", path=path))
+        if self._pending_close:
+            self._pending_close = False
+            self.close()
 
     def _on_save_error(self, msg: str) -> None:
         # Fehlermeldung in Statusleiste und Fehler-Dialog anzeigen
+        self._pending_close = False
         self._set_status(t("status_save_failed"))
         QMessageBox.critical(
             self, t("dlg_save_error_title"),
             t("dlg_save_error_msg", error=msg))
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        """Fragt bei ungespeicherten Änderungen nach: Abbrechen / Speichern / Beenden.
+
+        "Speichern" wird angeboten wenn sig_fields oder nicht-leere text_annots
+        vorhanden sind.  Für sig_fields wird zusätzlich pyhanko benötigt.
+        """
+        if not self._has_unsaved_changes:
+            event.accept()
+            return
+        has_text = bool([a for a in self.text_annots if a.text.strip()])
+        can_save = (has_text or bool(self.sig_fields)) and (
+            not self.sig_fields or _pyhanko_available
+        )
+        dlg = QMessageBox(self)
+        dlg.setWindowTitle(t("dlg_unsaved_title"))
+        dlg.setText(t("dlg_unsaved_msg"))
+        dlg.setIcon(QMessageBox.Icon.Question)
+        btn_cancel = dlg.addButton(t("dlg_unsaved_cancel"), QMessageBox.ButtonRole.RejectRole)
+        btn_save   = None
+        if can_save:
+            btn_save = dlg.addButton(t("dlg_unsaved_save"), QMessageBox.ButtonRole.AcceptRole)
+        btn_quit   = dlg.addButton(t("dlg_unsaved_quit"),   QMessageBox.ButtonRole.DestructiveRole)
+        dlg.setDefaultButton(btn_cancel)
+        dlg.exec()
+        clicked = dlg.clickedButton()
+        if clicked is btn_quit:
+            event.accept()
+        elif btn_save is not None and clicked is btn_save:
+            event.ignore()
+            self._pending_close = True
+            self.save_with_fields()
+        else:
+            event.ignore()
 
     # ── Config dialogs ────────────────────────────────────────────────────
 
@@ -1767,7 +1898,8 @@ class PDFSignerApp(QMainWindow):
             self.appearance, all_fields=list(self.sig_fields), tsa_url=tsa_url,
             field_name=invis_name, mode=mode, pfx_path=pfx_path,
             embed_validation_info=embed_vi, docmdp=docmdp,
-            chain_complete_via_aia=chain_aia)
+            chain_complete_via_aia=chain_aia,
+            text_annots=list(self.text_annots))
         # finished-Signal: signiertes PDF als neues Arbeitsdokument laden
         self._sign_worker.finished.connect(self._on_sign_done)
         self._sign_worker.error.connect(self._on_sign_error)

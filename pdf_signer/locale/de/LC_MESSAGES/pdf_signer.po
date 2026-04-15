@@ -1837,3 +1837,18 @@ msgstr ""
 "openssl-Ausführung fehlgeschlagen:\n"
 "\n"
 "{error}"
+
+msgid "dlg_unsaved_title"
+msgstr "Ungespeicherte Änderungen"
+
+msgid "dlg_unsaved_msg"
+msgstr "Es gibt ungespeicherte Signaturfelder oder Textannotationen.\nMöchten Sie die Änderungen speichern?"
+
+msgid "dlg_unsaved_cancel"
+msgstr "Abbrechen"
+
+msgid "dlg_unsaved_save"
+msgstr "Speichern"
+
+msgid "dlg_unsaved_quit"
+msgstr "Beenden"

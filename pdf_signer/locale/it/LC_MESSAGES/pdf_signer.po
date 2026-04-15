@@ -1755,3 +1755,18 @@ msgstr ""
 
 msgid "keygen_openssl_failed"
 msgstr "Esecuzione openssl non riuscita:\n\n{error}"
+
+msgid "dlg_unsaved_title"
+msgstr "Modifiche non salvate"
+
+msgid "dlg_unsaved_msg"
+msgstr "Ci sono campi firma o annotazioni di testo non salvati.\nVuoi salvare prima di uscire?"
+
+msgid "dlg_unsaved_cancel"
+msgstr "Annulla"
+
+msgid "dlg_unsaved_save"
+msgstr "Salva"
+
+msgid "dlg_unsaved_quit"
+msgstr "Esci"

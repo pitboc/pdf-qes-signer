@@ -1835,3 +1835,18 @@ msgstr ""
 "Wykonanie openssl nie powiodło się:\n"
 "\n"
 "{error}"
+
+msgid "dlg_unsaved_title"
+msgstr "Niezapisane zmiany"
+
+msgid "dlg_unsaved_msg"
+msgstr "Istnieją niezapisane pola podpisu lub adnotacje tekstowe.\nCzy chcesz zapisać przed wyjściem?"
+
+msgid "dlg_unsaved_cancel"
+msgstr "Anuluj"
+
+msgid "dlg_unsaved_save"
+msgstr "Zapisz"
+
+msgid "dlg_unsaved_quit"
+msgstr "Zakończ"

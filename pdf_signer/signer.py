@@ -306,43 +306,96 @@ def _build_rotated_appearance(app, cert_cn: str, fdef):
 # ── Worker threads ────────────────────────────────────────────────────────────
 
 class SaveFieldsWorker(QThread):
-    """Embed signature field annotations into a PDF copy using pyhanko."""
+    """Embed signature field annotations and text annotations into a PDF copy.
+
+    Signature fields are embedded via pyhanko (incremental revision).
+    Text annotations are embedded as PDF FreeText annotations via pyMuPDF
+    on top of that, using a second in-memory pass.
+
+    Custom PDF keys used for roundtrip fidelity:
+      ``/Subj``          = ``"QESTextAnnot"``  – marker to identify our annotations
+      ``/QESBaselineX``  – exact baseline-left x in PDF points (y-up)
+      ``/QESBaselineY``  – exact baseline-left y in PDF points (y-up)
+      ``/QESCharSpacing`` – character spacing in PDF points (0 = default)
+    """
 
     # finished: Pfad zur erfolgreich geschriebenen Datei
     finished = pyqtSignal(str)
     # error: Fehlermeldung als String
     error    = pyqtSignal(str)
 
-    def __init__(self, pdf_bytes: bytes, out_path: str, sig_fields: list) -> None:
+    def __init__(self, pdf_bytes: bytes, out_path: str,
+                 sig_fields: list, text_annots: list) -> None:
         super().__init__()
         # pdf_bytes: Arbeitskopie des PDFs als In-Memory-Bytes (ohne freie Felder)
-        self.pdf_bytes  = pdf_bytes
+        self.pdf_bytes   = pdf_bytes
         # out_path: Zieldatei-Pfad; der Worker schreibt nur hierhin, nie auf
         # die Quelldatei (kein überschreiben des Originals)
-        self.out_path   = out_path
-        # sig_fields: Liste der freien unsigned SignatureFieldDef-Objekte,
-        # die als Annotationen in die PDF-Datei eingebettet werden sollen
-        self.sig_fields = sig_fields
+        self.out_path    = out_path
+        # sig_fields: Liste der freien unsigned SignatureFieldDef-Objekte
+        self.sig_fields  = sig_fields
+        # text_annots: Liste der TextAnnotDef-Objekte, die als FreeText eingebettet werden
+        self.text_annots = text_annots
 
     def run(self) -> None:
         try:
-            # PDF-Bytes in einen BytesIO-Puffer laden; pyhanko erwartet ein
-            # file-like object, kein bytes-Objekt direkt
-            buf = io.BytesIO(self.pdf_bytes)
-            # IncrementalPdfFileWriter: Änderungen werden als neue Revision
-            # am Ende der Datei angehängt, ohne bestehende Bytes zu verändern
-            writer = IncrementalPdfFileWriter(buf, strict=False)
-            for fdef in self.sig_fields:
-                # SigFieldSpec beschreibt ein Signaturfeld: Name, Seite, Koordinaten
-                spec = SigFieldSpec(
-                    sig_field_name=fdef.name,
-                    on_page=fdef.page,
-                    box=(fdef.x1, fdef.y1, fdef.x2, fdef.y2),
-                )
-                # Signaturfeld als Widget-Annotation in die PDF-Struktur einfügen
-                fields.append_signature_field(writer, spec)
+            current_bytes = self.pdf_bytes
+
+            # ── Phase 1: Signaturfelder via pyhanko einbetten ────────────────
+            if self.sig_fields and _pyhanko_available:
+                buf    = io.BytesIO(current_bytes)
+                writer = IncrementalPdfFileWriter(buf, strict=False)
+                for fdef in self.sig_fields:
+                    spec = SigFieldSpec(
+                        sig_field_name=fdef.name,
+                        on_page=fdef.page,
+                        box=(fdef.x1, fdef.y1, fdef.x2, fdef.y2),
+                    )
+                    fields.append_signature_field(writer, spec)
+                out_buf = io.BytesIO()
+                writer.write(out_buf)
+                current_bytes = out_buf.getvalue()
+
+            # ── Phase 2: Text-Annotationen via pyMuPDF einbetten ─────────────
+            if self.text_annots:
+                import fitz  # lokaler Import – fitz ist immer verfügbar
+                doc = fitz.open(stream=current_bytes, filetype="pdf")
+                for ann in self.text_annots:
+                    if not ann.text.strip():
+                        continue  # leere Annotationen nicht speichern
+                    page      = doc[ann.page]
+                    page_h    = page.rect.height
+                    # Rect: x bleibt, y wird von PDF-Koordinaten (y-up) in fitz (y-down) konvertiert.
+                    # Breite: Schätzung anhand Textlänge + großzügiger Puffer
+                    est_width = max(50.0, len(ann.text) * ann.font_size * 0.65)
+                    rect = fitz.Rect(
+                        ann.x,
+                        page_h - ann.y - ann.font_size * 1.3,
+                        ann.x + est_width,
+                        page_h - ann.y + ann.font_size * 0.3,
+                    )
+                    fz_annot = page.add_freetext_annot(
+                        rect,
+                        ann.text,
+                        fontsize=ann.font_size,
+                        fontname=ann.font_name,
+                        text_color=ann.color,
+                        fill_color=None,
+                        border_color=None,
+                    )
+                    fz_annot.set_info(subject="QESTextAnnot")
+                    # Exakte Baseline-Koordinaten und Zeichenabstand als Custom-Keys
+                    xref = fz_annot.xref
+                    doc.xref_set_key(xref, "QESBaselineX",   repr(float(ann.x)))
+                    doc.xref_set_key(xref, "QESBaselineY",   repr(float(ann.y)))
+                    doc.xref_set_key(xref, "QESCharSpacing", repr(float(ann.char_spacing)))
+                    fz_annot.update()
+                out_buf = io.BytesIO()
+                doc.save(out_buf, garbage=0, deflate=False, incremental=False)
+                current_bytes = out_buf.getvalue()
+
             with open(self.out_path, "wb") as outf:
-                writer.write(outf)
+                outf.write(current_bytes)
             # Erfolg-Signal mit dem Pfad zur geschriebenen Datei senden
             self.finished.emit(self.out_path)
         except Exception as exc:
@@ -385,7 +438,8 @@ class SignWorker(QThread):
                  mode: str = "pkcs11", pfx_path: str = "",
                  embed_validation_info: bool = False,
                  docmdp: str = "none",
-                 chain_complete_via_aia: bool = True) -> None:
+                 chain_complete_via_aia: bool = True,
+                 text_annots: list | None = None) -> None:
         super().__init__()
         # pdf_bytes: Arbeitskopie des PDFs (ohne freie Signaturfelder);
         # Workers re-embedden sig_fields vor dem Signieren
@@ -428,6 +482,8 @@ class SignWorker(QThread):
         # Threading-Event für Root-Cert-Bestätigung: wird vom UI-Thread gesetzt.
         self._root_fetch_event = threading.Event()
         self._root_fetch_ok    = False
+        # text_annots: TextAnnotDef-Objekte die vor dem Signieren eingebrannt werden
+        self.text_annots = text_annots or []
 
     def allow_root_fetch(self) -> None:
         """Call from UI thread: user approved downloading the root cert."""
@@ -708,6 +764,81 @@ class SignWorker(QThread):
             except Exception:
                 pass  # Field already exists – that is fine
 
+    def _burn_in_freetext(self, pdf_bytes: bytes) -> bytes:
+        """Embed text_annots and burn all FreeText annotations into page content.
+
+        Two-phase approach:
+        1. Embed ``self.text_annots`` as FreeText annotations via pyMuPDF
+           (Tc character-spacing injected into /DA before appearance regeneration).
+        2. Render *all* FreeText annotations on every page (ours + foreign) as
+           pixmaps, insert them as page-content images, then delete the annotations.
+
+        Returns the modified PDF bytes.  If there is nothing to do the input
+        bytes are returned unchanged to avoid an unnecessary fitz round-trip.
+        """
+        import fitz as _fitz
+
+        has_our_annots = any(a.text.strip() for a in self.text_annots)
+
+        # Quick check: are there foreign FreeText annotations already in the PDF?
+        _doc_check = _fitz.open(stream=pdf_bytes, filetype="pdf")
+        has_foreign = any(
+            True
+            for _pn in range(len(_doc_check))
+            for _a  in _doc_check[_pn].annots(types=[_fitz.PDF_ANNOT_FREE_TEXT])
+        )
+        _doc_check.close()
+
+        if not has_our_annots and not has_foreign:
+            return pdf_bytes  # nothing to do
+
+        doc = _fitz.open(stream=pdf_bytes, filetype="pdf")
+
+        # ── Phase 1: unsere text_annots als FreeText einbetten ───────────────
+        for ann in self.text_annots:
+            if not ann.text.strip():
+                continue
+            page   = doc[ann.page]
+            page_h = page.rect.height
+            est_w  = max(50.0, len(ann.text) * ann.font_size * 0.65)
+            rect   = _fitz.Rect(
+                ann.x,
+                page_h - ann.y - ann.font_size * 1.3,
+                ann.x + est_w,
+                page_h - ann.y + ann.font_size * 0.3,
+            )
+            fz_annot = page.add_freetext_annot(
+                rect, ann.text,
+                fontsize=ann.font_size, fontname=ann.font_name,
+                text_color=ann.color, fill_color=None, border_color=None,
+            )
+            # Zeichenabstand via Tc-Operator in /DA einbetten damit der
+            # Erscheinungsstrom korrekt gerendert wird
+            if ann.char_spacing > 0.0:
+                xref   = fz_annot.xref
+                da_raw = doc.xref_get_key(xref, "DA")
+                da_str = da_raw[1] if da_raw[0] == "string" else ""
+                doc.xref_set_key(
+                    xref, "DA",
+                    f"({da_str} {ann.char_spacing:.4f} Tc)")
+            fz_annot.update()  # Erscheinungsstrom neu erzeugen
+
+        # ── Phase 2: alle FreeText-Annotationen einbrennen ───────────────────
+        # Rendering-Matrix: 3× Skalierung ≈ 216 dpi (gut für Druck und Anzeige)
+        mat = _fitz.Matrix(3.0, 3.0)
+        for page_num in range(len(doc)):
+            page   = doc[page_num]
+            annots = list(page.annots(types=[_fitz.PDF_ANNOT_FREE_TEXT]))
+            for annot in annots:
+                rect = annot.rect
+                pix  = annot.get_pixmap(matrix=mat, alpha=True)
+                page.insert_image(rect, pixmap=pix)
+                page.delete_annot(annot)
+
+        out = io.BytesIO()
+        doc.save(out, garbage=0, deflate=False)
+        return out.getvalue()
+
     def _make_timestamper(self):
         """Return HTTPTimeStamper if tsa_url is set, else None."""
         if self.tsa_url:
@@ -901,6 +1032,10 @@ class SignWorker(QThread):
     # ── Dispatch ──────────────────────────────────────────────────────────────
 
     def run(self) -> None:
+        # FreeText-Annotationen (unsere + fremde) vor dem Signieren einbrennen.
+        # Das Ergebnis ersetzt self.pdf_bytes damit _embed_fields und _run_*
+        # auf einem sauberen PDF ohne Annotationen arbeiten.
+        self.pdf_bytes = self._burn_in_freetext(self.pdf_bytes)
         if self.mode == "pfx":
             self._run_pfx()
         else:

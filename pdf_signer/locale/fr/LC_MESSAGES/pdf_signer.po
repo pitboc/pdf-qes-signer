@@ -1759,3 +1759,18 @@ msgstr ""
 
 msgid "keygen_openssl_failed"
 msgstr "Échec de l'exécution d'openssl :\n\n{error}"
+
+msgid "dlg_unsaved_title"
+msgstr "Modifications non enregistrées"
+
+msgid "dlg_unsaved_msg"
+msgstr "Des champs de signature ou des annotations de texte ne sont pas enregistrés.\nVoulez-vous enregistrer avant de quitter ?"
+
+msgid "dlg_unsaved_cancel"
+msgstr "Annuler"
+
+msgid "dlg_unsaved_save"
+msgstr "Enregistrer"
+
+msgid "dlg_unsaved_quit"
+msgstr "Quitter"

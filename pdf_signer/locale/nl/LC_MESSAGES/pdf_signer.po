@@ -1756,3 +1756,18 @@ msgstr ""
 
 msgid "keygen_openssl_failed"
 msgstr "openssl-uitvoering mislukt:\n\n{error}"
+
+msgid "dlg_unsaved_title"
+msgstr "Niet-opgeslagen wijzigingen"
+
+msgid "dlg_unsaved_msg"
+msgstr "Er zijn niet-opgeslagen handtekeningvelden of tekstannotaties.\nWilt u opslaan voor het afsluiten?"
+
+msgid "dlg_unsaved_cancel"
+msgstr "Annuleren"
+
+msgid "dlg_unsaved_save"
+msgstr "Opslaan"
+
+msgid "dlg_unsaved_quit"
+msgstr "Afsluiten"

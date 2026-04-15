@@ -1836,3 +1836,18 @@ msgstr ""
 "openssl execution failed:\n"
 "\n"
 "{error}"
+
+msgid "dlg_unsaved_title"
+msgstr "Unsaved Changes"
+
+msgid "dlg_unsaved_msg"
+msgstr "There are unsaved signature fields or text annotations.\nDo you want to save before quitting?"
+
+msgid "dlg_unsaved_cancel"
+msgstr "Cancel"
+
+msgid "dlg_unsaved_save"
+msgstr "Save"
+
+msgid "dlg_unsaved_quit"
+msgstr "Quit"
