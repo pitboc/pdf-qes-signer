@@ -5,7 +5,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased] – 0.3.5.dev0
+## [0.3.5] – 2026-04-16
+
+### Added
+- **Text annotations**: place free-text labels on PDF pages before signing.
+  Click the text tool in the toolbar, click anywhere on the page, and type.
+  Supports three fonts (Helvetica, Times, Courier), adjustable font size and
+  colour, and optional character spacing. Annotations are saved as PDF
+  FreeText objects (recoverable on re-open) and burned into the page content
+  when signing, so they appear in every viewer without annotation support.
+
+### Fixed
+- Text annotation preview now uses the same URW/Nimbus fonts that
+  PyMuPDF/fitz uses internally for PDF Base-14 fonts (Nimbus Sans, Nimbus
+  Roman, Nimbus Mono PS), giving a pixel-accurate on-screen preview on Linux.
+  On Windows the standard fallbacks (Arial, Times New Roman, Courier New) are
+  used automatically.
+- Text annotation baseline positioning corrected in both the interactive
+  overlay and the burned-in PDF: the baseline now lands precisely at the
+  clicked position. Previously the overlay used the full em-square height
+  as offset instead of the true typographic ascent, and the signed PDF used
+  approximate magic constants instead of fitz's actual internal baseline
+  formula (`rect_top_pdf − 0.8 × font_size`).
 
 ---
 

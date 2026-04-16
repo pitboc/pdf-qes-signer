@@ -69,7 +69,7 @@ import fitz  # PyMuPDF
 from PyQt6.QtCore import QEvent, Qt, QPoint, QPointF, QRectF, QTimer
 from PyQt6.QtGui import (
     QGuiApplication,
-    QPixmap, QImage, QPainter, QPen, QColor, QBrush, QFont,
+    QPixmap, QImage, QPainter, QPen, QColor, QBrush, QFont, QFontMetricsF,
     QTextCharFormat, QTextCursor,
 )
 from PyQt6.QtWidgets import (
@@ -202,11 +202,15 @@ class TextAnnotOverlay(QWidget):
         self._apply_style()
         self._relayout()
 
-    # Qt font family names for each PDF base font
-    _QT_FAMILIES: dict[str, str] = {
-        "helv": "Arial",
-        "tiro": "Times New Roman",
-        "cour": "Courier New",
+    # Qt font family names for each PDF base font.
+    # Priority list: first entry that is installed wins.
+    # The URW fonts (Nimbus …) are the exact fonts MuPDF/fitz uses when
+    # burning in text, so they give the closest possible preview match.
+    _QT_FAMILIES: dict[str, list[str]] = {
+        "helv": ["Nimbus Sans", "Arial", "Liberation Sans"],
+        "tiro": ["Nimbus Roman", "Times New Roman", "Liberation Serif"],
+        "cour": ["Nimbus Mono PS", "Courier New", "Courier Std",
+                 "Courier 10 Pitch", "Liberation Mono", "monospace"],
     }
 
     def _apply_style(self) -> None:
@@ -224,7 +228,7 @@ class TextAnnotOverlay(QWidget):
            format.  ``_on_change`` re-applies this every time the text changes
            so the format is never lost after deleting all characters.
         """
-        family = self._QT_FAMILIES.get(self._annot.font_name, "Arial")
+        families = self._QT_FAMILIES.get(self._annot.font_name, ["Arial"])
         # Schriftgröße als Float-Punktgröße setzen um Quantisierungsfehler zu vermeiden.
         # setPixelSize() erfordert int → bis zu 1px Sprung bei Zoom-Änderungen.
         # setPointSizeF() arbeitet mit float; Qt konvertiert intern via Screen-DPI.
@@ -235,8 +239,10 @@ class TextAnnotOverlay(QWidget):
         pt     = max(4.0, self._annot.font_size * self._zoom * 72.0 / dpi)
         r, g, b = (int(c * 255) for c in self._annot.color)
 
-        font = QFont(family)
+        font = QFont(families[0])
+        font.setFamilies(families)
         font.setPointSizeF(pt)
+
         if self._annot.char_spacing > 0.0:
             font.setLetterSpacing(
                 QFont.SpacingType.AbsoluteSpacing,
@@ -264,6 +270,28 @@ class TextAnnotOverlay(QWidget):
         self._edit.setStyleSheet(
             "QTextEdit { background: transparent; border: none; }"
         )
+
+    def baseline_offset_px(self) -> int:
+        """Pixel distance from the top of this widget to the typographic baseline.
+
+        The overlay widget has a 2 px top-inset before the QTextEdit, and the
+        QTextDocument adds its own margin (default 4 px).  The baseline of the
+        first text line sits ``ascent`` pixels below the top of the text area.
+
+        Using ``font_size * zoom`` (the full em-square) instead of this value
+        would place the anchor point ~20–30 % too low because it conflates the
+        em-height with the ascent.
+        """
+        families = self._QT_FAMILIES.get(self._annot.font_name, ["Arial"])
+        screen   = QGuiApplication.primaryScreen()
+        dpi      = screen.logicalDotsPerInch() if screen else 96.0
+        pt       = max(4.0, self._annot.font_size * self._zoom * 72.0 / dpi)
+        font     = QFont(families[0])
+        font.setFamilies(families)
+        font.setPointSizeF(pt)
+        fm       = QFontMetricsF(font)
+        doc_margin = round(self._edit.document().documentMargin())
+        return 2 + doc_margin + round(fm.ascent())
 
     def _relayout(self) -> None:
         """Resize the widget to fit the current text content.
@@ -348,7 +376,7 @@ class TextAnnotOverlay(QWidget):
             par = self.parent()
             if par and hasattr(par, '_w_to_pdf'):
                 wx = self.pos().x() + self.HANDLE
-                wy = self.pos().y() + round(self._annot.font_size * self._zoom)
+                wy = self.pos().y() + self.baseline_offset_px()
                 self._annot.x, self._annot.y = par._w_to_pdf(wx, wy)
                 self._annot.page = par._current_page
         else:
@@ -504,13 +532,13 @@ class PDFViewWidget(QWidget):
         if ov.annot.page != self._current_page:
             ov.hide()
             return
-        base    = self._pdf_to_w(ov.annot.x, ov.annot.y)
-        font_px = round(ov.annot.font_size * self._zoom)
-        wx      = round(base.x()) - TextAnnotOverlay.HANDLE
-        wy      = round(base.y()) - font_px
-        ov.move(max(0, wx), max(0, wy))
+        base = self._pdf_to_w(ov.annot.x, ov.annot.y)
+        # update_zoom must run first so baseline_offset_px() uses the new zoom
         if update_style:
             ov.update_zoom(self._zoom)
+        wx = round(base.x()) - TextAnnotOverlay.HANDLE
+        wy = round(base.y()) - ov.baseline_offset_px()
+        ov.move(max(0, wx), max(0, wy))
         ov.show()
 
     def delete_overlay_silent(self, ov: TextAnnotOverlay) -> None:

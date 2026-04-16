@@ -214,6 +214,42 @@ def _make_pdf_font(pdf_name: str, avg_width: float):
     return SimpleFontEngineFactory(pdf_name, avg_width)
 
 
+def _freetext_rect(fitz_mod, ann_x: float, ann_y: float,
+                   font_name: str, font_size: float,
+                   text: str, page_h: float):
+    """Return a fitz.Rect for a FreeText annotation with baseline at *ann_y*.
+
+    Empirically derived from the fitz AP-stream:
+      first_td  = rect_height + line_height / 3
+      second_td = -line_height          (line_height = 1.2 × font_size)
+      → baseline_local = rect_height − 2/3 × line_height
+                       = rect_height − 0.8 × font_size
+      → baseline_pdf   = rect_top_pdf − 0.8 × font_size
+
+    To get baseline_pdf == ann_y:
+      rect_top_pdf  = ann_y + 0.8 × font_size
+      rect_y0_fitz  = page_h − ann_y − 0.8 × font_size
+
+    The bottom uses the font's actual descender so descenders are not clipped.
+
+    Args:
+        fitz_mod:  the fitz module (passed in to avoid circular imports).
+        ann_x, ann_y: baseline start point in PDF y-up coordinates.
+        font_name:  PDF Base-14 short name (e.g. ``"cour"``, ``"helv"``).
+        font_size:  font size in PDF points.
+        text:       annotation text (used to estimate width).
+        page_h:     page height in PDF points.
+    """
+    desc  = abs(fitz_mod.Font(font_name).descender) * font_size
+    est_w = max(50.0, len(text) * font_size * 0.65)
+    return fitz_mod.Rect(
+        ann_x,
+        page_h - ann_y - 0.8 * font_size,   # fitz places baseline at rect_top − 0.8×fs
+        ann_x + est_w,
+        page_h - ann_y + desc,
+    )
+
+
 
 # ── Rotated appearance helper ─────────────────────────────────────────────────
 
@@ -363,17 +399,11 @@ class SaveFieldsWorker(QThread):
                 for ann in self.text_annots:
                     if not ann.text.strip():
                         continue  # leere Annotationen nicht speichern
-                    page      = doc[ann.page]
-                    page_h    = page.rect.height
-                    # Rect: x bleibt, y wird von PDF-Koordinaten (y-up) in fitz (y-down) konvertiert.
-                    # Breite: Schätzung anhand Textlänge + großzügiger Puffer
-                    est_width = max(50.0, len(ann.text) * ann.font_size * 0.65)
-                    rect = fitz.Rect(
-                        ann.x,
-                        page_h - ann.y - ann.font_size * 1.3,
-                        ann.x + est_width,
-                        page_h - ann.y + ann.font_size * 0.3,
-                    )
+                    page   = doc[ann.page]
+                    page_h = page.rect.height
+                    rect   = _freetext_rect(fitz, ann.x, ann.y,
+                                            ann.font_name, ann.font_size,
+                                            ann.text, page_h)
                     fz_annot = page.add_freetext_annot(
                         rect,
                         ann.text,
@@ -800,13 +830,9 @@ class SignWorker(QThread):
                 continue
             page   = doc[ann.page]
             page_h = page.rect.height
-            est_w  = max(50.0, len(ann.text) * ann.font_size * 0.65)
-            rect   = _fitz.Rect(
-                ann.x,
-                page_h - ann.y - ann.font_size * 1.3,
-                ann.x + est_w,
-                page_h - ann.y + ann.font_size * 0.3,
-            )
+            rect   = _freetext_rect(_fitz, ann.x, ann.y,
+                                    ann.font_name, ann.font_size,
+                                    ann.text, page_h)
             fz_annot = page.add_freetext_annot(
                 rect, ann.text,
                 fontsize=ann.font_size, fontname=ann.font_name,

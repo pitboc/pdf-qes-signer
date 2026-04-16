@@ -64,6 +64,11 @@ pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
   (certifi) plus any CA certificates present on the token — no system CA
   store required. If the OCSP fetch fails, signing proceeds normally with
   a warning.
+- **Text annotations**: place free-text labels on PDF pages before signing —
+  activate the text tool in the toolbar, click on the page, and type. Font
+  (Helvetica / Times / Courier), size, colour, and character spacing are
+  configurable. Annotations are saved as recoverable PDF FreeText objects and
+  burned into the page content on signing so they appear in every viewer.
 - Chain multiple signatures: after signing, the signed PDF is reloaded
   automatically so further fields can be signed in sequence
 - Existing unsigned fields in already-signed PDFs are shown as locked (orange)

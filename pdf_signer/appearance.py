@@ -160,15 +160,18 @@ class SigAppearance:
         return 0.5
 
     @property
-    def font_qt_family(self) -> str:
-        """Qt font family for preview rendering."""
-        # Qt-seitige Font-Familie für die Canvas-Vorschau; muss zur PDF-Schrift
-        # passen, damit die Vorschau das endgültige PDF-Erscheinungsbild widerspiegelt
+    def font_qt_families(self) -> list[str]:
+        """Qt font family priority list for preview rendering.
+
+        Returns the same URW-first fallback list used by ``_QT_FAMILIES`` in
+        ``pdf_view.py`` so the signature-appearance preview matches the font
+        that MuPDF/fitz uses when burning in the annotation.
+        """
         saved = self.config.get("appearance", "font_family") or "Helvetica"
-        for _, pdf_name, _, qt_fam in PDF_STANDARD_FONTS:
+        for _, pdf_name, _, qt_fams in PDF_STANDARD_FONTS:
             if pdf_name == saved:
-                return qt_fam
-        return "Helvetica"
+                return qt_fams
+        return ["Arial"]
 
     @property
     def img_ratio(self) -> int:
@@ -280,7 +283,9 @@ class SigAppearance:
         # Textzeilen vertikal zentriert im Textbereich zeichnen
         if lines:
             painter.setPen(QPen(QColor("#1a3060")))
-            font = QFont(self.font_qt_family)
+            families = self.font_qt_families
+            font = QFont(families[0])
+            font.setFamilies(families)
             # Schriftgröße in Pixeln skaliert mit dem Zoom-Faktor;
             # Minimum 4px damit Text sichtbar bleibt
             font.setPixelSize(max(4, round(self.font_size * pixels_per_point)))

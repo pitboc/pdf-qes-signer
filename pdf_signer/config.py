@@ -3,7 +3,7 @@
 Application configuration for PDF QES Signer.
 
 Provides:
-  - PDF_STANDARD_FONTS     – list of (display name, PDF name, avg_width, Qt family)
+  - PDF_STANDARD_FONTS     – list of (display name, PDF name, avg_width, Qt families)
   - CONFIG_SCHEMA_VERSION  – integer, bumped only when the config structure changes
   - AppConfig              – INI-based persistent configuration with profile support
 
@@ -71,16 +71,26 @@ from pathlib import Path
 CONFIG_SCHEMA_VERSION = 1
 
 # PDF-14 standard fonts: (display name, PDF font name, avg_width, Qt family)
-PDF_STANDARD_FONTS: list[tuple[str, str, float, str]] = [
-    ("Helvetica",         "Helvetica",          0.5,  "Helvetica"),
-    ("Helvetica Bold",    "Helvetica-Bold",     0.5,  "Helvetica"),
-    ("Helvetica Oblique", "Helvetica-Oblique",  0.5,  "Helvetica"),
-    ("Times Roman",       "Times-Roman",        0.44, "Times New Roman"),
-    ("Times Bold",        "Times-Bold",         0.44, "Times New Roman"),
-    ("Times Italic",      "Times-Italic",       0.44, "Times New Roman"),
-    ("Courier",           "Courier",            0.6,  "Courier New"),
-    ("Courier Bold",      "Courier-Bold",       0.6,  "Courier New"),
-    ("Courier Oblique",   "Courier-Oblique",    0.6,  "Courier New"),
+# Qt family priority lists per PDF Base-14 font group.
+# MuPDF (fitz) uses the URW fonts (Nimbus …) internally, so listing them first
+# gives the closest possible match between the Qt preview and the burned-in PDF.
+# On Windows the URW fonts are absent; Arial / Times New Roman / Courier New
+# serve as metrically compatible fallbacks.
+_HELV_QT = ["Nimbus Sans",     "Arial",          "Liberation Sans"]
+_TIRO_QT = ["Nimbus Roman",    "Times New Roman", "Liberation Serif"]
+_COUR_QT = ["Nimbus Mono PS",  "Courier New",     "Courier Std",
+             "Courier 10 Pitch", "Liberation Mono", "monospace"]
+
+PDF_STANDARD_FONTS: list[tuple[str, str, float, list[str]]] = [
+    ("Helvetica",         "Helvetica",          0.5,  _HELV_QT),
+    ("Helvetica Bold",    "Helvetica-Bold",     0.5,  _HELV_QT),
+    ("Helvetica Oblique", "Helvetica-Oblique",  0.5,  _HELV_QT),
+    ("Times Roman",       "Times-Roman",        0.44, _TIRO_QT),
+    ("Times Bold",        "Times-Bold",         0.44, _TIRO_QT),
+    ("Times Italic",      "Times-Italic",       0.44, _TIRO_QT),
+    ("Courier",           "Courier",            0.6,  _COUR_QT),
+    ("Courier Bold",      "Courier-Bold",       0.6,  _COUR_QT),
+    ("Courier Oblique",   "Courier-Oblique",    0.6,  _COUR_QT),
 ]
 
 if sys.platform == "win32":
