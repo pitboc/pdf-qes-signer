@@ -240,13 +240,18 @@ def _freetext_rect(fitz_mod, ann_x: float, ann_y: float,
         text:       annotation text (used to estimate width).
         page_h:     page height in PDF points.
     """
-    desc  = abs(fitz_mod.Font(font_name).descender) * font_size
-    est_w = max(50.0, len(text) * font_size * 0.65)
+    lines      = text.split("\n")
+    n_lines    = len(lines)
+    line_h     = 1.2 * font_size                      # fitz default line spacing
+    desc       = abs(fitz_mod.Font(font_name).descender) * font_size
+    longest    = max((len(l) for l in lines), default=1)
+    est_w      = max(50.0, longest * font_size * 0.65)
+    extra_h    = (n_lines - 1) * line_h               # additional lines below first
     return fitz_mod.Rect(
         ann_x,
         page_h - ann_y - 0.8 * font_size,   # fitz places baseline at rect_top − 0.8×fs
         ann_x + est_w,
-        page_h - ann_y + desc,
+        page_h - ann_y + desc + extra_h,
     )
 
 

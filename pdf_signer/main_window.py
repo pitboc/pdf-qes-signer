@@ -472,6 +472,7 @@ class PDFSignerApp(QMainWindow):
         self._pdf_view.hscroll_requested.connect(self._on_hscroll_single)
         self._pdf_view.text_annot_placed.connect(self._on_text_annot_placed)
         self._pdf_view.text_annot_deleted.connect(self._on_text_annot_deleted)
+        self._pdf_view.exit_text_mode.connect(self._on_exit_text_mode)
         self._outer_layout.addWidget(self._pdf_view)
         self._scroll_area.setWidget(self._outer_container)
         self._scroll_area.setWidgetResizable(False)
@@ -668,6 +669,15 @@ class PDFSignerApp(QMainWindow):
         if n > 0:
             row = prev_row if 0 <= prev_row < n else (n - 1 if n > 1 else 0)
             self._field_list.setCurrentRow(row)
+
+        # Text-Modus sperren sobald das Dokument Signaturen enthält
+        has_sigs = bool(self.signed_fields)
+        self._tb_text_mode.setEnabled(not has_sigs)
+        self._tb_text_mode.setToolTip(
+            t("tb_text_mode_signed") if has_sigs else t("tb_text_mode"))
+        if has_sigs and self._tb_text_mode.isChecked():
+            self._tb_text_mode.setChecked(False)
+            self._toggle_text_mode(False)
 
     def _check_dependencies(self) -> None:
         # Prüfen ob optionale Bibliotheken vorhanden sind;
@@ -1002,7 +1012,13 @@ class PDFSignerApp(QMainWindow):
                     self._pdf_view.delete_overlay_silent(ov)
                 else:
                     ov._edit.clearFocus()
+                    ov.set_selected(False)
             self._focused_overlay = None
+
+    def _on_exit_text_mode(self) -> None:
+        """Exit text mode via ESC key or right-click on the canvas."""
+        self._tb_text_mode.setChecked(False)
+        self._toggle_text_mode(False)
 
     def _on_text_annot_placed(self, page: int, x: float, y: float) -> None:
         """Create a TextAnnotDef from toolbar settings and add an overlay."""
@@ -1041,10 +1057,13 @@ class PDFSignerApp(QMainWindow):
         # Deselect rule 1: another box is focused.
         # Silently delete the previously focused overlay if it is empty.
         old = self._focused_overlay
-        if old is not None and old is not ov and not old.annot.text.strip():
-            self._pdf_view.delete_overlay_silent(old)
+        if old is not None and old is not ov:
+            old.set_selected(False)
+            if not old.annot.text.strip():
+                self._pdf_view.delete_overlay_silent(old)
 
         self._focused_overlay = ov
+        ov.set_selected(True)
         # Auto-enable text mode when an overlay receives focus so that
         # the toolbar is visible even if the user clicked without enabling it.
         if not self._tb_text_mode.isChecked():
@@ -1673,6 +1692,12 @@ class PDFSignerApp(QMainWindow):
             self, t("dlg_save_error_title"),
             t("dlg_save_error_msg", error=msg))
 
+    def keyPressEvent(self, ev) -> None:  # type: ignore[override]
+        if ev.key() == Qt.Key.Key_Escape and self._tb_text_mode.isChecked():
+            self._on_exit_text_mode()
+        else:
+            super().keyPressEvent(ev)
+
     def closeEvent(self, event) -> None:  # type: ignore[override]
         """Fragt bei ungespeicherten Änderungen nach: Abbrechen / Speichern / Beenden.
 
@@ -1929,6 +1954,7 @@ class PDFSignerApp(QMainWindow):
             self._update_field_list()
             self._render_current_page()
             self._refresh_doc_validation()
+            self._has_unsaved_changes = False
         except Exception:
             pass  # Non-critical – UI stays in previous state
 

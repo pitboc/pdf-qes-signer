@@ -182,6 +182,9 @@ msgstr "💾 Zapisz PDF"
 msgid "tb_text_mode"
 msgstr "Wstaw pole tekstowe"
 
+msgid "tb_text_mode_signed"
+msgstr "Pola tekstowe można wstawiać tylko w niepodpisanych dokumentach"
+
 msgid "tb2_font_size"
 msgstr "Rozmiar czcionki (pt)"
 

@@ -175,6 +175,9 @@ msgstr "💾 Guardar PDF"
 msgid "tb_text_mode"
 msgstr "Insertar campo de texto"
 
+msgid "tb_text_mode_signed"
+msgstr "Los campos de texto solo pueden insertarse en documentos no firmados"
+
 msgid "tb2_font_size"
 msgstr "Tamaño de fuente (pt)"
 

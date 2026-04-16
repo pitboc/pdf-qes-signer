@@ -289,12 +289,17 @@ class SigAppearance:
             # Schriftgröße in Pixeln skaliert mit dem Zoom-Faktor;
             # Minimum 4px damit Text sichtbar bleibt
             font.setPixelSize(max(4, round(self.font_size * pixels_per_point)))
+            pdf_name = self.font_pdf_name
+            if "Bold" in pdf_name:
+                font.setBold(True)
+            if "Italic" in pdf_name or "Oblique" in pdf_name:
+                font.setItalic(True)
             painter.setFont(font)
             fm = QFontMetricsF(font)
-            # Compact line spacing matching pyhanko: ascent + descent only
-            # Zeilenhöhe ohne Leading (Zwischenraum zwischen Zeilen), um das
-            # pyhanko-Layout möglichst genau zu spiegeln
-            line_h = fm.ascent() + fm.descent()
+            # pyhanko sets TL (text leading) = font_size when no explicit leading
+            # is given, so baseline-to-baseline distance = 1.0 × font_size (PDF pts).
+            # Convert to pixels: font_size × pixels_per_point.
+            line_h = self.font_size * pixels_per_point
             total_h = line_h * len(lines)
             # Y-Startposition für vertikale Zentrierung berechnen
             y_start = (text_rect.top()

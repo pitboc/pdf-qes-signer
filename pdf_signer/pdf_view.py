@@ -70,7 +70,7 @@ from PyQt6.QtCore import QEvent, Qt, QPoint, QPointF, QRectF, QTimer
 from PyQt6.QtGui import (
     QGuiApplication,
     QPixmap, QImage, QPainter, QPen, QColor, QBrush, QFont, QFontMetricsF,
-    QTextCharFormat, QTextCursor,
+    QTextBlockFormat, QTextCharFormat, QTextCursor,
 )
 from PyQt6.QtWidgets import (
     QFrame, QInputDialog, QMessageBox, QSizePolicy, QTextEdit, QWidget,
@@ -167,6 +167,7 @@ class TextAnnotOverlay(QWidget):
         self._dragging   = False
         self._drag_off   = QPoint()
         self._is_focused = False
+        self._selected   = False   # kept True while this overlay is the active target
         self._char_fmt   = QTextCharFormat()   # cached; rebuilt by _apply_style
 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -257,11 +258,22 @@ class TextAnnotOverlay(QWidget):
         # 1 – document default (empty-state cursor size)
         self._edit.document().setDefaultFont(font)
 
-        # 2 – existing text
+        # Line height: match fitz's 1.2 × font_size spacing exactly.
+        # Qt's natural line height (ascent+descent+leading) is ~35 % larger;
+        # FixedHeight overrides it so the preview matches the burned-in PDF.
+        # New paragraphs inherit the block format from the previous block in Qt,
+        # so a single pass over all existing blocks is sufficient.
+        line_h_px = 1.2 * self._annot.font_size * self._zoom
+        block_fmt = QTextBlockFormat()
+        block_fmt.setLineHeight(
+            line_h_px, QTextBlockFormat.LineHeightTypes.FixedHeight.value)
+
+        # 2 – existing text (char format + block format in one pass)
         cur = QTextCursor(self._edit.document())
         cur.select(QTextCursor.SelectionType.Document)
         self._edit.document().blockSignals(True)
         cur.mergeCharFormat(fmt)
+        cur.mergeBlockFormat(block_fmt)
         self._edit.document().blockSignals(False)
 
         # 3 – cursor / next input
@@ -318,6 +330,12 @@ class TextAnnotOverlay(QWidget):
         self._relayout()
         self.content_changed.emit()
 
+    def set_selected(self, v: bool) -> None:
+        """Mark this overlay as the active edit target (blue border regardless of Qt focus)."""
+        if self._selected != v:
+            self._selected = v
+            self.update()
+
     # ── Focus tracking ────────────────────────────────────────────────────
 
     def eventFilter(self, obj, event) -> bool:
@@ -335,7 +353,7 @@ class TextAnnotOverlay(QWidget):
 
     def paintEvent(self, _) -> None:
         p = QPainter(self)
-        if self._is_focused:
+        if self._is_focused or self._selected:
             p.fillRect(self.rect(), QColor(208, 228, 255, 60))
             p.setPen(QPen(QColor("#1a73e8"), 2))
         else:
@@ -352,6 +370,7 @@ class TextAnnotOverlay(QWidget):
                     and ev.position().y() <= self.HANDLE):
                 self._dragging = True
                 self._drag_off = ev.position().toPoint()
+                self._edit.setFocus()   # select this overlay when dragging
             else:
                 self._edit.setFocus()
                 super().mousePressEvent(ev)
@@ -420,6 +439,7 @@ class PDFViewWidget(QWidget):
     pan_requested       = pyqtSignal(int, int)     # middle-drag: (dx, dy) total offset from pan start
     text_annot_placed   = pyqtSignal(int, float, float)  # page, x_pdf, y_pdf
     text_annot_deleted  = pyqtSignal(object)             # TextAnnotDef
+    exit_text_mode      = pyqtSignal()                   # ESC or right-click while in text mode
 
     def __init__(self, appearance: SigAppearance, parent=None) -> None:
         super().__init__(parent)
@@ -710,7 +730,10 @@ class PDFViewWidget(QWidget):
             self.setCursor(Qt.CursorShape.SizeAllCursor)
             self.pan_started.emit()
         elif ev.button() == Qt.MouseButton.RightButton:
-            self._right_click(ev.position())
+            if self.text_mode:
+                self.exit_text_mode.emit()
+            else:
+                self._right_click(ev.position())
 
     def mouseMoveEvent(self, ev) -> None:
         if self._pan_start:
@@ -850,3 +873,9 @@ class PDFViewWidget(QWidget):
                     self.update()
                     self.field_deleted.emit(fdef)
                 return
+
+    def keyPressEvent(self, ev) -> None:
+        if self.text_mode and ev.key() == Qt.Key.Key_Escape:
+            self.exit_text_mode.emit()
+        else:
+            super().keyPressEvent(ev)

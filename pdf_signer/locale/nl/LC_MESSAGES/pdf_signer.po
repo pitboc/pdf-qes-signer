@@ -175,6 +175,9 @@ msgstr "💾 PDF opslaan"
 msgid "tb_text_mode"
 msgstr "Tekstveld invoegen"
 
+msgid "tb_text_mode_signed"
+msgstr "Tekstvelden kunnen alleen worden ingevoegd in niet-ondertekende documenten"
+
 msgid "tb2_font_size"
 msgstr "Lettergrootte (pt)"
 

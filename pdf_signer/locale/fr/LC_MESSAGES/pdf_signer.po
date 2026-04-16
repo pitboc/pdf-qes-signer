@@ -175,6 +175,9 @@ msgstr "💾 Enregistrer le PDF"
 msgid "tb_text_mode"
 msgstr "Insérer un champ de texte"
 
+msgid "tb_text_mode_signed"
+msgstr "Les champs de texte ne peuvent être insérés que dans des documents non signés"
+
 msgid "tb2_font_size"
 msgstr "Taille de police (pt)"
 
