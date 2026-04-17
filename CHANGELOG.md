@@ -7,6 +7,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased] – 0.3.6.dev0
 
+### Fixed
+- Signature field appearance preview now matches the signed PDF at any zoom
+  level. The horizontal text indent (`x`) and vertical baseline (`y`) were
+  previously computed with fixed pixel offsets that only matched pyhanko's
+  output at the preview-panel DPI (96/72 ≈ 1.333 px/pt). At higher zoom
+  levels the text appeared noticeably shifted compared to the final signature.
+  Both values are now proportional to `pixels_per_point`:
+  - `x` uses 14 PDF points (4 pt outer margin + 10 pt inner text-box margin,
+    matching pyhanko's `inner_content_layout` + `DEFAULT_TEXT_BOX_MARGIN`).
+  - `y` uses the full em size instead of the font's `ascent`, matching
+    pyhanko's first-baseline calculation (`field_h/2 + (n/2 − 1) × font_size`).
+
 ---
 
 ## [0.3.5] – 2026-04-16

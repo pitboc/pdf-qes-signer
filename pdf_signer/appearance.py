@@ -301,12 +301,22 @@ class SigAppearance:
             # Convert to pixels: font_size × pixels_per_point.
             line_h = self.font_size * pixels_per_point
             total_h = line_h * len(lines)
-            # Y-Startposition für vertikale Zentrierung berechnen
+            # Y-Startposition für vertikale Zentrierung berechnen.
+            # pyhanko's first-line baseline = TextBox_y + 10pt + (n-1)*font_size,
+            # which simplifies to field_h/2 + (n/2 - 1)*font_size.
+            # Using font_size * pixels_per_point instead of fm.ascent() matches
+            # pyhanko's computation (ascent ≠ full em, but pyhanko uses full em).
             y_start = (text_rect.top()
                        + (text_rect.height() - total_h) / 2
-                       + fm.ascent())
-            # Fixed horizontal indent in pixels
-            x_start = text_rect.left() + 15
+                       + self.font_size * pixels_per_point)
+            # Horizontal indent: match pyhanko's default layout for the text-left
+            # case (inner_content_layout.left=4pt + DEFAULT_TEXT_BOX_MARGIN=10pt
+            # = 14pt from field edge).  For img_left (text on the right) use the
+            # text column start plus a 10pt inner margin instead.
+            if img_pixmap and not img_pixmap.isNull() and self.layout == "img_left":
+                x_start = text_rect.left() + round(10 * pixels_per_point)
+            else:
+                x_start = round(14 * pixels_per_point)
             y = y_start
             for line in lines:
                 # Zeilen abschneiden die über den Textbereich hinausgehen
