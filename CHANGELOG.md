@@ -5,7 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased] – 0.3.6.dev0
+## [Unreleased] – 0.3.7.dev0
+
+---
+
+## [0.3.6] – 2026-04-17
 
 ### Fixed
 - Signature field appearance preview now matches the signed PDF at any zoom
