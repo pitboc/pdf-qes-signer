@@ -89,6 +89,25 @@ from .appearance_panel import AppearancePanel
 from .continuous_view import ContinuousView, _adjust_hscroll
 
 
+# Display name → fitz short name for all 12 Base-14 text-annotation font variants
+_TEXT_FONT_ITEMS: list[tuple[str, str]] = [
+    ("Helvetica",              "helv"),
+    ("Helvetica Bold",         "hebo"),
+    ("Helvetica Oblique",      "heit"),
+    ("Helvetica Bold Oblique", "hebi"),
+    ("Times Roman",            "tiro"),
+    ("Times Bold",             "tibo"),
+    ("Times Italic",           "tiit"),
+    ("Times Bold Italic",      "tibi"),
+    ("Courier",                "cour"),
+    ("Courier Bold",           "cobo"),
+    ("Courier Oblique",        "coit"),
+    ("Courier Bold Oblique",   "cobi"),
+]
+_TEXT_FONT_TO_SHORT: dict[str, str] = {d: s for d, s in _TEXT_FONT_ITEMS}
+_TEXT_SHORT_TO_FONT: dict[str, str] = {s: d for d, s in _TEXT_FONT_ITEMS}
+
+
 def _parse_da_string(da: str) -> tuple:
     """Parse a PDF /DA (Default Appearance) string into (font_name, font_size, color).
 
@@ -389,8 +408,8 @@ class PDFSignerApp(QMainWindow):
         # Font-Auswahl
         self._text_tb.addWidget(QLabel(" A "))
         self._tb2_font = QComboBox()
-        self._tb2_font.addItems(["Helvetica", "Times", "Courier (monospaced)"])
-        self._tb2_font.setFixedWidth(110)
+        self._tb2_font.addItems([d for d, _ in _TEXT_FONT_ITEMS])
+        self._tb2_font.setFixedWidth(175)
         self._text_tb.addWidget(self._tb2_font)
         self._text_tb.addSeparator()
         # Schriftgröße
@@ -1022,13 +1041,12 @@ class PDFSignerApp(QMainWindow):
 
     def _on_text_annot_placed(self, page: int, x: float, y: float) -> None:
         """Create a TextAnnotDef from toolbar settings and add an overlay."""
-        _font_map = {"Helvetica": "helv", "Times": "tiro", "Courier (monospaced)": "cour"}
         ann = TextAnnotDef(
             page=page,
             x=x,
             y=y,
             font_size=self._tb2_font_size.value(),
-            font_name=_font_map.get(self._tb2_font.currentText(), "helv"),
+            font_name=_TEXT_FONT_TO_SHORT.get(self._tb2_font.currentText(), "helv"),
             color=(
                 self._tb2_color.redF(),
                 self._tb2_color.greenF(),
@@ -1071,11 +1089,10 @@ class PDFSignerApp(QMainWindow):
             self._text_tb.setVisible(True)
             self._pdf_view.text_mode = True
         ann = ov.annot
-        _name_map = {"helv": "Helvetica", "tiro": "Times", "cour": "Courier (monospaced)"}
         # Block signals to avoid triggering _on_text_prop_changed while updating
         for w in (self._tb2_font, self._tb2_font_size, self._tb2_char_spacing):
             w.blockSignals(True)
-        self._tb2_font.setCurrentText(_name_map.get(ann.font_name, "Helvetica"))
+        self._tb2_font.setCurrentText(_TEXT_SHORT_TO_FONT.get(ann.font_name, "Helvetica"))
         self._tb2_font_size.setValue(ann.font_size)
         self._tb2_char_spacing.setValue(ann.char_spacing)
         self._tb2_color = QColor(
@@ -1103,9 +1120,8 @@ class PDFSignerApp(QMainWindow):
         if not target:
             return
         self._focused_overlay = target   # keep in sync
-        _font_map = {"Helvetica": "helv", "Times": "tiro", "Courier (monospaced)": "cour"}
         ann = target.annot
-        ann.font_name    = _font_map.get(self._tb2_font.currentText(), "helv")
+        ann.font_name    = _TEXT_FONT_TO_SHORT.get(self._tb2_font.currentText(), "helv")
         ann.font_size    = self._tb2_font_size.value()
         ann.char_spacing = self._tb2_char_spacing.value()
         ann.color = (
@@ -1539,11 +1555,15 @@ class PDFSignerApp(QMainWindow):
                 _by    = doc.xref_get_key(_xref, "QESBaselineY")
                 _cs    = doc.xref_get_key(_xref, "QESCharSpacing")
                 _da    = doc.xref_get_key(_xref, "DA")
+                _fnk   = doc.xref_get_key(_xref, "QESFontName")
                 _bx_v  = float(_bx[1])  if _bx[0]  in ("int", "float") else 0.0
                 _by_v  = float(_by[1])  if _by[0]  in ("int", "float") else 0.0
                 _cs_v  = float(_cs[1])  if _cs[0]  in ("int", "float") else 0.0
                 _da_s  = _da[1]         if _da[0]  == "string"         else ""
                 _fn, _fs, _col = _parse_da_string(_da_s)
+                # /QESFontName zuverlässiger als /DA (pyMuPDF schreibt immer /Helv)
+                if _fnk[0] == "string" and _fnk[1] in _TEXT_SHORT_TO_FONT:
+                    _fn = _fnk[1]
                 _text  = _annot.info.get("content", "")
                 ann = TextAnnotDef(
                     page=_page_num, x=_bx_v, y=_by_v, text=_text,

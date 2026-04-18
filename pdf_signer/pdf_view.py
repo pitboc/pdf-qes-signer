@@ -126,7 +126,7 @@ class TextAnnotDef:
     y:            float          # baseline y       (PDF points, y-up)
     text:         str   = ""
     font_size:    float = 10.0
-    font_name:    str   = "helv"  # helv=Helvetica, tiro=Times, cour=Courier
+    font_name:    str   = "helv"  # fitz short name: helv/hebo/heit/hebi, tiro/tibo/tiit/tibi, cour/cobo/coit/cobi
     color:        tuple = _dc_field(default_factory=lambda: (0.0, 0.0, 0.0))
     char_spacing: float = 0.0
 
@@ -152,12 +152,14 @@ class TextAnnotOverlay(QWidget):
 
     HANDLE: int = 10  # red handle side length in pixels
 
-    # Font-name → CSS font-family list
-    _FAMILIES: dict[str, str] = {
-        "helv": '"Helvetica","Arial",sans-serif',
-        "tiro": '"Times New Roman","Times",serif',
-        "cour": '"Courier New","Courier",monospace',
+    # fitz short-name → base family key (strips bold/italic variant)
+    _FONT_BASE: dict[str, str] = {
+        "helv": "helv", "hebo": "helv", "heit": "helv", "hebi": "helv",
+        "tiro": "tiro", "tibo": "tiro", "tiit": "tiro", "tibi": "tiro",
+        "cour": "cour", "cobo": "cour", "coit": "cour", "cobi": "cour",
     }
+    _FONT_BOLD   = frozenset({"hebo", "hebi", "tibo", "tibi", "cobo", "cobi"})
+    _FONT_ITALIC = frozenset({"heit", "hebi", "tiit", "tibi", "coit", "cobi"})
 
     def __init__(self, annot: TextAnnotDef, zoom: float,
                  parent: QWidget) -> None:
@@ -203,10 +205,7 @@ class TextAnnotOverlay(QWidget):
         self._apply_style()
         self._relayout()
 
-    # Qt font family names for each PDF base font.
-    # Priority list: first entry that is installed wins.
-    # The URW fonts (Nimbus …) are the exact fonts MuPDF/fitz uses when
-    # burning in text, so they give the closest possible preview match.
+    # Qt font family names keyed by base font (URW first = same font as fitz).
     _QT_FAMILIES: dict[str, list[str]] = {
         "helv": ["Nimbus Sans", "Arial", "Liberation Sans"],
         "tiro": ["Nimbus Roman", "Times New Roman", "Liberation Serif"],
@@ -229,7 +228,8 @@ class TextAnnotOverlay(QWidget):
            format.  ``_on_change`` re-applies this every time the text changes
            so the format is never lost after deleting all characters.
         """
-        families = self._QT_FAMILIES.get(self._annot.font_name, ["Arial"])
+        base     = TextAnnotOverlay._FONT_BASE.get(self._annot.font_name, "helv")
+        families = self._QT_FAMILIES.get(base, ["Arial"])
         # Schriftgröße als Float-Punktgröße setzen um Quantisierungsfehler zu vermeiden.
         # setPixelSize() erfordert int → bis zu 1px Sprung bei Zoom-Änderungen.
         # setPointSizeF() arbeitet mit float; Qt konvertiert intern via Screen-DPI.
@@ -243,6 +243,8 @@ class TextAnnotOverlay(QWidget):
         font = QFont(families[0])
         font.setFamilies(families)
         font.setPointSizeF(pt)
+        font.setBold(self._annot.font_name   in TextAnnotOverlay._FONT_BOLD)
+        font.setItalic(self._annot.font_name in TextAnnotOverlay._FONT_ITALIC)
 
         if self._annot.char_spacing > 0.0:
             font.setLetterSpacing(
@@ -294,13 +296,16 @@ class TextAnnotOverlay(QWidget):
         would place the anchor point ~20–30 % too low because it conflates the
         em-height with the ascent.
         """
-        families = self._QT_FAMILIES.get(self._annot.font_name, ["Arial"])
+        base     = TextAnnotOverlay._FONT_BASE.get(self._annot.font_name, "helv")
+        families = self._QT_FAMILIES.get(base, ["Arial"])
         screen   = QGuiApplication.primaryScreen()
         dpi      = screen.logicalDotsPerInch() if screen else 96.0
         pt       = max(4.0, self._annot.font_size * self._zoom * 72.0 / dpi)
         font     = QFont(families[0])
         font.setFamilies(families)
         font.setPointSizeF(pt)
+        font.setBold(self._annot.font_name   in TextAnnotOverlay._FONT_BOLD)
+        font.setItalic(self._annot.font_name in TextAnnotOverlay._FONT_ITALIC)
         fm       = QFontMetricsF(font)
         doc_margin = round(self._edit.document().documentMargin())
         return 2 + doc_margin + round(fm.ascent())

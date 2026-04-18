@@ -354,10 +354,11 @@ class SaveFieldsWorker(QThread):
     on top of that, using a second in-memory pass.
 
     Custom PDF keys used for roundtrip fidelity:
-      ``/Subj``          = ``"QESTextAnnot"``  – marker to identify our annotations
-      ``/QESBaselineX``  – exact baseline-left x in PDF points (y-up)
-      ``/QESBaselineY``  – exact baseline-left y in PDF points (y-up)
+      ``/Subj``           = ``"QESTextAnnot"``  – marker to identify our annotations
+      ``/QESBaselineX``   – exact baseline-left x in PDF points (y-up)
+      ``/QESBaselineY``   – exact baseline-left y in PDF points (y-up)
       ``/QESCharSpacing`` – character spacing in PDF points (0 = default)
+      ``/QESFontName``    – fitz short name (e.g. ``"hebo"``); overrides /DA on reload
     """
 
     # finished: Pfad zur erfolgreich geschriebenen Datei
@@ -419,11 +420,12 @@ class SaveFieldsWorker(QThread):
                         border_color=None,
                     )
                     fz_annot.set_info(subject="QESTextAnnot")
-                    # Exakte Baseline-Koordinaten und Zeichenabstand als Custom-Keys
+                    # Exakte Baseline-Koordinaten, Zeichenabstand und Font als Custom-Keys
                     xref = fz_annot.xref
                     doc.xref_set_key(xref, "QESBaselineX",   repr(float(ann.x)))
                     doc.xref_set_key(xref, "QESBaselineY",   repr(float(ann.y)))
                     doc.xref_set_key(xref, "QESCharSpacing", repr(float(ann.char_spacing)))
+                    doc.xref_set_key(xref, "QESFontName",    f"({ann.font_name})")
                     fz_annot.update()
                 out_buf = io.BytesIO()
                 doc.save(out_buf, garbage=0, deflate=False, incremental=False)
@@ -800,13 +802,16 @@ class SignWorker(QThread):
                 pass  # Field already exists – that is fine
 
     def _burn_in_freetext(self, pdf_bytes: bytes) -> bytes:
-        """Embed text_annots and burn all FreeText annotations into page content.
+        """Embed text_annots as selectable PDF text and rasterize foreign FreeText.
 
         Two-phase approach:
-        1. Embed ``self.text_annots`` as FreeText annotations via pyMuPDF
-           (Tc character-spacing injected into /DA before appearance regeneration).
-        2. Render *all* FreeText annotations on every page (ours + foreign) as
-           pixmaps, insert them as page-content images, then delete the annotations.
+        1. Embed ``self.text_annots`` via ``fitz.TextWriter`` char-by-char so that
+           the text remains selectable in the signed PDF.  Character spacing is
+           applied as a manual x-advance (no Tc operator needed).  fitz embeds
+           the font as a Type0/CID subset so rendering is viewer-independent.
+        2. Rasterize any *foreign* FreeText annotations already in the PDF (not
+           created by this application) as 216-dpi pixmaps and replace them with
+           page-content images so they cannot be removed after signing.
 
         Returns the modified PDF bytes.  If there is nothing to do the input
         bytes are returned unchanged to avoid an unnecessary fitz round-trip.
@@ -815,7 +820,7 @@ class SignWorker(QThread):
 
         has_our_annots = any(a.text.strip() for a in self.text_annots)
 
-        # Quick check: are there foreign FreeText annotations already in the PDF?
+        # Quick check: are there foreign FreeText annotations in the PDF?
         _doc_check = _fitz.open(stream=pdf_bytes, filetype="pdf")
         has_foreign = any(
             True
@@ -829,34 +834,48 @@ class SignWorker(QThread):
 
         doc = _fitz.open(stream=pdf_bytes, filetype="pdf")
 
-        # ── Phase 1: unsere text_annots als FreeText einbetten ───────────────
+        # ── Phase 1: unsere Annotationen als echten Text einbetten ───────────
+        # TextWriter schreibt BT/ET-Operatoren direkt in den Content-Stream;
+        # der Text bleibt selektierbar und durchsuchbar.
         for ann in self.text_annots:
             if not ann.text.strip():
                 continue
-            page   = doc[ann.page]
-            page_h = page.rect.height
-            rect   = _freetext_rect(_fitz, ann.x, ann.y,
-                                    ann.font_name, ann.font_size,
-                                    ann.text, page_h)
-            fz_annot = page.add_freetext_annot(
-                rect, ann.text,
-                fontsize=ann.font_size, fontname=ann.font_name,
-                text_color=ann.color, fill_color=None, border_color=None,
-            )
-            # Zeichenabstand via Tc-Operator in /DA einbetten damit der
-            # Erscheinungsstrom korrekt gerendert wird
-            if ann.char_spacing > 0.0:
-                xref   = fz_annot.xref
-                da_raw = doc.xref_get_key(xref, "DA")
-                da_str = da_raw[1] if da_raw[0] == "string" else ""
-                doc.xref_set_key(
-                    xref, "DA",
-                    f"({da_str} {ann.char_spacing:.4f} Tc)")
-            fz_annot.update()  # Erscheinungsstrom neu erzeugen
+            page = doc[ann.page]
+            # PDF native (x, y-up) → fitz content-stream (x, y-down).
+            # TextWriter erwartet unrotierte fitz-Koordinaten; fitz kompensiert
+            # die Seitenrotation intern im Textmatrix-Operator, sodass Zeichen
+            # im Viewer aufrecht erscheinen.  Wichtig: page.mediabox.height
+            # (unkomprimierte Originalhöhe) statt page.rect.height verwenden –
+            # bei /Rotate 90 ist rect.height die visuelle Breite (z.B. 595 statt 842),
+            # was zu negativen y-Koordinaten und damit unsichtbarem Text führt.
+            x0 = ann.x
+            y0 = page.mediabox.height - ann.y
+            font = _fitz.Font(ann.font_name)
+            tw   = _fitz.TextWriter(page.rect, color=ann.color)
+            for line_idx, line in enumerate(ann.text.split("\n")):
+                cx     = x0
+                y_line = y0 + line_idx * ann.font_size * 1.2
+                for char in line:
+                    tw.append((cx, y_line), char, font=font, fontsize=ann.font_size)
+                    adv = font.char_lengths(char, ann.font_size)
+                    cx += (adv[0] if adv else ann.font_size * 0.6) + ann.char_spacing
+            # fitz kompensiert Seitenrotation im TextWriter nicht automatisch:
+            # Der Betrachter dreht den Content-Stream um /Rotate Grad, wodurch
+            # Standard-Horizontaltext gedreht erscheint.  morph dreht alle Glyphen
+            # um -rot° um den Ankerpunkt (x0, y0), sodass sie nach der Seitendrehung
+            # wieder aufrecht und in korrekter Leserichtung erscheinen.
+            # Der Ankerpunkt (x0, y0) landet durch die Betrachter-Rotation immer an
+            # der richtigen visuellen Position – die Koordinatenformel bleibt für
+            # alle Rotationswerte unverändert.
+            rot = page.rotation
+            if rot:
+                tw.write_text(page, morph=(_fitz.Point(x0, y0), _fitz.Matrix(rot)))
+            else:
+                tw.write_text(page)
 
-        # ── Phase 2: alle FreeText-Annotationen einbrennen ───────────────────
-        # Rendering-Matrix: 3× Skalierung ≈ 216 dpi (gut für Druck und Anzeige)
-        mat = _fitz.Matrix(3.0, 3.0)
+        # ── Phase 2: fremde FreeText-Annotationen rastern ────────────────────
+        # Nur noch für Annotationen die nicht von dieser Anwendung stammen.
+        mat = _fitz.Matrix(3.0, 3.0)   # 3× = 216 dpi
         for page_num in range(len(doc)):
             page   = doc[page_num]
             annots = list(page.annots(types=[_fitz.PDF_ANNOT_FREE_TEXT]))

@@ -5,9 +5,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased] – 0.3.7.dev0
+## [Unreleased]
 
 ---
+
+## [0.3.7] – 2026-04-18
+
+### Added
+- **12 PDF Base-14 font variants** for text annotations: Bold, Italic/Oblique,
+  and Bold-Italic/Bold-Oblique for Helvetica, Times, and Courier.  The
+  toolbar font dropdown now lists all 12 variants; the correct style is
+  preserved across save/reload via a custom `/QESFontName` PDF key.
+
+### Changed
+- **Text annotations are now selectable in the signed PDF.**  Previously the
+  annotation text was rasterised to a ~216 dpi image and burned into the page
+  as a picture.  Text is now written as native PDF text operators via
+  `fitz.TextWriter`, so it remains searchable and copy-pasteable.  Character
+  spacing is preserved through explicit per-character x-positioning (no `Tc`
+  operator needed).  Fonts are embedded as Type0/CID subsets, so rendering is
+  viewer-independent.
+
+### Fixed
+- Text annotations placed on rotated pages (`/Rotate 90`, `180`, `270`) now
+  appear upright and at the correct position after signing.  Previously the
+  text was rendered in the wrong orientation on all non-zero rotations.
 
 ## [0.3.6] – 2026-04-17
 
