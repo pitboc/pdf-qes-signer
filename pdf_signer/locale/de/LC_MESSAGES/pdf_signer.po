@@ -1855,3 +1855,15 @@ msgstr "Speichern"
 
 msgid "dlg_unsaved_quit"
 msgstr "Beenden"
+
+msgid "dlg_no_cert_title"
+msgstr "Kein Zertifikat konfiguriert"
+
+msgid "dlg_no_cert_msg_pfx"
+msgstr "Es ist keine PKCS#12-Datei (PFX/P12) konfiguriert.\n\nBitte konfigurieren Sie eine Zertifikatsdatei in den Einstellungen, bevor Sie signieren."
+
+msgid "dlg_no_cert_msg_pkcs11"
+msgstr "Es ist keine PKCS#11-Bibliothek konfiguriert.\n\nBitte konfigurieren Sie Ihr Signaturtoken in den Einstellungen, bevor Sie signieren."
+
+msgid "dlg_no_cert_open_settings"
+msgstr "Einstellungen öffnen"

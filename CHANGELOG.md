@@ -5,7 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased] – 0.3.8.dev0
+## [Unreleased]
+
+---
+
+## [0.3.8] – 2026-04-18
+
+### Added
+- **Early certificate validation before signing:** When no certificate source
+  is configured (no PFX/P12 file in PKCS#12 mode, or no PKCS#11 library path
+  set), a warning dialog now appears immediately when the user clicks Sign –
+  before any file-save or DocMDP dialog.  The dialog offers a direct shortcut
+  to the Token/Signature settings page.
+
+### Fixed
+- **Text annotation overlay position and character spacing:** The Qt overlay
+  anchor and the fitz TextWriter baseline are now aligned via empirically
+  calibrated offset constants (0.2 mm X, 0.04 mm/pt Y).  Qt font kerning is
+  disabled in the overlay to match fitz TextWriter, which renders without
+  kern-pair adjustments (fixes visible gap in letter pairs such as "Te").
+  Single-line annotations without character spacing now use one `tw.append()`
+  call instead of per-character calls to avoid positioning artefacts.
 
 ---
 

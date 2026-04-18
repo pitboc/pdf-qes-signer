@@ -1774,3 +1774,15 @@ msgstr "Opslaan"
 
 msgid "dlg_unsaved_quit"
 msgstr "Afsluiten"
+
+msgid "dlg_no_cert_title"
+msgstr "Geen certificaat geconfigureerd"
+
+msgid "dlg_no_cert_msg_pfx"
+msgstr "Er is geen PKCS#12-bestand (PFX/P12) geconfigureerd.\n\nStel een certificaatbestand in via de instellingen vóór het ondertekenen."
+
+msgid "dlg_no_cert_msg_pkcs11"
+msgstr "Er is geen PKCS#11-bibliotheek geconfigureerd.\n\nStel uw handtekeningtoken in via de instellingen vóór het ondertekenen."
+
+msgid "dlg_no_cert_open_settings"
+msgstr "Instellingen openen"

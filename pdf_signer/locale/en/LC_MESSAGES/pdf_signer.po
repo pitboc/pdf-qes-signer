@@ -1854,3 +1854,15 @@ msgstr "Save"
 
 msgid "dlg_unsaved_quit"
 msgstr "Quit"
+
+msgid "dlg_no_cert_title"
+msgstr "No Certificate Configured"
+
+msgid "dlg_no_cert_msg_pfx"
+msgstr "No PKCS#12 file (PFX/P12) has been configured.\n\nPlease configure a certificate file in the settings before signing."
+
+msgid "dlg_no_cert_msg_pkcs11"
+msgstr "No PKCS#11 library has been configured.\n\nPlease configure your signature token in the settings before signing."
+
+msgid "dlg_no_cert_open_settings"
+msgstr "Open Settings"

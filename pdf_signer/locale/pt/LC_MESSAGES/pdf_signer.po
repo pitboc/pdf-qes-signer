@@ -1852,3 +1852,15 @@ msgstr "Salvar"
 
 msgid "dlg_unsaved_quit"
 msgstr "Sair"
+
+msgid "dlg_no_cert_title"
+msgstr "Nenhum certificado configurado"
+
+msgid "dlg_no_cert_msg_pfx"
+msgstr "Nenhum arquivo PKCS#12 (PFX/P12) foi configurado.\n\nConfigure um arquivo de certificado nas configurações antes de assinar."
+
+msgid "dlg_no_cert_msg_pkcs11"
+msgstr "Nenhuma biblioteca PKCS#11 foi configurada.\n\nConfigure o seu token de assinatura nas configurações antes de assinar."
+
+msgid "dlg_no_cert_open_settings"
+msgstr "Abrir configurações"

@@ -1773,3 +1773,15 @@ msgstr "Guardar"
 
 msgid "dlg_unsaved_quit"
 msgstr "Salir"
+
+msgid "dlg_no_cert_title"
+msgstr "Sin certificado configurado"
+
+msgid "dlg_no_cert_msg_pfx"
+msgstr "No se ha configurado ningún archivo PKCS#12 (PFX/P12).\n\nConfigure un archivo de certificado en los ajustes antes de firmar."
+
+msgid "dlg_no_cert_msg_pkcs11"
+msgstr "No se ha configurado ninguna biblioteca PKCS#11.\n\nConfigure su token de firma en los ajustes antes de firmar."
+
+msgid "dlg_no_cert_open_settings"
+msgstr "Abrir ajustes"

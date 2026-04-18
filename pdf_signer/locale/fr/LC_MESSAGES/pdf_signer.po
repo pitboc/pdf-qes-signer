@@ -1777,3 +1777,15 @@ msgstr "Enregistrer"
 
 msgid "dlg_unsaved_quit"
 msgstr "Quitter"
+
+msgid "dlg_no_cert_title"
+msgstr "Aucun certificat configuré"
+
+msgid "dlg_no_cert_msg_pfx"
+msgstr "Aucun fichier PKCS#12 (PFX/P12) n'est configuré.\n\nVeuillez configurer un fichier de certificat dans les paramètres avant de signer."
+
+msgid "dlg_no_cert_msg_pkcs11"
+msgstr "Aucune bibliothèque PKCS#11 n'est configurée.\n\nVeuillez configurer votre token de signature dans les paramètres avant de signer."
+
+msgid "dlg_no_cert_open_settings"
+msgstr "Ouvrir les paramètres"

@@ -1773,3 +1773,15 @@ msgstr "Salva"
 
 msgid "dlg_unsaved_quit"
 msgstr "Esci"
+
+msgid "dlg_no_cert_title"
+msgstr "Nessun certificato configurato"
+
+msgid "dlg_no_cert_msg_pfx"
+msgstr "Nessun file PKCS#12 (PFX/P12) è stato configurato.\n\nSi prega di configurare un file di certificato nelle impostazioni prima di firmare."
+
+msgid "dlg_no_cert_msg_pkcs11"
+msgstr "Nessuna libreria PKCS#11 è stata configurata.\n\nSi prega di configurare il token di firma nelle impostazioni prima di firmare."
+
+msgid "dlg_no_cert_open_settings"
+msgstr "Apri impostazioni"

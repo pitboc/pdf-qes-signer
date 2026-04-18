@@ -1833,6 +1833,30 @@ class PDFSignerApp(QMainWindow):
                 self, t("dlg_sign_error_title"), t("dlg_pyhanko_missing"))
             return
 
+        # Zertifikatsquelle prüfen – vor jedem weiteren Dialog
+        _mode = self.config.get("pkcs11", "signer_mode")
+        _cert_ok = (
+            bool(self.config.get("pkcs11", "pfx_path").strip())
+            if _mode == "pfx"
+            else bool(self.config.get("pkcs11", "lib_path").strip())
+        )
+        if not _cert_ok:
+            _msg_key = "dlg_no_cert_msg_pfx" if _mode == "pfx" else "dlg_no_cert_msg_pkcs11"
+            _mb = QMessageBox(
+                QMessageBox.Icon.Warning,
+                t("dlg_no_cert_title"),
+                t(_msg_key),
+                parent=self,
+            )
+            _btn_settings = _mb.addButton(
+                t("dlg_no_cert_open_settings"), QMessageBox.ButtonRole.ActionRole)
+            _mb.addButton(t("dlg_unsaved_cancel"), QMessageBox.ButtonRole.RejectRole)
+            _mb.exec()
+            if _mb.clickedButton() is _btn_settings:
+                from .settings_dialog import SettingsDialog
+                self._open_settings(initial_page=SettingsDialog.PAGE_TOKEN)
+            return
+
         # Row 0 = invisible, 1…N = sig_fields, N+1…N+K = locked_fields, rest = signed
         # Feldlistenzeile in die entsprechende Feldkategorie übersetzen
         row      = self._field_list.currentRow()

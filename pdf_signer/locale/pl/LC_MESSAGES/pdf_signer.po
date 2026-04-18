@@ -1853,3 +1853,15 @@ msgstr "Zapisz"
 
 msgid "dlg_unsaved_quit"
 msgstr "Zakończ"
+
+msgid "dlg_no_cert_title"
+msgstr "Brak skonfigurowanego certyfikatu"
+
+msgid "dlg_no_cert_msg_pfx"
+msgstr "Nie skonfigurowano pliku PKCS#12 (PFX/P12).\n\nSkonfiguruj plik certyfikatu w ustawieniach przed podpisaniem."
+
+msgid "dlg_no_cert_msg_pkcs11"
+msgstr "Nie skonfigurowano biblioteki PKCS#11.\n\nSkonfiguruj token podpisu w ustawieniach przed podpisaniem."
+
+msgid "dlg_no_cert_open_settings"
+msgstr "Otwórz ustawienia"
