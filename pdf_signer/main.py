@@ -12,9 +12,62 @@ from __future__ import annotations
 
 import sys
 
+# Module-level handle kept open so faulthandler can write to it at any time.
+_crash_log_fh = None
+
+
+def _install_crash_handler() -> None:
+    """Write unhandled exceptions and C-level faults to a persistent log file.
+
+    Two mechanisms are combined:
+    - ``faulthandler``: catches SIGSEGV / SIGABRT / SIGFPE (C-level crashes).
+      The file handle must stay open for the entire process lifetime, hence the
+      module-level ``_crash_log_fh``.
+    - ``sys.excepthook``: catches unhandled Python exceptions that reach the
+      top of the call stack (e.g. a Qt slot that raises and is not caught).
+    """
+    import datetime
+    import faulthandler
+    import traceback
+    from pathlib import Path
+
+    global _crash_log_fh
+
+    log_dir = Path.home() / ".local" / "share" / "pdf-signer"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    crash_log = log_dir / "crash.log"
+
+    _crash_log_fh = open(crash_log, "a", encoding="utf-8")
+    _crash_log_fh.write(
+        f"\n{'=' * 60}\n"
+        f"Session started: {datetime.datetime.now().isoformat()}\n"
+    )
+    _crash_log_fh.flush()
+
+    faulthandler.enable(_crash_log_fh)
+
+    _orig_hook = sys.excepthook
+
+    def _excepthook(exc_type, exc_value, exc_tb):
+        try:
+            with open(crash_log, "a", encoding="utf-8") as f:
+                f.write(
+                    f"\n{'=' * 60}\n"
+                    f"Unhandled exception: {datetime.datetime.now().isoformat()}\n"
+                )
+                traceback.print_exception(exc_type, exc_value, exc_tb, file=f)
+        except Exception:
+            pass
+        _orig_hook(exc_type, exc_value, exc_tb)
+
+    sys.excepthook = _excepthook
+    print(f"[crash handler] Log: {crash_log}", file=sys.stderr)
+
 
 def main() -> None:
     """Parse arguments, initialise Qt, and launch the main window."""
+    _install_crash_handler()
+
     import argparse
 
     parser = argparse.ArgumentParser(

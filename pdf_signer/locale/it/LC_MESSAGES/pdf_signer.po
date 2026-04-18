@@ -1774,6 +1774,12 @@ msgstr "Salva"
 msgid "dlg_unsaved_quit"
 msgstr "Esci"
 
+msgid "dlg_unsaved_open_msg"
+msgstr "Ci sono modifiche non salvate.\nAprire un nuovo file le eliminerà.\nVuoi continuare?"
+
+msgid "dlg_unsaved_discard"
+msgstr "Elimina"
+
 msgid "dlg_no_cert_title"
 msgstr "Nessun certificato configurato"
 

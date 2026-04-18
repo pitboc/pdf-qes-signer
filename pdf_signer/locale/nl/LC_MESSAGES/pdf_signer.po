@@ -1775,6 +1775,12 @@ msgstr "Opslaan"
 msgid "dlg_unsaved_quit"
 msgstr "Afsluiten"
 
+msgid "dlg_unsaved_open_msg"
+msgstr "Er zijn niet-opgeslagen wijzigingen.\nEen nieuw bestand openen zal deze verwijderen.\nWilt u doorgaan?"
+
+msgid "dlg_unsaved_discard"
+msgstr "Verwijderen"
+
 msgid "dlg_no_cert_title"
 msgstr "Geen certificaat geconfigureerd"
 

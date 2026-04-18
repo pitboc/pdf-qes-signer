@@ -1774,6 +1774,12 @@ msgstr "Guardar"
 msgid "dlg_unsaved_quit"
 msgstr "Salir"
 
+msgid "dlg_unsaved_open_msg"
+msgstr "Hay cambios sin guardar.\nAbrir un nuevo archivo los descartará.\n¿Desea continuar?"
+
+msgid "dlg_unsaved_discard"
+msgstr "Descartar"
+
 msgid "dlg_no_cert_title"
 msgstr "Sin certificado configurado"
 

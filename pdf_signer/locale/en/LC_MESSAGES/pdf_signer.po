@@ -1855,6 +1855,12 @@ msgstr "Save"
 msgid "dlg_unsaved_quit"
 msgstr "Quit"
 
+msgid "dlg_unsaved_open_msg"
+msgstr "There are unsaved changes.\nOpening a new file will discard them.\nDo you want to continue?"
+
+msgid "dlg_unsaved_discard"
+msgstr "Discard"
+
 msgid "dlg_no_cert_title"
 msgstr "No Certificate Configured"
 

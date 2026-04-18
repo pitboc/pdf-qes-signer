@@ -1778,6 +1778,12 @@ msgstr "Enregistrer"
 msgid "dlg_unsaved_quit"
 msgstr "Quitter"
 
+msgid "dlg_unsaved_open_msg"
+msgstr "Il y a des modifications non enregistrées.\nOuvrir un nouveau fichier les supprimera.\nVoulez-vous continuer?"
+
+msgid "dlg_unsaved_discard"
+msgstr "Ignorer"
+
 msgid "dlg_no_cert_title"
 msgstr "Aucun certificat configuré"
 

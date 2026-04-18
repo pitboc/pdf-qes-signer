@@ -181,6 +181,7 @@ class ContinuousView(QScrollArea):
     field_clicked = pyqtSignal(object) # SignatureFieldDef
     field_added   = pyqtSignal(object) # SignatureFieldDef
     field_deleted = pyqtSignal(object) # SignatureFieldDef
+    field_moved   = pyqtSignal(object) # SignatureFieldDef
     zoom_changed  = pyqtSignal(float)  # new zoom factor after set_zoom()
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -502,6 +503,7 @@ class ContinuousView(QScrollArea):
         pv.field_added.connect(self.field_added)
         pv.field_deleted.connect(self.field_deleted)
         pv.field_clicked.connect(self.field_clicked)
+        pv.field_moved.connect(self.field_moved)
         pv.zoom_requested.connect(
             lambda delta, pos, _pv=pv: self._on_pv_zoom_requested(delta, pos, _pv))
         pv.zoom_rect_requested.connect(

@@ -1854,6 +1854,12 @@ msgstr "Zapisz"
 msgid "dlg_unsaved_quit"
 msgstr "Zakończ"
 
+msgid "dlg_unsaved_open_msg"
+msgstr "Są niezapisane zmiany.\nOtwarcie nowego pliku spowoduje ich utratę.\nCzy chcesz kontynuować?"
+
+msgid "dlg_unsaved_discard"
+msgstr "Odrzuć"
+
 msgid "dlg_no_cert_title"
 msgstr "Brak skonfigurowanego certyfikatu"
 

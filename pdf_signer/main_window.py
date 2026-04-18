@@ -484,6 +484,7 @@ class PDFSignerApp(QMainWindow):
         self._pdf_view.field_added.connect(self._on_field_added)
         self._pdf_view.field_deleted.connect(self._on_field_deleted)
         self._pdf_view.field_clicked.connect(self._on_field_clicked_in_view)
+        self._pdf_view.field_moved.connect(self._on_field_moved)
         self._pdf_view.zoom_requested.connect(self._on_zoom_wheel)
         self._pdf_view.zoom_rect_requested.connect(self._on_zoom_rect_single)
         self._pdf_view.pan_started.connect(self._on_pan_started_single)
@@ -502,6 +503,7 @@ class PDFSignerApp(QMainWindow):
         self._cv.field_clicked.connect(self._on_field_clicked_in_view)
         self._cv.field_added.connect(self._on_field_added)
         self._cv.field_deleted.connect(self._on_field_deleted)
+        self._cv.field_moved.connect(self._on_field_moved)
         self._cv.zoom_changed.connect(self._on_cv_zoom_changed)
 
         # QStackedWidget schaltet zwischen den beiden Ansichten um
@@ -1272,10 +1274,24 @@ class PDFSignerApp(QMainWindow):
         self._update_field_list()
         self._set_status(t("status_field_deleted", name=fdef.name))
 
+    def _on_field_moved(self, fdef: SignatureFieldDef) -> None:
+        self._has_unsaved_changes = True
+
     # ── PDF navigation ────────────────────────────────────────────────────
 
     def open_pdf(self) -> None:
-        # Dateiauswahl-Dialog öffnen; Startverzeichnis aus letztem geöffneten Pfad
+        if self._has_unsaved_changes:
+            dlg = QMessageBox(self)
+            dlg.setWindowTitle(t("dlg_unsaved_title"))
+            dlg.setText(t("dlg_unsaved_open_msg"))
+            dlg.setIcon(QMessageBox.Icon.Question)
+            btn_cancel  = dlg.addButton(t("dlg_unsaved_cancel"),  QMessageBox.ButtonRole.RejectRole)
+            btn_discard = dlg.addButton(t("dlg_unsaved_discard"), QMessageBox.ButtonRole.DestructiveRole)
+            dlg.setDefaultButton(btn_cancel)
+            dlg.exec()
+            if dlg.clickedButton() is not btn_discard:
+                return
+
         start = self.config.get("paths", "last_open_dir")
         path, _ = QFileDialog.getOpenFileName(
             self, t("dlg_open_pdf_title"), start, t("dlg_pdf_filter"))

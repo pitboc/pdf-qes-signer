@@ -1853,6 +1853,12 @@ msgstr "Salvar"
 msgid "dlg_unsaved_quit"
 msgstr "Sair"
 
+msgid "dlg_unsaved_open_msg"
+msgstr "Há alterações não salvas.\nAbrir um novo arquivo irá descartá-las.\nDeseja continuar?"
+
+msgid "dlg_unsaved_discard"
+msgstr "Descartar"
+
 msgid "dlg_no_cert_title"
 msgstr "Nenhum certificado configurado"
 

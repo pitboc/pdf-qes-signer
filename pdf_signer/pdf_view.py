@@ -382,12 +382,15 @@ class TextAnnotOverlay(QWidget):
         p.fillRect(0, 0, self.HANDLE, self.HANDLE, QColor("#cc2200"))
         p.end()
 
+    def _in_handle(self, pos: QPointF) -> bool:
+        return pos.x() <= self.HANDLE and pos.y() <= self.HANDLE
+
     def mousePressEvent(self, ev) -> None:
         if ev.button() == Qt.MouseButton.LeftButton:
-            if (ev.position().x() <= self.HANDLE
-                    and ev.position().y() <= self.HANDLE):
+            if self._in_handle(ev.position()):
                 self._dragging = True
                 self._drag_off = ev.position().toPoint()
+                self.setCursor(Qt.CursorShape.SizeAllCursor)
                 self._edit.setFocus()   # select this overlay when dragging
             else:
                 self._edit.setFocus()
@@ -404,11 +407,17 @@ class TextAnnotOverlay(QWidget):
                 np.setY(max(0, min(np.y(), par.height() - self.height())))
             self.move(np)
         else:
+            self.setCursor(Qt.CursorShape.SizeAllCursor
+                           if self._in_handle(ev.position())
+                           else Qt.CursorShape.ArrowCursor)
             super().mouseMoveEvent(ev)
 
     def mouseReleaseEvent(self, ev) -> None:
         if self._dragging and ev.button() == Qt.MouseButton.LeftButton:
             self._dragging = False
+            self.setCursor(Qt.CursorShape.SizeAllCursor
+                           if self._in_handle(ev.position())
+                           else Qt.CursorShape.ArrowCursor)
             # Translate new widget position back to PDF baseline coordinates
             par = self.parent()
             if par and hasattr(par, '_w_to_pdf'):
@@ -448,11 +457,14 @@ class PDFViewWidget(QWidget):
 
     # Default zoom factor (class constant – instances shadow it via _zoom).
     ZOOM: float = 1.5
+    # Drag-handle size (pixels) drawn at the top-left corner of each free sig field.
+    FIELD_HANDLE: int = 10
 
     from PyQt6.QtCore import pyqtSignal
     field_added         = pyqtSignal(object)
     field_deleted       = pyqtSignal(object)
     field_clicked       = pyqtSignal(object)       # click on existing field
+    field_moved         = pyqtSignal(object)       # field repositioned by drag
     zoom_requested      = pyqtSignal(int, QPointF) # Ctrl+wheel: (angleDelta.y, cursor_in_widget)
     hscroll_requested   = pyqtSignal(int)          # Shift+wheel: angleDelta.y
     zoom_rect_requested = pyqtSignal(QRectF)       # Ctrl+drag: rubber-band rect (widget coords)
@@ -491,6 +503,9 @@ class PDFViewWidget(QWidget):
         self._text_overlays: list[TextAnnotOverlay]  = []
         self._current_page = 0
         self._selected_field: Optional[SignatureFieldDef] = None
+        self._dragging_field:    Optional[SignatureFieldDef] = None
+        self._field_drag_start_w:   Optional[QPointF]        = None
+        self._field_drag_start_pdf: Optional[tuple]          = None  # (x1,y1,x2,y2)
 
     def set_page(self, page: fitz.Page,
                  sig_fields: list[SignatureFieldDef],
@@ -621,6 +636,19 @@ class PDFViewWidget(QWidget):
                     return fdef
         return None
 
+    def _handle_at(self, pos: QPointF) -> Optional["SignatureFieldDef"]:
+        """Return the sig_field whose drag handle (top-left square) contains *pos*."""
+        h = PDFViewWidget.FIELD_HANDLE
+        for fdef in reversed(self._sig_fields):
+            if fdef.page != self._current_page:
+                continue
+            tl   = self._pdf_to_w(fdef.x1, fdef.y2)
+            br   = self._pdf_to_w(fdef.x2, fdef.y1)
+            rect = QRectF(tl, br).normalized()
+            if QRectF(rect.left(), rect.top(), h, h).contains(pos):
+                return fdef
+        return None
+
     # ── Coordinate conversion ─────────────────────────────────────────────
 
     def _pdf_to_w(self, x: float, y: float) -> QPointF:
@@ -669,11 +697,15 @@ class PDFViewWidget(QWidget):
                 pen = QPen(QColor("#1a73e8"), 1, Qt.PenStyle.DashLine)
                 painter.setPen(pen)
                 painter.drawRect(rect.adjusted(1, 1, -1, -1))
-            # Field name label in top-left corner
+            # Field name label (offset right to make room for the handle)
+            h = PDFViewWidget.FIELD_HANDLE
             painter.setPen(QPen(QColor("#1a73e8")))
             painter.setFont(QFont("Arial", 7))
-            painter.drawText(QPointF(rect.left() + 2, rect.top() + 10),
+            painter.drawText(QPointF(rect.left() + h + 2, rect.top() + 10),
                              fdef.name)
+            # Red drag handle at top-left corner
+            painter.fillRect(int(rect.left()), int(rect.top()), h, h,
+                             QColor("#cc2200"))
 
         # Locked unsigned fields: orange border, not deletable
         for fdef in self._locked_fields:
@@ -737,11 +769,26 @@ class PDFViewWidget(QWidget):
                 # Ctrl+drag: start rubber-band zoom selection
                 self._rb_start = QPointF(ev.position())
                 self._rb_end   = None
-            elif self.text_mode:
-                # Text mode: single click places a new text annotation
-                px, py = self._w_to_pdf(ev.position().x(), ev.position().y())
-                self.text_annot_placed.emit(self._current_page, px, py)
             else:
+                handle_fdef = self._handle_at(ev.position())
+                if handle_fdef is not None:
+                    # Drag handle takes priority over text mode
+                    if self.text_mode:
+                        self.exit_text_mode.emit()
+                    self._dragging_field    = handle_fdef
+                    self._field_drag_start_w   = QPointF(ev.position())
+                    self._field_drag_start_pdf = (
+                        handle_fdef.x1, handle_fdef.y1,
+                        handle_fdef.x2, handle_fdef.y2,
+                    )
+                    self.field_clicked.emit(handle_fdef)
+                    self.setCursor(Qt.CursorShape.SizeAllCursor)
+                    return
+                elif self.text_mode:
+                    # Text mode: single click places a new text annotation
+                    px, py = self._w_to_pdf(ev.position().x(), ev.position().y())
+                    self.text_annot_placed.emit(self._current_page, px, py)
+                    return
                 fdef = self._field_at(ev.position())
                 if fdef is not None:
                     # Click on an existing field → select it, don't start a drag
@@ -767,6 +814,19 @@ class PDFViewWidget(QWidget):
                 int(pos.y() - self._pan_start.y()),
             )
             return
+        if self._dragging_field is not None:
+            dw = ev.position() - self._field_drag_start_w
+            # Convert widget displacement to PDF displacement via differential
+            ox, oy = self._w_to_pdf(0.0, 0.0)
+            nx, ny = self._w_to_pdf(dw.x(), dw.y())
+            dpx, dpy = nx - ox, ny - oy
+            x1, y1, x2, y2 = self._field_drag_start_pdf
+            self._dragging_field.x1 = x1 + dpx
+            self._dragging_field.y1 = y1 + dpy
+            self._dragging_field.x2 = x2 + dpx
+            self._dragging_field.y2 = y2 + dpy
+            self.update()
+            return
         if self._rb_start:
             self._rb_end = QPointF(ev.position())
             self.update()
@@ -774,12 +834,13 @@ class PDFViewWidget(QWidget):
             self._drag_end = QPointF(ev.position())
             self.update()
         else:
-            # Change cursor when hovering over a clickable field
-            fdef = self._field_at(ev.position())
-            self.setCursor(
-                Qt.CursorShape.PointingHandCursor if fdef is not None
-                else Qt.CursorShape.CrossCursor
-            )
+            # Change cursor when hovering over a handle or a clickable field
+            if self._handle_at(ev.position()) is not None:
+                self.setCursor(Qt.CursorShape.SizeAllCursor)
+            elif self._field_at(ev.position()) is not None:
+                self.setCursor(Qt.CursorShape.PointingHandCursor)
+            else:
+                self.setCursor(Qt.CursorShape.CrossCursor)
 
     def mouseReleaseEvent(self, ev) -> None:
         if ev.button() == Qt.MouseButton.MiddleButton:
@@ -787,6 +848,16 @@ class PDFViewWidget(QWidget):
             self.setCursor(Qt.CursorShape.CrossCursor)
             return
         if ev.button() != Qt.MouseButton.LeftButton:
+            return
+
+        # Field drag release
+        if self._dragging_field is not None:
+            fdef = self._dragging_field
+            self._dragging_field    = None
+            self._field_drag_start_w   = None
+            self._field_drag_start_pdf = None
+            self.setCursor(Qt.CursorShape.CrossCursor)
+            self.field_moved.emit(fdef)
             return
 
         # Rubber-band zoom release

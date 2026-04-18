@@ -5,7 +5,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased] – 0.3.9.dev0
+## [0.3.9] – 2026-04-18
+
+### Added
+- **Drag-to-move signature fields:** Each free signature field now shows a red
+  10×10 px drag handle in its top-left corner (same style as text annotation
+  overlays).  Grabbing the handle moves the field in real time; the updated
+  PDF coordinates are written back on mouse release.  Works in both single-page
+  and continuous-view modes, and also exits text-annotation mode if active.
+- **Cursor feedback on handles:** Hovering over a drag handle changes the
+  cursor to the move cursor (⤢) for both signature fields and text annotation
+  overlays.
+- **Crash log:** Unhandled Python exceptions and C-level faults (SIGSEGV,
+  SIGABRT) are now written to `~/.local/share/pdf-signer/crash.log` with a
+  timestamp.  Uses `sys.excepthook` for Python tracebacks and `faulthandler`
+  for low-level crashes.
+- **Unsaved-changes warning on open:** Opening a new PDF while the current
+  document has unsaved changes now shows a confirmation dialog ("Verwerfen" /
+  "Discard") instead of silently discarding them.  Translated into all 8
+  supported languages.
 
 ---
 
