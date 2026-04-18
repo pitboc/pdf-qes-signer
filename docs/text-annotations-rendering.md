@@ -200,6 +200,62 @@ _FONT_BOLD   = frozenset({"hebo", "hebi", "tibo", "tibi", "cobo", "cobi"})
 _FONT_ITALIC = frozenset({"heit", "hebi", "tiit", "tibi", "coit", "cobi"})
 ```
 
+### Kerning
+
+Qt enables font kerning by default (`QFont.setKerning(True)`).  fitz's
+`TextWriter` does **not** apply kern-pair adjustments when rendering to the PDF
+content stream — characters are placed at their standard advance widths only.
+
+This causes a visible gap between kerned pairs (e.g. "T"+"e" in Helvetica)
+in the signed PDF that is not present in the Qt preview.  The fix is to
+**disable kerning in the overlay font** so both render identically:
+
+```python
+font.setKerning(False)  # match fitz TextWriter (no kern pairs)
+```
+
+### Overlay-to-PDF position alignment
+
+A systematic offset exists between the widget layout anchor and the position
+where `TextWriter` places the first glyph.  Four tunable class constants in
+`TextAnnotOverlay` compensate for this offset empirically:
+
+```python
+_OFFSET_X_ABS: float =  0.567  # PDF points, font-size-independent
+_OFFSET_Y_ABS: float =  0.0
+_OFFSET_X_REL: float =  0.0
+_OFFSET_Y_REL: float = -0.113  # dimensionless × font_size PDF points
+```
+
+All constants are in **PDF-point space** (zoom-independent).  The pixel
+correction applied in `_position_overlay` and `mouseReleaseEvent` is:
+
+```
+pixel_corr = (_OFFSET_*_ABS + _OFFSET_*_REL × font_size) × zoom
+```
+
+**Measured offsets** (Helvetica, zoom 1.5):
+
+| font_size | X shift after signing | Y shift after signing |
+|-----------|-----------------------|-----------------------|
+| 10 pt     | 0.2 mm left           | 0.4 mm down           |
+| 50 pt     | 0.2 mm left           | 2.0 mm down           |
+
+The X shift is constant (font-size-independent) → `_OFFSET_X_ABS = 0.2 mm ×
+72/25.4 ≈ 0.567 pt`.
+
+The Y shift scales linearly with font size → `_OFFSET_Y_REL = 0.04 mm/pt ×
+72/25.4 ≈ 0.113` (negative because the signed PDF was too far **down**).
+
+#### Why the Y shift is font-size-dependent
+
+Qt's `FixedHeight` block format sets the line height to `1.2 × font_size ×
+zoom` pixels.  When this value is smaller than the natural line height
+(`fm.ascent() + fm.descent() + fm.leading()`), Qt shifts the first line
+upward by a negative `line.y()` offset.  The magnitude of that shift is
+proportional to `font_size × zoom`, so after the zoom cancels out the
+residual error in PDF points is proportional to `font_size` only.
+
 ---
 
 ## Font Roundtrip in Saved (Unsigned) PDFs
@@ -257,6 +313,6 @@ streams, and their font/spacing properties are unknown to us.
 
 | File                          | Change                                                              |
 |-------------------------------|---------------------------------------------------------------------|
-| `pdf_signer/pdf_view.py`      | `_FONT_BASE`, `_FONT_BOLD`, `_FONT_ITALIC`; bold/italic in `_apply_style` and `baseline_offset_px` |
+| `pdf_signer/pdf_view.py`      | `_FONT_BASE`, `_FONT_BOLD`, `_FONT_ITALIC`; bold/italic in `_apply_style` and `baseline_offset_px`; `_OFFSET_*` constants; `font.setKerning(False)` |
 | `pdf_signer/main_window.py`   | `_TEXT_FONT_ITEMS` (12 variants); toolbar dropdown; `/QESFontName` on reload |
-| `pdf_signer/signer.py`        | `_burn_in_freetext` Phase 1 → `TextWriter` with rotation-aware coordinate transform; `SaveFieldsWorker` writes `/QESFontName` |
+| `pdf_signer/signer.py`        | `_burn_in_freetext` Phase 1 → `TextWriter` with rotation-aware coordinate transform; single `tw.append` per line when `char_spacing == 0`; `SaveFieldsWorker` writes `/QESFontName` |

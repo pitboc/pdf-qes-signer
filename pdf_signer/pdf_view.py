@@ -161,6 +161,15 @@ class TextAnnotOverlay(QWidget):
     _FONT_BOLD   = frozenset({"hebo", "hebi", "tibo", "tibi", "cobo", "cobi"})
     _FONT_ITALIC = frozenset({"heit", "hebi", "tiit", "tibi", "coit", "cobi"})
 
+    # Tunable correction constants for overlay ↔ signed-PDF position alignment.
+    # All constants are in PDF-point space (zoom-independent).
+    # Positive value → PDF text burns further right / down relative to the overlay anchor.
+    # Pixel correction = (_OFFSET_*_ABS + _OFFSET_*_REL × font_size) × zoom
+    _OFFSET_X_ABS: float =  0.567  # PDF points (font-size-independent)
+    _OFFSET_Y_ABS: float =  0.0   # PDF points (font-size-independent)
+    _OFFSET_X_REL: float =  0.0   # dimensionless  × font_size PDF points
+    _OFFSET_Y_REL: float = -0.113 # dimensionless  × font_size PDF points
+
     def __init__(self, annot: TextAnnotDef, zoom: float,
                  parent: QWidget) -> None:
         super().__init__(parent)
@@ -245,6 +254,7 @@ class TextAnnotOverlay(QWidget):
         font.setPointSizeF(pt)
         font.setBold(self._annot.font_name   in TextAnnotOverlay._FONT_BOLD)
         font.setItalic(self._annot.font_name in TextAnnotOverlay._FONT_ITALIC)
+        font.setKerning(False)  # fitz TextWriter rendert ohne Kern-Paare
 
         if self._annot.char_spacing > 0.0:
             font.setLetterSpacing(
@@ -285,16 +295,16 @@ class TextAnnotOverlay(QWidget):
             "QTextEdit { background: transparent; border: none; }"
         )
 
-    def baseline_offset_px(self) -> int:
+    def baseline_offset_px(self) -> float:
         """Pixel distance from the top of this widget to the typographic baseline.
 
         The overlay widget has a 2 px top-inset before the QTextEdit, and the
         QTextDocument adds its own margin (default 4 px).  The baseline of the
         first text line sits ``ascent`` pixels below the top of the text area.
 
-        Using ``font_size * zoom`` (the full em-square) instead of this value
-        would place the anchor point ~20–30 % too low because it conflates the
-        em-height with the ascent.
+        ``_OFFSET_Y_ABS`` and ``_OFFSET_Y_REL`` shift the effective anchor point
+        so that the overlay text aligns with where fitz's TextWriter burns the
+        text into the signed PDF.
         """
         base     = TextAnnotOverlay._FONT_BASE.get(self._annot.font_name, "helv")
         families = self._QT_FAMILIES.get(base, ["Arial"])
@@ -306,9 +316,12 @@ class TextAnnotOverlay(QWidget):
         font.setPointSizeF(pt)
         font.setBold(self._annot.font_name   in TextAnnotOverlay._FONT_BOLD)
         font.setItalic(self._annot.font_name in TextAnnotOverlay._FONT_ITALIC)
-        fm       = QFontMetricsF(font)
-        doc_margin = round(self._edit.document().documentMargin())
-        return 2 + doc_margin + round(fm.ascent())
+        fm         = QFontMetricsF(font)
+        doc_margin = self._edit.document().documentMargin()
+        y_corr     = ((self._OFFSET_Y_ABS
+                       + self._OFFSET_Y_REL * self._annot.font_size)
+                      * self._zoom)
+        return 2.0 + doc_margin + fm.ascent() + y_corr
 
     def _relayout(self) -> None:
         """Resize the widget to fit the current text content.
@@ -399,7 +412,10 @@ class TextAnnotOverlay(QWidget):
             # Translate new widget position back to PDF baseline coordinates
             par = self.parent()
             if par and hasattr(par, '_w_to_pdf'):
-                wx = self.pos().x() + self.HANDLE
+                x_corr = ((self._OFFSET_X_ABS
+                           + self._OFFSET_X_REL * self._annot.font_size)
+                          * self._zoom)
+                wx = self.pos().x() + self.HANDLE + x_corr
                 wy = self.pos().y() + self.baseline_offset_px()
                 self._annot.x, self._annot.y = par._w_to_pdf(wx, wy)
                 self._annot.page = par._current_page
@@ -561,8 +577,11 @@ class PDFViewWidget(QWidget):
         # update_zoom must run first so baseline_offset_px() uses the new zoom
         if update_style:
             ov.update_zoom(self._zoom)
-        wx = round(base.x()) - TextAnnotOverlay.HANDLE
-        wy = round(base.y()) - ov.baseline_offset_px()
+        x_corr = ((ov._OFFSET_X_ABS
+                   + ov._OFFSET_X_REL * ov.annot.font_size)
+                  * ov._zoom)
+        wx = round(base.x() - TextAnnotOverlay.HANDLE - x_corr)
+        wy = round(base.y() - ov.baseline_offset_px())
         ov.move(max(0, wx), max(0, wy))
         ov.show()
 

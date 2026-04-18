@@ -853,12 +853,17 @@ class SignWorker(QThread):
             font = _fitz.Font(ann.font_name)
             tw   = _fitz.TextWriter(page.rect, color=ann.color)
             for line_idx, line in enumerate(ann.text.split("\n")):
-                cx     = x0
                 y_line = y0 + line_idx * ann.font_size * 1.2
-                for char in line:
-                    tw.append((cx, y_line), char, font=font, fontsize=ann.font_size)
-                    adv = font.char_lengths(char, ann.font_size)
-                    cx += (adv[0] if adv else ann.font_size * 0.6) + ann.char_spacing
+                if ann.char_spacing == 0.0:
+                    # Gesamte Zeile in einem Aufruf – fitz übernimmt Glyph-Advances
+                    # und Kern-Paare intern, sodass kein Spacing-Artefakt entsteht.
+                    tw.append((x0, y_line), line, font=font, fontsize=ann.font_size)
+                else:
+                    cx = x0
+                    for char in line:
+                        tw.append((cx, y_line), char, font=font, fontsize=ann.font_size)
+                        adv = font.char_lengths(char, ann.font_size)
+                        cx += (adv[0] if adv else ann.font_size * 0.6) + ann.char_spacing
             # fitz kompensiert Seitenrotation im TextWriter nicht automatisch:
             # Der Betrachter dreht den Content-Stream um /Rotate Grad, wodurch
             # Standard-Horizontaltext gedreht erscheint.  morph dreht alle Glyphen
