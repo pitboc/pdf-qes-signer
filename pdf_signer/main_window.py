@@ -80,7 +80,8 @@ from .signer import (
     SaveFieldsWorker, SignWorker,
     _pyhanko_available, _pkcs11_available,
 )
-from .pdf_view import PDFViewWidget, SignatureFieldDef, TextAnnotDef, TextAnnotOverlay
+from .pdf_view import (PDFViewWidget, SignatureFieldDef, TextAnnotDef,
+                       TextAnnotOverlay, FormFieldDef, SUPPORTED_FORM_TYPES)
 from .dialogs import (Pkcs11ConfigDialog, ProfileManagerDialog,
                        ProfileSelectDialog, _pfx_load_cert_info,
                        DocMDPDialog)
@@ -224,6 +225,9 @@ class PDFSignerApp(QMainWindow):
         self.signed_fields: list[SignatureFieldDef] = []  # already signed (display only)
         # Text-Annotationen: editierbar bis zur ersten Signatur; beim Signieren eingebrannt
         self.text_annots:    list[TextAnnotDef]       = []
+        # Formularfelder: aus bestehenden PDF-Widgets geladen; editierbar vor der Signatur
+        self._form_fields:          list[FormFieldDef] = []
+        self._form_fields_editable: bool               = False
         # Aktuell fokussierte Text-Overlay-Box (für Toolbar-Kopplung)
         self._focused_overlay: Optional[TextAnnotOverlay] = None
         # Ungespeicherte Änderungen: True wenn sig_fields oder text_annots verändert wurden
@@ -493,6 +497,7 @@ class PDFSignerApp(QMainWindow):
         self._pdf_view.text_annot_placed.connect(self._on_text_annot_placed)
         self._pdf_view.text_annot_deleted.connect(self._on_text_annot_deleted)
         self._pdf_view.exit_text_mode.connect(self._on_exit_text_mode)
+        self._pdf_view.form_field_changed.connect(self._apply_form_field_edit)
         self._outer_layout.addWidget(self._pdf_view)
         self._scroll_area.setWidget(self._outer_container)
         self._scroll_area.setWidgetResizable(False)
@@ -746,7 +751,10 @@ class PDFSignerApp(QMainWindow):
             return
         self._pdf_view._zoom = self._zoom_factor
         page = doc[self.current_page]
-        self._pdf_view.set_page(page, sig, self.current_page, locked, signed)
+        ff       = [] if historical else self._form_fields
+        ff_edit  = (not historical) and self._form_fields_editable
+        self._pdf_view.set_page(page, sig, self.current_page, locked, signed,
+                                form_fields=ff, form_fields_editable=ff_edit)
         self._outer_container.adjustSize()
         self._page_edit.setText(str(self.current_page + 1))
         self._page_total_lbl.setText(f"/ {len(doc)}")
@@ -1424,6 +1432,7 @@ class PDFSignerApp(QMainWindow):
         self.locked_fields.clear()
         self.signed_fields.clear()
         self.text_annots.clear()
+        self._form_fields.clear()
         self._pdf_view.clear_text_overlays()
 
         # First pass: collect all signature widgets
@@ -1615,6 +1624,118 @@ class PDFSignerApp(QMainWindow):
             # (garbage=0, deflate=False: keine Komprimierung, keine Bereinigung
             # damit bestehende Struktur erhalten bleibt)
             self._working_bytes = doc.tobytes(garbage=0, deflate=False)
+
+        # ── Formularfelder scannen ────────────────────────────────────────
+        # Formular-Widgets werden nicht aus dem fitz-Dokument entfernt –
+        # fitz rendert deren aktuelle Appearance automatisch.
+        has_unsupported = False
+        for _page_num in range(len(doc)):
+            _page  = doc[_page_num]
+            _mbox_h = _page.mediabox.height
+            for _widget in _page.widgets():
+                _ft = _widget.field_type
+                if _ft == fitz.PDF_WIDGET_TYPE_SIGNATURE:
+                    continue
+                if _ft not in SUPPORTED_FORM_TYPES:
+                    has_unsupported = True
+                    continue
+                _r  = _widget.rect
+                _x0 = _r.x0
+                _y0 = _mbox_h - _r.y1   # fitz y-down → PDF y-up
+                _x1 = _r.x1
+                _y1 = _mbox_h - _r.y0
+                _ff = FormFieldDef(
+                    field_name=_widget.field_name or f"field_{_widget.xref}",
+                    field_type=_ft,
+                    page=_page_num,
+                    rect=(_x0, _y0, _x1, _y1),
+                    value=str(_widget.field_value or ""),
+                    options=list(_widget.choice_values or []),
+                    multiline=bool(_widget.field_flags & fitz.PDF_TX_FIELD_IS_MULTILINE),
+                    xref=_widget.xref,
+                    orig_fontsize=float(_widget.text_fontsize or 0.0),
+                )
+                self._form_fields.append(_ff)
+
+        # Editierbar nur wenn kein signiertes/gesperrtes Feld vorhanden
+        self._form_fields_editable = not bool(self.signed_fields or self.locked_fields)
+
+        if has_unsupported and self._form_fields_editable:
+            self.statusBar().showMessage(
+                t("form_fields_hint_unsupported"), 8000)
+
+    def _apply_form_field_edit(self, field_name: str, new_value: str) -> None:
+        """Update a form field value in the live fitz document.
+
+        Three encodings are used by the view:
+
+        - Plain ``field_name``  → text / combobox / checkbox; ``new_value`` is
+          the new string value.
+        - ``"\\x01<field_name>\\x00<xref>"``  → radio button selection by xref;
+          the matching widget is set to its on_state(), siblings to ``"Off"``.
+
+        Updates the fitz widget, the ``_form_fields`` mirror, and schedules
+        a page re-render.  Sets ``_has_unsaved_changes`` so the unsaved-changes
+        guard triggers on the next open/close.
+        """
+        if not self.pdf_doc:
+            return
+
+        is_radio = field_name.startswith("\x01")
+        if is_radio:
+            # "\x01<name>\x00<xref>"
+            rest = field_name[1:]
+            actual_name, xref_str = rest.split("\x00", 1)
+            target_xref = int(xref_str)
+        else:
+            actual_name = field_name
+            target_xref = 0
+
+        for page_num in range(len(self.pdf_doc)):
+            page = self.pdf_doc[page_num]
+            for widget in page.widgets():
+                if widget.field_name != actual_name:
+                    continue
+                if is_radio:
+                    # fitz's widget.update() for radio buttons sets /AS to the
+                    # on_state regardless of field_value, making all buttons
+                    # appear selected.  Use xref_set_key to set /AS directly.
+                    if widget.xref == target_xref:
+                        self.pdf_doc.xref_set_key(widget.xref, "AS",
+                                                   f"/{widget.on_state()}")
+                    else:
+                        self.pdf_doc.xref_set_key(widget.xref, "AS", "/Off")
+                else:
+                    widget.field_value = new_value
+                    # For multiline text: auto-shrink font to fit all lines,
+                    # matching the burn-in appearance produced by _write_field_text.
+                    if (widget.field_flags & fitz.PDF_TX_FIELD_IS_MULTILINE
+                            and widget.field_type == fitz.PDF_WIDGET_TYPE_TEXT):
+                        ff_orig = next(
+                            (f for f in self._form_fields if f.xref == widget.xref),
+                            None)
+                        base_fs = (ff_orig.orig_fontsize if ff_orig else 0.0) or 0.0
+                        if base_fs <= 0:
+                            base_fs = min(widget.rect.height * 0.72, 12.0)
+                        base_fs = max(4.0, base_fs)
+                        lines = new_value.split("\n")
+                        avail_h = widget.rect.height - 4
+                        if len(lines) * base_fs * 1.2 > avail_h:
+                            base_fs = max(4.0, avail_h / (len(lines) * 1.2))
+                        widget.text_fontsize = base_fs
+                    widget.update()
+
+        # Mirror update in _form_fields
+        for ff in self._form_fields:
+            if ff.field_name != actual_name:
+                continue
+            if is_radio:
+                ff.value = ff.field_name if ff.xref == target_xref else "Off"
+            else:
+                ff.value = new_value
+
+        self._has_unsaved_changes = True
+        self._render_current_page()
 
     def prev_page(self) -> None:
         # Eine Seite zurückblättern (Minimum: Seite 0)
@@ -1978,13 +2099,18 @@ class PDFSignerApp(QMainWindow):
         # all_fields=list(self.sig_fields): alle freien Felder werden vor dem
         # Signieren eingebettet; locked_fields sind bereits in _working_bytes.
         chain_aia = self.config.getbool("signing", "chain_complete_via_aia")
+        # Wenn Formularfelder vorhanden: aktuellen fitz-Doc-Stand exportieren
+        # damit die bearbeiteten Widget-Werte in den Signing-Flow einfließen.
+        _fitz_bytes = (self.pdf_doc.tobytes(garbage=0, deflate=False)
+                       if self._form_fields and self.pdf_doc else None)
         self._sign_worker = SignWorker(
             self._working_bytes, out, fdef, lib, pin, key_id, cert_cn,
             self.appearance, all_fields=list(self.sig_fields), tsa_url=tsa_url,
             field_name=invis_name, mode=mode, pfx_path=pfx_path,
             embed_validation_info=embed_vi, docmdp=docmdp,
             chain_complete_via_aia=chain_aia,
-            text_annots=list(self.text_annots))
+            text_annots=list(self.text_annots),
+            fitz_bytes=_fitz_bytes)
         # finished-Signal: signiertes PDF als neues Arbeitsdokument laden
         self._sign_worker.finished.connect(self._on_sign_done)
         self._sign_worker.error.connect(self._on_sign_error)

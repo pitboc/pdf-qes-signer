@@ -1871,3 +1871,9 @@ msgstr "Nie skonfigurowano biblioteki PKCS#11.\n\nSkonfiguruj token podpisu w us
 
 msgid "dlg_no_cert_open_settings"
 msgstr "Otwórz ustawienia"
+
+msgid "form_fields_hint_unsupported"
+msgstr ""
+
+msgid "form_fields_editable_status"
+msgstr ""

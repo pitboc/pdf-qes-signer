@@ -52,11 +52,13 @@ of the main window, which renders appearance thumbnails at 96 screen DPI.
 
 Fields are painted with different colours to reflect their edit state:
 
-| Field type    | Colour            | Interaction          |
-|---------------|-------------------|----------------------|
-| sig_fields    | Blue (#1a73e8)    | Draw, delete, rename |
-| locked_fields | Orange (#e67e00)  | Sign only            |
-| signed_fields | Grey (#888888)    | Display only (✓)     |
+| Field type       | Colour            | Interaction                   |
+|------------------|-------------------|-------------------------------|
+| sig_fields       | Blue (#1a73e8)    | Draw, delete, rename          |
+| locked_fields    | Orange (#e67e00)  | Sign only                     |
+| signed_fields    | Grey (#888888)    | Display only (✓)              |
+| form_fields (ed) | Green (#2e7d32)   | Click to edit; toggle checkbox|
+| form_fields (ro) | none              | fitz renders as-is            |
 """
 
 from __future__ import annotations
@@ -73,7 +75,8 @@ from PyQt6.QtGui import (
     QTextBlockFormat, QTextCharFormat, QTextCursor,
 )
 from PyQt6.QtWidgets import (
-    QFrame, QInputDialog, QMessageBox, QSizePolicy, QTextEdit, QWidget,
+    QComboBox, QFrame, QInputDialog, QLineEdit, QMessageBox, QPlainTextEdit,
+    QSizePolicy, QTextEdit, QWidget,
 )
 
 from .appearance import SigAppearance
@@ -81,6 +84,14 @@ from .i18n import t
 
 # Pixels per PDF point for the off-canvas preview panel (96 screen DPI / 72 pt DPI)
 DPI_SCALE: float = 96.0 / 72.0
+
+# fitz widget type constants for form fields we support interactively
+SUPPORTED_FORM_TYPES: frozenset[int] = frozenset({
+    fitz.PDF_WIDGET_TYPE_TEXT,
+    fitz.PDF_WIDGET_TYPE_CHECKBOX,
+    fitz.PDF_WIDGET_TYPE_RADIOBUTTON,
+    fitz.PDF_WIDGET_TYPE_COMBOBOX,
+})
 
 
 class SignatureFieldDef:
@@ -110,6 +121,27 @@ class SignatureFieldDef:
     def __repr__(self) -> str:
         return (f"<SigField '{self.name}' page={self.page + 1} "
                 f"[{self.x1:.0f},{self.y1:.0f},{self.x2:.0f},{self.y2:.0f}]>")
+
+
+@dataclass
+class FormFieldDef:
+    """A form field widget found in an existing PDF.
+
+    Coordinates are in PDF native space (origin bottom-left, y-up, 72 dpi points).
+    ``value`` is always a string; checkboxes/radios use ``"Yes"`` / ``"Off"``.
+    ``options`` is non-empty only for ComboBox fields.
+    ``xref`` is the PDF object reference needed to locate the widget in fitz;
+    especially important for radio buttons where multiple widgets share field_name.
+    """
+    field_name: str
+    field_type: int          # fitz PDF_WIDGET_TYPE_* constant
+    page:       int
+    rect:       tuple        # (x0, y0, x1, y1) in PDF native coords, y-up
+    value:       str   = ""
+    options:     list  = _dc_field(default_factory=list)
+    multiline:   bool  = False
+    xref:        int   = 0     # PDF object xref for widget lookup
+    orig_fontsize: float = 0.0  # original /DA font size (0 = auto-size)
 
 
 @dataclass
@@ -473,6 +505,8 @@ class PDFViewWidget(QWidget):
     text_annot_placed   = pyqtSignal(int, float, float)  # page, x_pdf, y_pdf
     text_annot_deleted  = pyqtSignal(object)             # TextAnnotDef
     exit_text_mode      = pyqtSignal()                   # ESC or right-click while in text mode
+    # Emitted when the user edits a form field value (field_name, new_value)
+    form_field_changed  = pyqtSignal(str, str)
 
     def __init__(self, appearance: SigAppearance, parent=None) -> None:
         super().__init__(parent)
@@ -501,6 +535,9 @@ class PDFViewWidget(QWidget):
         self._locked_fields: list[SignatureFieldDef] = []
         self._signed_fields: list[SignatureFieldDef] = []
         self._text_overlays: list[TextAnnotOverlay]  = []
+        self._form_fields:          list[FormFieldDef] = []
+        self._form_fields_editable: bool               = False
+        self._form_overlay: Optional[QWidget]          = None  # active form field overlay
         self._current_page = 0
         self._selected_field: Optional[SignatureFieldDef] = None
         self._dragging_field:    Optional[SignatureFieldDef] = None
@@ -511,26 +548,32 @@ class PDFViewWidget(QWidget):
                  sig_fields: list[SignatureFieldDef],
                  current_page: int,
                  locked_fields: list[SignatureFieldDef] | None = None,
-                 signed_fields: list[SignatureFieldDef] | None = None) -> None:
+                 signed_fields: list[SignatureFieldDef] | None = None,
+                 form_fields: list[FormFieldDef] | None = None,
+                 form_fields_editable: bool = False) -> None:
         """Render *page* at ``_zoom`` and store the field lists for painting."""
+        self._close_form_overlay()
         mat = fitz.Matrix(self._zoom, self._zoom)
         pix = page.get_pixmap(matrix=mat, alpha=False)
         img = QImage(pix.samples, pix.width, pix.height,
                      pix.stride, QImage.Format.Format_RGB888)
-        self._pixmap        = QPixmap.fromImage(img)
-        self._img_w         = pix.width
-        self._img_h         = pix.height
-        self._page_w        = page.rect.width
-        self._page_h        = page.rect.height
-        self._page_rotation = page.rotation
-        self._mediabox_w    = page.mediabox.width
-        self._mediabox_h    = page.mediabox.height
-        self._derot_mat     = page.derotation_matrix
-        self._rot_mat       = page.rotation_matrix
-        self._sig_fields    = sig_fields
-        self._locked_fields = locked_fields or []
-        self._signed_fields = signed_fields or []
-        self._current_page  = current_page
+        self._pixmap               = QPixmap.fromImage(img)
+        self._img_w                = pix.width
+        self._img_h                = pix.height
+        self._page_w               = page.rect.width
+        self._page_h               = page.rect.height
+        self._page_rotation        = page.rotation
+        self._mediabox_w           = page.mediabox.width
+        self._mediabox_h           = page.mediabox.height
+        self._derot_mat            = page.derotation_matrix
+        self._rot_mat              = page.rotation_matrix
+        self._sig_fields           = sig_fields
+        self._locked_fields        = locked_fields or []
+        self._signed_fields        = signed_fields or []
+        self._form_fields          = [f for f in (form_fields or [])
+                                      if f.page == current_page]
+        self._form_fields_editable = form_fields_editable
+        self._current_page         = current_page
         self.setFixedSize(pix.width, pix.height)
         self.reposition_overlays()
         self.update()
@@ -649,6 +692,113 @@ class PDFViewWidget(QWidget):
                 return fdef
         return None
 
+    def _form_field_at(self, pos: QPointF) -> Optional[FormFieldDef]:
+        """Return the editable form field under *pos*, or None."""
+        if not self._form_fields_editable:
+            return None
+        cx, cy = pos.x(), pos.y()
+        for fdef in reversed(self._form_fields):
+            x0, y0, x1, y1 = fdef.rect
+            tl = self._pdf_to_w(x0, y1)
+            br = self._pdf_to_w(x1, y0)
+            if QRectF(tl, br).normalized().contains(cx, cy):
+                return fdef
+        return None
+
+    def _form_field_rect_w(self, fdef: FormFieldDef) -> QRectF:
+        """Widget-pixel rect for a FormFieldDef (normalised)."""
+        x0, y0, x1, y1 = fdef.rect
+        tl = self._pdf_to_w(x0, y1)
+        br = self._pdf_to_w(x1, y0)
+        return QRectF(tl, br).normalized()
+
+    # ── Form field overlay management ─────────────────────────────────────
+
+    def _close_form_overlay(self) -> None:
+        """Destroy the currently active form overlay (if any)."""
+        if self._form_overlay is not None:
+            self._form_overlay.hide()
+            self._form_overlay.deleteLater()
+            self._form_overlay = None
+
+    def _on_form_field_click(self, fdef: FormFieldDef) -> None:
+        """React to a click on an editable form field."""
+        import fitz as _fitz
+        # Checkbox / radio: toggle immediately, no overlay
+        if fdef.field_type == _fitz.PDF_WIDGET_TYPE_CHECKBOX:
+            new_val = "Off" if fdef.value == "Yes" else "Yes"
+            self.form_field_changed.emit(fdef.field_name, new_val)
+            return
+        if fdef.field_type == _fitz.PDF_WIDGET_TYPE_RADIOBUTTON:
+            # Encode xref so the handler can select the exact widget
+            self.form_field_changed.emit(
+                f"\x01{fdef.field_name}\x00{fdef.xref}", "select")
+            return
+        # Text / combobox: show in-place overlay
+        self._close_form_overlay()
+        rect_w = self._form_field_rect_w(fdef)
+        if fdef.field_type == _fitz.PDF_WIDGET_TYPE_COMBOBOX:
+            ov = QComboBox(self)
+            ov.addItems(fdef.options)
+            if fdef.value in fdef.options:
+                ov.setCurrentText(fdef.value)
+            ov.setGeometry(rect_w.toRect())
+            ov.show()
+            ov.setFocus()
+            ov.activated.connect(
+                lambda _idx, f=fdef, o=ov: (
+                    self.form_field_changed.emit(f.field_name, o.currentText()),
+                    self._close_form_overlay(),
+                )
+            )
+            self._form_overlay = ov
+        else:
+            # Text field – use event filter for reliable focus-out detection
+            if fdef.multiline:
+                ov = QPlainTextEdit(self)
+                ov.setPlainText(fdef.value)
+            else:
+                ov = QLineEdit(self)
+                ov.setText(fdef.value)
+            ov.setGeometry(rect_w.toRect())
+            ov.show()
+            ov.setFocus()
+
+            # Capture fdef, ov in closure; use event filter on the parent view
+            _fdef_cap = fdef
+            _ov_cap   = ov
+
+            from PyQt6.QtCore import QObject as _QObject
+
+            class _TextFilter(_QObject):
+                def __init__(self_, parent_view, f, o):
+                    super().__init__(parent_view)
+                    self_._view = parent_view
+                    self_._f    = f
+                    self_._o    = o
+
+                def eventFilter(self_, obj, event):
+                    if obj is self_._o and event.type() == QEvent.Type.FocusOut:
+                        if self_._view._form_overlay is self_._o:
+                            val = (self_._o.toPlainText()
+                                   if isinstance(self_._o, QPlainTextEdit)
+                                   else self_._o.text())
+                            self_._view.form_field_changed.emit(
+                                self_._f.field_name, val)
+                            self_._view._close_form_overlay()
+                    return False
+
+            _filter = _TextFilter(self, _fdef_cap, _ov_cap)
+            ov.installEventFilter(_filter)
+            if isinstance(ov, QLineEdit):
+                ov.returnPressed.connect(
+                    lambda f=_fdef_cap, o=_ov_cap: (
+                        self.form_field_changed.emit(f.field_name, o.text()),
+                        self._close_form_overlay(),
+                    )
+                )
+            self._form_overlay = ov
+
     # ── Coordinate conversion ─────────────────────────────────────────────
 
     def _pdf_to_w(self, x: float, y: float) -> QPointF:
@@ -743,6 +893,22 @@ class PDFViewWidget(QWidget):
             painter.drawText(QPointF(rect.left() + 2, rect.top() + 10),
                              f"✓ {fdef.name}")
 
+        # Form fields: green border when editable
+        if self._form_fields_editable:
+            import fitz as _fitz_pev
+            for fdef in self._form_fields:
+                rect = self._form_field_rect_w(fdef)
+                painter.fillRect(rect, QColor(46, 125, 50, 25))
+                pen = QPen(QColor("#2e7d32"), 1, Qt.PenStyle.SolidLine)
+                painter.setPen(pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(rect.adjusted(1, 1, -1, -1))
+                # Checkbox: paint a small indicator
+                if fdef.field_type == _fitz_pev.PDF_WIDGET_TYPE_CHECKBOX:
+                    if fdef.value == "Yes":
+                        painter.setPen(QPen(QColor("#2e7d32"), 2))
+                        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "✓")
+
         # Drag-to-draw preview rectangle (signature field)
         if self._drag_start and self._drag_end:
             pen = QPen(QColor("#1a73e8"), 2, Qt.PenStyle.DashLine)
@@ -793,7 +959,12 @@ class PDFViewWidget(QWidget):
                 if fdef is not None:
                     # Click on an existing field → select it, don't start a drag
                     self.field_clicked.emit(fdef)
-                elif self.drawing_enabled:
+                    return
+                ff = self._form_field_at(ev.position())
+                if ff is not None:
+                    self._on_form_field_click(ff)
+                    return
+                if self.drawing_enabled:
                     self._drag_start = QPointF(ev.position())
                     self._drag_end   = None
         elif ev.button() == Qt.MouseButton.MiddleButton:
@@ -839,6 +1010,13 @@ class PDFViewWidget(QWidget):
                 self.setCursor(Qt.CursorShape.SizeAllCursor)
             elif self._field_at(ev.position()) is not None:
                 self.setCursor(Qt.CursorShape.PointingHandCursor)
+            elif self._form_field_at(ev.position()) is not None:
+                import fitz as _fitz_mv
+                ff = self._form_field_at(ev.position())
+                if ff and ff.field_type == _fitz_mv.PDF_WIDGET_TYPE_TEXT:
+                    self.setCursor(Qt.CursorShape.IBeamCursor)
+                else:
+                    self.setCursor(Qt.CursorShape.PointingHandCursor)
             else:
                 self.setCursor(Qt.CursorShape.CrossCursor)
 

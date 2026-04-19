@@ -476,7 +476,8 @@ class SignWorker(QThread):
                  embed_validation_info: bool = False,
                  docmdp: str = "none",
                  chain_complete_via_aia: bool = True,
-                 text_annots: list | None = None) -> None:
+                 text_annots: list | None = None,
+                 fitz_bytes: bytes | None = None) -> None:
         super().__init__()
         # pdf_bytes: Arbeitskopie des PDFs (ohne freie Signaturfelder);
         # Workers re-embedden sig_fields vor dem Signieren
@@ -521,6 +522,9 @@ class SignWorker(QThread):
         self._root_fetch_ok    = False
         # text_annots: TextAnnotDef-Objekte die vor dem Signieren eingebrannt werden
         self.text_annots = text_annots or []
+        # fitz_bytes: aktuell exportierte fitz-Bytes (mit Widget-Werten); wenn gesetzt,
+        # werden Formularfelder daraus geflacht bevor pyhanko die Signatur anlegt
+        self.fitz_bytes: bytes | None = fitz_bytes
 
     def allow_root_fetch(self) -> None:
         """Call from UI thread: user approved downloading the root cert."""
@@ -1086,7 +1090,115 @@ class SignWorker(QThread):
 
     # ── Dispatch ──────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _write_field_text(page, widget) -> None:
+        """Embed a text or combobox field value as selectable text via TextWriter.
+
+        Font and color are taken from the widget's own properties.
+        When font size is 0 (PDF auto-size), it is derived from the field height.
+        Vertical positioning centres the text baseline within the field rect.
+        Multi-line fields write each \\n-separated line downward.
+        """
+        import fitz as _fitz
+
+        value = str(widget.field_value or "")
+        if not value.strip():
+            return
+
+        # Font name: widget.text_font uses PDF alias ('Helv', 'TiRo', 'Cour')
+        raw_font = (widget.text_font or "Helv").strip("/")
+        # Map uppercase PDF aliases to fitz short names
+        _font_map = {"Helv": "helv", "TiRo": "tiro", "Cour": "cour"}
+        font_name = _font_map.get(raw_font, raw_font.lower()[:4])
+        try:
+            font = _fitz.Font(font_name)
+        except Exception:
+            font = _fitz.Font("helv")
+
+        rect = widget.rect
+        # Auto-size (0): use ~72 % of field height, capped at 12 pt
+        fs = widget.text_fontsize or 0.0
+        if fs <= 0:
+            fs = min(rect.height * 0.72, 12.0)
+        fs = max(4.0, fs)
+
+        color = tuple(widget.text_color or (0.0, 0.0, 0.0))
+        is_multiline = bool(
+            widget.field_flags & _fitz.PDF_TX_FIELD_IS_MULTILINE)
+
+        tw = _fitz.TextWriter(page.rect, color=color)
+
+        if is_multiline:
+            lines = value.split("\n")
+            # Scale down font size if all lines don't fit vertically
+            avail_h = rect.height - 4
+            if len(lines) * fs * 1.2 > avail_h:
+                fs = max(4.0, avail_h / (len(lines) * 1.2))
+            x0 = rect.x0 + 2
+            y  = rect.y0 + fs * 0.9
+            for line in lines:
+                tw.append((x0, y), line, font=font, fontsize=fs)
+                y += fs * 1.2
+        else:
+            # Vertically centre the baseline within the field rect
+            ascender = font.ascender * fs
+            y = rect.y0 + (rect.height + ascender) / 2 - ascender * 0.15
+            y = max(rect.y0 + fs * 0.9, min(y, rect.y1 - 2))
+            tw.append((rect.x0 + 2, y), value, font=font, fontsize=fs)
+
+        rot = page.rotation
+        if rot:
+            tw.write_text(page, morph=(
+                _fitz.Point(rect.x0, rect.y0), _fitz.Matrix(rot)))
+        else:
+            tw.write_text(page)
+
+    def _burn_in_form_fields(self, pdf_bytes: bytes) -> bytes:
+        """Flatten all interactive form widgets into static page content.
+
+        Text / ComboBox → selectable text via TextWriter (font + value embedded).
+        Checkbox / RadioButton → page-clip pixmap at 216 dpi (preserves AP design).
+        Signature / ListBox → left untouched.
+
+        Returns the modified PDF bytes, or the input bytes unchanged if there
+        are no flattenable widgets.
+        """
+        import fitz as _fitz
+
+        doc = _fitz.open(stream=pdf_bytes, filetype="pdf")
+        changed = False
+        for page in doc:
+            widgets = list(page.widgets())
+            for widget in widgets:
+                ft = widget.field_type
+                if ft == _fitz.PDF_WIDGET_TYPE_SIGNATURE:
+                    continue
+                if ft in (_fitz.PDF_WIDGET_TYPE_TEXT,
+                          _fitz.PDF_WIDGET_TYPE_COMBOBOX):
+                    self._write_field_text(page, widget)
+                elif ft in (_fitz.PDF_WIDGET_TYPE_CHECKBOX,
+                            _fitz.PDF_WIDGET_TYPE_RADIOBUTTON,
+                            _fitz.PDF_WIDGET_TYPE_LISTBOX):
+                    pix = page.get_pixmap(clip=widget.rect, dpi=216)
+                    page.insert_image(widget.rect, pixmap=pix)
+                page.delete_widget(widget)
+                changed = True
+
+        if not changed:
+            doc.close()
+            return pdf_bytes
+
+        out = io.BytesIO()
+        doc.save(out, garbage=4, deflate=True)
+        doc.close()
+        return out.getvalue()
+
     def run(self) -> None:
+        # Formularfelder vor dem Signieren einbrennen (wenn vorhanden).
+        # fitz_bytes enthalten die aktuellen Widget-Werte; nach dem Flatten
+        # gibt es keine interaktiven Felder mehr im Dokument.
+        if self.fitz_bytes:
+            self.pdf_bytes = self._burn_in_form_fields(self.fitz_bytes)
         # FreeText-Annotationen (unsere + fremde) vor dem Signieren einbrennen.
         # Das Ergebnis ersetzt self.pdf_bytes damit _embed_fields und _run_*
         # auf einem sauberen PDF ohne Annotationen arbeiten.

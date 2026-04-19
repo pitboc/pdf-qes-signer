@@ -1792,3 +1792,9 @@ msgstr "Er is geen PKCS#11-bibliotheek geconfigureerd.\n\nStel uw handtekeningto
 
 msgid "dlg_no_cert_open_settings"
 msgstr "Instellingen openen"
+
+msgid "form_fields_hint_unsupported"
+msgstr ""
+
+msgid "form_fields_editable_status"
+msgstr ""

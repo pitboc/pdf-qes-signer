@@ -1872,3 +1872,9 @@ msgstr "No PKCS#11 library has been configured.\n\nPlease configure your signatu
 
 msgid "dlg_no_cert_open_settings"
 msgstr "Open Settings"
+
+msgid "form_fields_hint_unsupported"
+msgstr "This document contains fields that cannot be edited here. Please verify their content before signing."
+
+msgid "form_fields_editable_status"
+msgstr "Fill in form fields before signing."

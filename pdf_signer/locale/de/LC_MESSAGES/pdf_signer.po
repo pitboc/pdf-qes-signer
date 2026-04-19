@@ -1873,3 +1873,9 @@ msgstr "Es ist keine PKCS#11-Bibliothek konfiguriert.\n\nBitte konfigurieren Sie
 
 msgid "dlg_no_cert_open_settings"
 msgstr "Einstellungen öffnen"
+
+msgid "form_fields_hint_unsupported"
+msgstr "Dieses Dokument enthält Felder, die hier nicht bearbeitet werden können. Bitte prüfen Sie deren Inhalt vor dem Signieren."
+
+msgid "form_fields_editable_status"
+msgstr "Formularfelder ausfüllen, dann signieren."

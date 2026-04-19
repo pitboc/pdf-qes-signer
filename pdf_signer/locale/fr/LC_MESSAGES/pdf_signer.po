@@ -1795,3 +1795,9 @@ msgstr "Aucune bibliothèque PKCS#11 n'est configurée.\n\nVeuillez configurer v
 
 msgid "dlg_no_cert_open_settings"
 msgstr "Ouvrir les paramètres"
+
+msgid "form_fields_hint_unsupported"
+msgstr ""
+
+msgid "form_fields_editable_status"
+msgstr ""
