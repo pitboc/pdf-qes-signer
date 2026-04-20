@@ -363,7 +363,27 @@ Verified: `radio_a_opt1_fixed.pdf` (set A + `/V` patched) shows Opt1 correctly i
 - `tests/analyze_radio_pdf.py` – dumps raw `/AS`, `/V`, `/AP/N`, `/Ff`, parent structure for any PDF
 - `tests/radio_ff_opt2.pdf` / `tests/radio_chromium_opt2.pdf` – reference saves from browsers
 
-### Open
+### Resolved
 
-- **Adobe Acrobat Reader** – behaviour not yet verified (requires Windows VM).  
-  Use `python tests/analyze_radio_pdf.py <acrobat-saved.pdf>` and `tests/test_radio_button_save.py` after saving.
+**6. Adobe Acrobat Reader – merged structure not supported** ✓ (2026-04-20)
+
+All existing test files failed in Acrobat because fitz creates radio buttons in a
+*merged* structure (widget = field, both listed in AcroForm /Fields).  Acrobat
+requires the standard *parent/kids* hierarchy.
+
+Reference file `tests/interaktiver_radio_test.pdf` (works in all viewers) revealed
+the required structure:
+
+- **Parent field dict** (`/FT /Btn /Ff 49152 /T /V /DV /Kids`): both Radio-flag
+  conventions must be set: `32768` (bit 16, fitz) **and** `16384` (bit 15, spec
+  ISO 32000 Table 227) → combined `/Ff 49152`.  No `/DA` (only for text fields).
+- **Widget annotations** (`/Subtype /Widget /FT /Btn /Rect /AP /AS /Parent`):
+  keep `/FT /Btn`, drop `/T /V /Ff /DA /BS`; add `/Parent` back-reference.
+- **AcroForm /Fields**: only the parent xref, not individual widgets.
+
+**Fix:** `_normalize_radio_groups(doc)` in `main_window.py` (module-level function)
+converts merged groups in-place.  Called from `_load_existing_fields` for unsigned
+documents only (signed documents must not be structurally modified).
+
+After normalization, `_apply_form_field_edit` detects the parent via `/Parent`
+and sets `/V` only on the parent dict, not on individual widgets.

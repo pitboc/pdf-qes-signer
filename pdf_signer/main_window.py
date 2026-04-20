@@ -143,6 +143,138 @@ def _parse_da_string(da: str) -> tuple:
     return font_name, font_size, color
 
 
+def _normalize_radio_groups(doc: fitz.Document) -> None:
+    """Convert merged radio-button widgets to a parent/kids structure.
+
+    fitz creates radio buttons as *merged* objects: each widget contains
+    ``/FT /Btn``, ``/T``, ``/V``, and is listed individually in the
+    AcroForm ``/Fields`` array.  Adobe Acrobat Reader requires the
+    standard parent/kids hierarchy instead.
+
+    The output mirrors the structure produced by LibreOffice:
+
+    - A **parent field dict** carries ``/FT /Btn /Ff /T /V /DV /Kids``.
+      No ``/DA`` – that key is only meaningful for text fields.
+    - Each **widget annotation** keeps only annotation-level keys
+      (``/Type /Subtype /Rect /F /FT /P /AP /AS /MK /H``) and a
+      ``/Parent`` back-reference.  No ``/Ff``, ``/DA``, or ``/BS``.
+
+    Objects that already have a ``/Parent`` or ``/Kids`` are left
+    unchanged (already in parent/kids form).
+    Called only for unsigned documents; signed documents must not be
+    structurally modified.
+    """
+    from collections import defaultdict
+
+    trailer = doc.pdf_trailer()
+    root_m = re.search(r'/Root\s+(\d+)\s+\d+\s+R', trailer)
+    if not root_m:
+        return
+    root_xref = int(root_m.group(1))
+
+    # Externalize inline AcroForm dict so we can modify it via xref_set_key
+    af_type, af_val = doc.xref_get_key(root_xref, "AcroForm")
+    if af_type == "xref":
+        af_xref = int(re.search(r'(\d+)\s+0\s+R', af_val).group(1))
+    elif af_type == "dict":
+        af_xref = doc.get_new_xref()
+        doc.update_object(af_xref, af_val)
+        doc.xref_set_key(root_xref, "AcroForm", f"{af_xref} 0 R")
+    else:
+        return
+
+    af_obj = doc.xref_object(af_xref, compressed=False)
+    fields_m = re.search(r'/Fields\s*\[([^\]]*)\]', af_obj)
+    if not fields_m:
+        return
+    field_xrefs = [int(x) for x in re.findall(r'(\d+)\s+\d+\s+R', fields_m.group(1))]
+
+    # Collect merged radio widgets grouped by /T (field name)
+    radio_groups: dict[str, list[int]] = defaultdict(list)
+    for xref in field_xrefs:
+        obj = doc.xref_object(xref, compressed=False)
+        if re.search(r'/Parent\s+\d+', obj):
+            continue                                     # already has parent
+        if re.search(r'/Kids\s*\[', obj):
+            continue                                     # already a parent field dict
+        if not re.search(r'/FT\s*/Btn', obj):
+            continue
+        ff_m = re.search(r'/Ff\s+(\d+)', obj)
+        if not ff_m or not (int(ff_m.group(1)) & fitz.PDF_BTN_FIELD_IS_RADIO):
+            continue
+        t_m = re.search(r'/T\s*\(([^)]*)\)', obj)
+        if not t_m:
+            continue
+        radio_groups[t_m.group(1)].append(xref)
+
+    multi_groups = {n: x for n, x in radio_groups.items() if len(x) > 1}
+    if not multi_groups:
+        return
+
+    new_field_xrefs = list(field_xrefs)
+
+    for field_name, widget_xrefs in multi_groups.items():
+        # Determine current group value (/AS of selected widget) and /Ff
+        current_v = "/Off"
+        ff_val    = str(fitz.PDF_BTN_FIELD_IS_RADIO)
+
+        for xref in widget_xrefs:
+            obj  = doc.xref_object(xref, compressed=False)
+            ff_m = re.search(r'/Ff\s+(\d+)', obj)
+            if ff_m:
+                ff_val = ff_m.group(1)
+            as_m = re.search(r'/AS\s+(/\S+)', obj)
+            if as_m and as_m.group(1).rstrip('>') not in ("/Off", "/off"):
+                current_v = as_m.group(1).rstrip('>')
+
+        # Ensure both Radio flag conventions are set on the parent:
+        # bit 15 (1-based) = 32768 (fitz PDF_BTN_FIELD_IS_RADIO) and
+        # bit 16 (1-based) = 16384 (Radio per ISO 32000 Table 227).
+        ff_int = int(ff_val) | 32768 | 16384
+
+        # Create parent field dict – LibreOffice style: /FT /Ff /T /V /DV /Kids.
+        # No /DA: that key is for text fields, not buttons.
+        kids_str    = " ".join(f"{x} 0 R" for x in widget_xrefs)
+        parent_xref = doc.get_new_xref()
+        doc.update_object(parent_xref, (
+            f"<<\n"
+            f"  /FT /Btn\n"
+            f"  /Ff {ff_int}\n"
+            f"  /T ({field_name})\n"
+            f"  /V {current_v}\n"
+            f"  /DV {current_v}\n"
+            f"  /Kids [ {kids_str} ]\n"
+            f">>"
+        ))
+
+        # Rebuild each widget keeping annotation-level keys only.
+        # Matches LibreOffice output: no /Ff, /DA, or /BS on widgets.
+        # /FT stays (some viewers use it for type detection).
+        # /T, /V, /Ff, /DA are field-level → live on the parent only.
+        _KEEP = {"Type", "Subtype", "Rect", "F", "AP", "AS",
+                 "MK", "H", "P", "FT"}
+        for xref in widget_xrefs:
+            lines = ["<<"]
+            for key in doc.xref_get_keys(xref):
+                if key not in _KEEP:
+                    continue
+                ktype, kval = doc.xref_get_key(xref, key)
+                if ktype not in ("null",) and kval not in ("null",):
+                    lines.append(f"  /{key} {kval}")
+            lines.append(f"  /Parent {parent_xref} 0 R")
+            lines.append(">>")
+            doc.update_object(xref, "\n".join(lines))
+
+        # Update /Fields: replace widget xrefs with parent xref
+        for xref in widget_xrefs:
+            if xref in new_field_xrefs:
+                new_field_xrefs.remove(xref)
+        new_field_xrefs.append(parent_xref)
+
+    new_fields_str = " ".join(f"{x} 0 R" for x in new_field_xrefs)
+    doc.xref_set_key(af_xref, "Fields", f"[ {new_fields_str} ]")
+
+
 class _PlaceStepper(QDoubleSpinBox):
     """QDoubleSpinBox that steps by the place value of the digit left of
     the cursor.
@@ -1620,7 +1752,10 @@ class PDFSignerApp(QMainWindow):
             else:
                 self._working_bytes = _raw  # type: ignore[name-defined]
         else:
-            # Keine Signaturen → Bytes aus dem bereinigten fitz-Dokument exportieren
+            # Keine Signaturen → Radio-Gruppen normalisieren (merged → parent/kids)
+            # damit Acrobat Reader die Buttons interaktiv steuern kann.
+            _normalize_radio_groups(doc)
+            # Bytes aus dem bereinigten fitz-Dokument exportieren
             # (garbage=0, deflate=False: keine Komprimierung, keine Bereinigung
             # damit bestehende Struktur erhalten bleibt)
             self._working_bytes = doc.tobytes(garbage=0, deflate=False)
@@ -1736,18 +1871,28 @@ class PDFSignerApp(QMainWindow):
         for _xref in radio_sibling_xrefs:
             self.pdf_doc.xref_set_key(_xref, "AS", "/Off")
 
-        # Fix /V on all widgets of the group and the parent field (if any).
-        # Must be a PDF name like /Opt1, not the string (Yes) fitz writes.
+        # Fix /V: for parent/kids structure, set only on parent (Acrobat pattern).
+        # For merged structure (no parent), set on each widget using Firefox pattern:
+        # each widget gets its own on_state as /V (not the group's selected value).
         if is_radio and radio_on_state:
             v_val = f"/{radio_on_state}"
-            self.pdf_doc.xref_set_key(target_xref, "V", v_val)
-            for _xref in radio_sibling_xrefs:
-                self.pdf_doc.xref_set_key(_xref, "V", v_val)
-            _parent_m = re.search(
-                r'/Parent\s+(\d+)\s+0\s+R',
-                self.pdf_doc.xref_object(target_xref, compressed=False))
+            target_obj = self.pdf_doc.xref_object(target_xref, compressed=False)
+            _parent_m = re.search(r'/Parent\s+(\d+)\s+0\s+R', target_obj)
             if _parent_m:
+                # Parent/kids: only parent carries /V
                 self.pdf_doc.xref_set_key(int(_parent_m.group(1)), "V", v_val)
+            else:
+                # Merged (legacy/external): each widget keeps its own on_state in /V
+                self.pdf_doc.xref_set_key(target_xref, "V", v_val)
+                for _xref in radio_sibling_xrefs:
+                    _sib_obj = self.pdf_doc.xref_object(_xref, compressed=False)
+                    _ap_m = re.search(r'/AP\s*<<[^>]*/N\s*<<([^>]*)', _sib_obj)
+                    if _ap_m:
+                        _sib_on = next(
+                            (k for k in re.findall(r'/(\w+)', _ap_m.group(1))
+                             if k != "Off"), None)
+                        if _sib_on:
+                            self.pdf_doc.xref_set_key(_xref, "V", f"/{_sib_on}")
 
         # Mirror update in _form_fields
         for ff in self._form_fields:

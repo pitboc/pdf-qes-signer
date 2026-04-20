@@ -1,83 +1,37 @@
-"""Create minimal test PDFs with 2 radio buttons in different states.
+"""Create minimal test PDFs with radio buttons in proper parent/kids structure.
 
-Each PDF has one radio group "choice" with two options: "Opt1" and "Opt2".
-We create TWO sets of variants:
+Generates three variants of a two-option radio group ("Opt1" / "Opt2"):
 
-Set A – "broken" (mirrors current pdf-signer behaviour):
-  /AS  set correctly per widget
-  /V   left as fitz default → (Yes) string, wrong
+  radio_none.pdf  – no option selected
+  radio_opt1.pdf  – Opt1 selected
+  radio_opt2.pdf  – Opt2 selected
 
-  radio_a_none.pdf  – /AS /Off  on both,  /V (Yes) on both
-  radio_a_opt1.pdf  – /AS /Opt1 on w1,    /V (Yes) on both
-  radio_a_opt2.pdf  – /AS /Opt2 on w2,    /V (Yes) on both
+All files use the standard parent/kids hierarchy required by Adobe Acrobat
+Reader (and compatible with Firefox, Chromium, and other viewers).
 
-Set B – "corrected" (hypothesis: /V must match /AS):
-  /AS  set correctly per widget
-  /V   set to selected option name on ALL widgets of the group (PDF name, not string)
-
-  radio_b_none.pdf  – /AS /Off  on both,  /V /Off  on both
-  radio_b_opt1.pdf  – /AS /Opt1 on w1,    /V /Opt1 on both
-  radio_b_opt2.pdf  – /AS /Opt2 on w2,    /V /Opt2 on both
-
-Expected: Set A = Chromium ok, Firefox wrong.
-          Set B = both browsers show correct selection.
+Usage (from project root, with venv active):
+    python tests/create_radio_test_pdfs.py
 """
 
-import re
-import fitz
 import os
+import re
 
-OUT_DIR = os.path.join(os.path.dirname(__file__))
+import fitz
 
-
-def _dump_radio_fields(doc: fitz.Document, label: str) -> None:
-    page = doc[0]
-    radios = [w for w in page.widgets()
-              if w.field_type == fitz.PDF_WIDGET_TYPE_RADIOBUTTON]
-
-    print(f"\n{'='*60}")
-    print(f"  {label}")
-    print('='*60)
-
-    parent_xref = _get_parent_xref(doc, radios[0].xref) if radios else None
-    if parent_xref:
-        print(f"\n  Parent field (xref {parent_xref}):")
-        for line in doc.xref_object(parent_xref, compressed=False).splitlines():
-            print(f"    {line}")
-    else:
-        print("  (no parent field – merged widget+field objects)")
-
-    for w in radios:
-        obj = doc.xref_object(w.xref, compressed=False)
-        as_m = re.search(r'/AS\s+(\S+)', obj)
-        v_m  = re.search(r'/V\s+(\S+)', obj)
-        print(f"\n  xref={w.xref}  on_state={w.on_state()!r}"
-              f"  /AS={as_m.group(1) if as_m else '?'}"
-              f"  /V={v_m.group(1) if v_m else '?'}")
+OUT_DIR = os.path.dirname(__file__)
 
 
-def _get_parent_xref(doc: fitz.Document, widget_xref: int) -> int | None:
-    obj = doc.xref_object(widget_xref, compressed=False)
-    m = re.search(r'/Parent\s+(\d+)\s+0\s+R', obj)
-    return int(m.group(1)) if m else None
+def _build_radio_pdf(selected: str) -> fitz.Document:
+    """Build a PDF with 2 radio buttons in parent/kids structure.
 
-
-def _build_radio_pdf(selected: str, fix_v: bool) -> fitz.Document:
-    """Build a PDF with 2 radio buttons.
-
-    selected – 'Opt1', 'Opt2', or '' (none selected)
-    fix_v    – if True, set /V correctly on every widget (set B);
-               if False, leave fitz default /V (set A)
+    *selected* – ``"Opt1"``, ``"Opt2"``, or ``""`` (nothing selected).
     """
-    doc = fitz.open()
+    doc  = fitz.open()
     page = doc.new_page(width=595, height=842)
     options = ["Opt1", "Opt2"]
-    v_variant = "B (fixed /V)" if fix_v else "A (broken /V)"
 
-    page.insert_text((50, 80), "Radio Button Test", fontsize=14)
-    page.insert_text((50, 110),
-                     f"Variant {v_variant} – expected: {selected or '(none)'}",
-                     fontsize=10)
+    page.insert_text((50, 80),  "Radio Button Test", fontsize=14)
+    page.insert_text((50, 110), f"Selected: {selected or '(none)'}", fontsize=10)
 
     y_positions = [150, 190]
     for opt, y in zip(options, y_positions):
@@ -90,60 +44,73 @@ def _build_radio_pdf(selected: str, fix_v: bool) -> fitz.Document:
         w.rect           = fitz.Rect(50, y, 80, y + 20)
         page.add_widget(w)
 
-    radio_xrefs = [
-        w.xref for w in page.widgets()
-        if w.field_type == fitz.PDF_WIDGET_TYPE_RADIOBUTTON
-        and w.field_name == "choice"
-    ]
+    xrefs = [w.xref for w in page.widgets()
+             if w.field_type == fitz.PDF_WIDGET_TYPE_RADIOBUTTON]
 
-    for xref, opt in zip(radio_xrefs, options):
-        obj = doc.xref_object(xref, compressed=False)
+    # Patch /AP/N: replace fitz's generic /Yes key with option-specific names
+    for xref, opt in zip(xrefs, options):
+        obj   = doc.xref_object(xref, compressed=False)
         off_m = re.search(r'/Off\s+(\d+)\s+0\s+R', obj)
         yes_m = re.search(r'/Yes\s+(\d+)\s+0\s+R', obj)
         if off_m and yes_m:
-            new_ap = (f"<< /N << /Off {off_m.group(1)} 0 R "
-                      f"/{opt} {yes_m.group(1)} 0 R >> >>")
-            doc.xref_set_key(xref, "AP", new_ap)
+            doc.xref_set_key(xref, "AP",
+                             f"<< /N << /Off {off_m.group(1)} 0 R "
+                             f"/{opt} {yes_m.group(1)} 0 R >> >>")
+        doc.xref_set_key(xref, "AS", f"/{opt}" if opt == selected else "/Off")
 
-        # /AS: correct in both variants
-        if opt == selected:
-            doc.xref_set_key(xref, "AS", f"/{opt}")
-        else:
-            doc.xref_set_key(xref, "AS", "/Off")
+    # Convert to parent/kids structure (Acrobat-compatible)
+    current_v   = f"/{selected}" if selected else "/Off"
+    kids_str    = " ".join(f"{x} 0 R" for x in xrefs)
+    parent_xref = doc.get_new_xref()
+    doc.update_object(parent_xref, (
+        f"<< /FT /Btn /Ff 49152 /T (choice) /V {current_v} "
+        f"/DV {current_v} /Kids [ {kids_str} ] >>"
+    ))
 
-        # /V: only fixed in variant B
-        if fix_v:
-            v_val = f"/{selected}" if selected else "/Off"
-            doc.xref_set_key(xref, "V", v_val)
-        # variant A: leave fitz default /V (Yes) → intentionally wrong
+    # Rebuild each widget: annotation-level keys only, no /Ff /DA /BS + /Parent
+    _KEEP = {"Type", "Subtype", "Rect", "F", "AP", "AS", "FT", "MK", "H"}
+    for xref in xrefs:
+        lines = ["<<"]
+        for key in doc.xref_get_keys(xref):
+            if key not in _KEEP:
+                continue
+            ktype, kval = doc.xref_get_key(xref, key)
+            if ktype not in ("null",) and kval not in ("null",):
+                lines.append(f"  /{key} {kval}")
+        lines.append(f"  /Parent {parent_xref} 0 R")
+        lines.append(">>")
+        doc.update_object(xref, "\n".join(lines))
+
+    # Update AcroForm /Fields to list only the parent xref
+    root_xref   = int(re.search(r'/Root\s+(\d+)\s+\d+\s+R',
+                                doc.pdf_trailer()).group(1))
+    af_type, af_val = doc.xref_get_key(root_xref, "AcroForm")
+    if af_type == "dict":
+        af_xref = doc.get_new_xref()
+        doc.update_object(af_xref, af_val)
+        doc.xref_set_key(root_xref, "AcroForm", f"{af_xref} 0 R")
+    else:
+        af_xref = int(re.search(r'(\d+)\s+0\s+R', af_val).group(1))
+    doc.xref_set_key(af_xref, "Fields", f"[ {parent_xref} 0 R ]")
 
     return doc
 
 
 def main() -> None:
     variants = [
-        # (filename,          selected,  fix_v)
-        ("radio_a_none.pdf",  "",       False),
-        ("radio_a_opt1.pdf",  "Opt1",   False),
-        ("radio_a_opt2.pdf",  "Opt2",   False),
-        ("radio_b_none.pdf",  "",       True),
-        ("radio_b_opt1.pdf",  "Opt1",   True),
-        ("radio_b_opt2.pdf",  "Opt2",   True),
+        ("radio_none.pdf", ""),
+        ("radio_opt1.pdf", "Opt1"),
+        ("radio_opt2.pdf", "Opt2"),
     ]
 
-    for filename, selected, fix_v in variants:
+    for filename, selected in variants:
         out_path = os.path.join(OUT_DIR, filename)
-        doc = _build_radio_pdf(selected, fix_v)
-        label = f"{filename}  selected={selected or 'none'}  fix_v={fix_v}"
-        _dump_radio_fields(doc, label)
+        doc = _build_radio_pdf(selected)
         doc.save(out_path)
         doc.close()
-        print(f"  → Saved: {out_path}")
+        print(f"  → {out_path}  (selected={selected or 'none'})")
 
-    print("\nDone.")
-    print("\nExpected behaviour:")
-    print("  Set A (radio_a_*): Chromium correct, Firefox wrong  (current bug)")
-    print("  Set B (radio_b_*): Both browsers correct            (hypothesis)")
+    print("\nDone. All files use parent/kids structure compatible with Acrobat Reader.")
 
 
 if __name__ == "__main__":
