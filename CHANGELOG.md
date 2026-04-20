@@ -5,7 +5,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased] – 0.3.11.dev0
+## [Unreleased]
+
+---
+
+## [1.0.0] – 2026-04-20
+
+### Added
+- **Keyboard shortcuts:** `t` toggles text-annotation mode, `s` opens the
+  sign dialog, `c` opens the signature-validation dialog — all active when no
+  text input has focus.
+- **Tab / Shift+Tab navigation in form fields:** Pressing Tab moves focus to
+  the next editable text field in the PDF form (top-to-bottom, left-to-right,
+  wrapping); Shift+Tab moves backwards.  Checkboxes, radio buttons, and
+  drop-down lists are excluded from the tab order.
+- **Tab / Shift+Tab navigation between text annotations:** In text-annotation
+  mode, Tab cycles through existing text overlays sorted by position.
+- **Tab / Shift+Tab navigation between signature fields:** When the signature
+  field list has focus, Tab / Shift+Tab selects the next / previous signable
+  field.
 
 ---
 

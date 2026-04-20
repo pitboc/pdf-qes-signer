@@ -181,6 +181,7 @@ class TextAnnotOverlay(QWidget):
     content_changed  = pyqtSignal()
     delete_requested = pyqtSignal(object)   # passes self
     focused          = pyqtSignal(object)   # passes self when edit gains focus
+    tab_requested    = pyqtSignal(object, int)  # (self, direction): +1 forward, -1 backward
 
     HANDLE: int = 10  # red handle side length in pixels
 
@@ -399,6 +400,11 @@ class TextAnnotOverlay(QWidget):
                 self.update()
                 # No auto-delete on focus-out: empty-box cleanup is triggered
                 # only by explicit deselect events (new box focused / text mode off).
+            elif event.type() == QEvent.Type.KeyPress:
+                k = event.key()
+                if k in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
+                    self.tab_requested.emit(self, -1 if k == Qt.Key.Key_Backtab else 1)
+                    return True  # consume – don't insert a tab character
         return False  # do not consume the event
 
     def paintEvent(self, _) -> None:
@@ -537,7 +543,9 @@ class PDFViewWidget(QWidget):
         self._text_overlays: list[TextAnnotOverlay]  = []
         self._form_fields:          list[FormFieldDef] = []
         self._form_fields_editable: bool               = False
-        self._form_overlay: Optional[QWidget]          = None  # active form field overlay
+        self._form_overlay:      Optional[QWidget]    = None  # active form field overlay
+        self._form_overlay_fdef: Optional[FormFieldDef] = None  # fdef for active overlay
+        self._navigating_form:   bool                = False  # guard against re-entrant focusNextPrevChild
         self._current_page = 0
         self._selected_field: Optional[SignatureFieldDef] = None
         self._dragging_field:    Optional[SignatureFieldDef] = None
@@ -712,14 +720,57 @@ class PDFViewWidget(QWidget):
         br = self._pdf_to_w(x1, y0)
         return QRectF(tl, br).normalized()
 
+    def focusNextPrevChild(self, next_: bool) -> bool:  # type: ignore[override]
+        """Handle Tab / Shift+Tab to navigate between form field overlays.
+
+        Returns True (intercepting Qt's normal focus-chain traversal) whenever
+        a text/combobox overlay is active, so focus never escapes to the
+        scroll-bar or other surrounding widgets.
+        """
+        if self._navigating_form:
+            # ov.hide() inside _close_form_overlay triggers a spurious second call;
+            # the flag prevents Qt from moving focus to the scroll-bar.
+            return True
+        if self._form_overlay is None or not self._form_fields_editable or self._form_overlay_fdef is None:
+            return super().focusNextPrevChild(next_)
+        import fitz as _fitz
+        _skip = {_fitz.PDF_WIDGET_TYPE_CHECKBOX, _fitz.PDF_WIDGET_TYPE_RADIOBUTTON,
+                 _fitz.PDF_WIDGET_TYPE_COMBOBOX}
+        fields = sorted(
+            (f for f in self._form_fields if f.field_type not in _skip),
+            key=lambda f: (-f.rect[3], f.rect[0]),
+        )
+        if not fields:
+            return super().focusNextPrevChild(next_)
+        ov   = self._form_overlay
+        fdef = self._form_overlay_fdef
+        val  = ov.toPlainText() if isinstance(ov, QPlainTextEdit) else (
+               ov.text() if isinstance(ov, QLineEdit) else
+               ov.currentText())
+        try:
+            idx = fields.index(fdef)
+        except ValueError:
+            idx = -1
+        next_fdef = fields[(idx + (1 if next_ else -1)) % len(fields)]
+        self._navigating_form = True
+        try:
+            self.form_field_changed.emit(fdef.field_name, val)
+            self._on_form_field_click(next_fdef)
+        finally:
+            self._navigating_form = False
+        return True
+
     # ── Form field overlay management ─────────────────────────────────────
 
     def _close_form_overlay(self) -> None:
         """Destroy the currently active form overlay (if any)."""
-        if self._form_overlay is not None:
-            self._form_overlay.hide()
-            self._form_overlay.deleteLater()
-            self._form_overlay = None
+        ov = self._form_overlay
+        if ov is None:
+            return
+        self._form_overlay = None       # clear first to prevent re-entry via FocusOut
+        self._form_overlay_fdef = None
+        ov.hide()
+        ov.deleteLater()
 
     def _on_form_field_click(self, fdef: FormFieldDef) -> None:
         """React to a click on an editable form field."""
@@ -752,11 +803,13 @@ class PDFViewWidget(QWidget):
                 )
             )
             self._form_overlay = ov
+            self._form_overlay_fdef = fdef
         else:
             # Text field – use event filter for reliable focus-out detection
             if fdef.multiline:
                 ov = QPlainTextEdit(self)
                 ov.setPlainText(fdef.value)
+                ov.setTabChangesFocus(True)   # Tab → focusNextPrevChild, not insert \t
             else:
                 ov = QLineEdit(self)
                 ov.setText(fdef.value)
@@ -778,7 +831,9 @@ class PDFViewWidget(QWidget):
                     self_._o    = o
 
                 def eventFilter(self_, obj, event):
-                    if obj is self_._o and event.type() == QEvent.Type.FocusOut:
+                    if obj is not self_._o:
+                        return False
+                    if event.type() == QEvent.Type.FocusOut:
                         if self_._view._form_overlay is self_._o:
                             val = (self_._o.toPlainText()
                                    if isinstance(self_._o, QPlainTextEdit)
@@ -798,6 +853,7 @@ class PDFViewWidget(QWidget):
                     )
                 )
             self._form_overlay = ov
+            self._form_overlay_fdef = fdef
 
     # ── Coordinate conversion ─────────────────────────────────────────────
 

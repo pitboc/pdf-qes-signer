@@ -57,7 +57,7 @@ from typing import Optional
 
 import fitz  # PyMuPDF
 
-from PyQt6.QtCore import Qt, QPoint, QRectF, QTimer
+from PyQt6.QtCore import Qt, QEvent, QPoint, QRectF, QTimer
 from pdf_signer.icons import (
     svg_to_icon,
     ICON_CHEVRON_UP, ICON_CHEVRON_DOWN,
@@ -71,7 +71,7 @@ from PyQt6.QtWidgets import (
     QApplication, QColorDialog, QComboBox, QDoubleSpinBox, QFileDialog,
     QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QMainWindow, QMessageBox, QPushButton, QScrollArea, QSizePolicy,
-    QStackedWidget, QSplitter, QVBoxLayout, QWidget, QCheckBox,
+    QStackedWidget, QSplitter, QTextEdit, QVBoxLayout, QWidget, QCheckBox,
 )
 
 from .config import AppConfig
@@ -637,6 +637,7 @@ class PDFSignerApp(QMainWindow):
         self._pdf_view.text_annot_deleted.connect(self._on_text_annot_deleted)
         self._pdf_view.exit_text_mode.connect(self._on_exit_text_mode)
         self._pdf_view.form_field_changed.connect(self._apply_form_field_edit)
+
         self._outer_layout.addWidget(self._pdf_view)
         self._scroll_area.setWidget(self._outer_container)
         self._scroll_area.setWidgetResizable(False)
@@ -680,6 +681,7 @@ class PDFSignerApp(QMainWindow):
         self._field_list.currentRowChanged.connect(self._on_field_selection_changed)
         self._field_list.itemClicked.connect(
             lambda _: self._on_field_selection_changed(self._field_list.currentRow()))
+        self._field_list.installEventFilter(self)
         fl.addWidget(self._field_list)
         btn_row = QHBoxLayout()
         # "Löschen"-Schaltfläche: nur für sig_fields-Felder aktiv; initial deaktiviert
@@ -1230,6 +1232,7 @@ class PDFSignerApp(QMainWindow):
         # Connect BEFORE setFocus so the FocusIn event finds the signal wired up
         # and _focused_overlay is correctly assigned to this new overlay.
         ov.focused.connect(self._on_text_overlay_focused)
+        ov.tab_requested.connect(self._on_text_tab)
         ov._edit.setFocus()
 
     def _on_text_annot_deleted(self, ann: TextAnnotDef) -> None:
@@ -1273,6 +1276,21 @@ class PDFSignerApp(QMainWindow):
         self._update_text_color_btn()
         for w in (self._tb2_font, self._tb2_font_size, self._tb2_char_spacing):
             w.blockSignals(False)
+
+    def _on_text_tab(self, ov: "TextAnnotOverlay", direction: int) -> None:
+        """Move focus to the next/previous text annotation overlay (Tab / Shift+Tab)."""
+        overlays = sorted(
+            self._pdf_view._text_overlays,
+            key=lambda o: (o.annot.page, -o.annot.y, o.annot.x),
+        )
+        if not overlays:
+            return
+        try:
+            idx = overlays.index(ov)
+        except ValueError:
+            idx = -1
+        next_ov = overlays[(idx + direction) % len(overlays)]
+        next_ov._edit.setFocus()
 
     def _on_text_prop_changed(self) -> None:
         """Apply current toolbar values to the focused overlay (if any).
@@ -1485,6 +1503,7 @@ class PDFSignerApp(QMainWindow):
             for _ann in self.text_annots:
                 _ov = self._pdf_view.add_text_overlay(_ann)
                 _ov.focused.connect(self._on_text_overlay_focused)
+                _ov.tab_requested.connect(self._on_text_tab)
             self._update_field_list()
             # Beim Öffnen immer das letzte unsigned freie Feld selektieren
             # (unabhängig von der Auswahl im vorherigen Dokument).
@@ -2102,11 +2121,51 @@ class PDFSignerApp(QMainWindow):
             self, t("dlg_save_error_title"),
             t("dlg_save_error_msg", error=msg))
 
+    def eventFilter(self, obj, ev) -> bool:  # type: ignore[override]
+        if obj is self._field_list and ev.type() == QEvent.Type.KeyPress:
+            k = ev.key()  # type: ignore[attr-defined]
+            if k in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
+                self._tab_sig_field(-1 if k == Qt.Key.Key_Backtab else 1)
+                return True
+        return super().eventFilter(obj, ev)
+
     def keyPressEvent(self, ev) -> None:  # type: ignore[override]
         if ev.key() == Qt.Key.Key_Escape and self._tb_text_mode.isChecked():
             self._on_exit_text_mode()
+            return
+        mods = ev.modifiers()
+        no_mod   = mods == Qt.KeyboardModifier.NoModifier
+        shift_only = mods == Qt.KeyboardModifier.ShiftModifier
+        if no_mod or shift_only:
+            fw = QApplication.focusWidget()
+            if not isinstance(fw, (QLineEdit, QTextEdit)):
+                k = ev.key()
+                if no_mod:
+                    if k == Qt.Key.Key_T and self._tb_text_mode.isEnabled():
+                        self._tb_text_mode.trigger()
+                        return
+                    if k == Qt.Key.Key_S and self._tb_sign.isEnabled():
+                        self.sign_document()
+                        return
+                    if k == Qt.Key.Key_C and self._tb_check_sigs.isEnabled():
+                        self.check_signatures()
+                        return
+        super().keyPressEvent(ev)
+
+    def _tab_sig_field(self, direction: int = 1) -> None:
+        """Cycle through signable fields (sig_fields + locked_fields) on Tab / Shift+Tab."""
+        n_sig    = len(self.sig_fields)
+        n_locked = len(self.locked_fields)
+        n_signable = n_sig + n_locked
+        if n_signable == 0:
+            return
+        # Signable rows in _field_list: 1..n_signable (row 0 = invisible sig)
+        cur = self._field_list.currentRow()
+        if 1 <= cur <= n_signable:
+            next_row = (cur - 1 + direction) % n_signable + 1
         else:
-            super().keyPressEvent(ev)
+            next_row = 1 if direction >= 0 else n_signable
+        self._field_list.setCurrentRow(next_row)
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         """Fragt bei ungespeicherten Änderungen nach: Abbrechen / Speichern / Beenden.
