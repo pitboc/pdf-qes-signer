@@ -1878,3 +1878,15 @@ msgstr "This document contains fields that cannot be edited here. Please verify 
 
 msgid "form_fields_editable_status"
 msgstr "Fill in form fields before signing."
+
+msgid "dlg_crash_title"
+msgstr "Unexpected Error"
+
+msgid "dlg_crash_msg"
+msgstr "An unexpected error has occurred.\n\nThe application may continue to work, but it is recommended to save any unsaved changes and restart the application.\n\nDetails have been saved to:\n{log_path}"
+
+msgid "dlg_crash_continue"
+msgstr "Continue"
+
+msgid "dlg_crash_quit"
+msgstr "Quit Application"

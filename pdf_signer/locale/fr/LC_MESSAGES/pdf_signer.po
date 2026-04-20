@@ -1801,3 +1801,15 @@ msgstr ""
 
 msgid "form_fields_editable_status"
 msgstr ""
+
+msgid "dlg_crash_title"
+msgstr "Erreur inattendue"
+
+msgid "dlg_crash_msg"
+msgstr "Une erreur inattendue s'est produite.\n\nL'application peut continuer à fonctionner, mais il est recommandé de sauvegarder vos modifications non enregistrées et de redémarrer l'application.\n\nLes détails ont été enregistrés dans :\n{log_path}"
+
+msgid "dlg_crash_continue"
+msgstr "Continuer"
+
+msgid "dlg_crash_quit"
+msgstr "Quitter l'application"

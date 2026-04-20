@@ -17,14 +17,18 @@ _crash_log_fh = None
 
 
 def _install_crash_handler() -> None:
-    """Write unhandled exceptions and C-level faults to a persistent log file.
+    """Write unhandled exceptions and C-level faults to daily rotating log files.
 
     Two mechanisms are combined:
     - ``faulthandler``: catches SIGSEGV / SIGABRT / SIGFPE (C-level crashes).
       The file handle must stay open for the entire process lifetime, hence the
-      module-level ``_crash_log_fh``.
+      module-level ``_crash_log_fh``.  It writes to today's log at startup time.
     - ``sys.excepthook``: catches unhandled Python exceptions that reach the
       top of the call stack (e.g. a Qt slot that raises and is not caught).
+      It always computes today's filename dynamically and shows a Qt dialog
+      if the application is still running.
+
+    Log files are named ``crash-YYYY-MM-DD.log`` and kept for 7 days.
     """
     import datetime
     import faulthandler
@@ -35,9 +39,24 @@ def _install_crash_handler() -> None:
 
     log_dir = Path.home() / ".local" / "share" / "pdf-signer"
     log_dir.mkdir(parents=True, exist_ok=True)
-    crash_log = log_dir / "crash.log"
 
-    _crash_log_fh = open(crash_log, "a", encoding="utf-8")
+    def _today_log() -> Path:
+        return log_dir / f"crash-{datetime.date.today().isoformat()}.log"
+
+    def _clean_old_logs() -> None:
+        cutoff = datetime.date.today() - datetime.timedelta(days=7)
+        for p in log_dir.glob("crash-*.log"):
+            try:
+                file_date = datetime.date.fromisoformat(p.stem[6:])
+                if file_date < cutoff:
+                    p.unlink()
+            except (ValueError, OSError):
+                pass
+
+    _clean_old_logs()
+
+    startup_log = _today_log()
+    _crash_log_fh = open(startup_log, "a", encoding="utf-8")
     _crash_log_fh.write(
         f"\n{'=' * 60}\n"
         f"Session started: {datetime.datetime.now().isoformat()}\n"
@@ -49,19 +68,43 @@ def _install_crash_handler() -> None:
     _orig_hook = sys.excepthook
 
     def _excepthook(exc_type, exc_value, exc_tb):
+        crash_log = _today_log()
+        tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
         try:
             with open(crash_log, "a", encoding="utf-8") as f:
                 f.write(
                     f"\n{'=' * 60}\n"
                     f"Unhandled exception: {datetime.datetime.now().isoformat()}\n"
                 )
-                traceback.print_exception(exc_type, exc_value, exc_tb, file=f)
+                f.write(tb_text)
         except Exception:
             pass
+
+        try:
+            from PyQt6.QtWidgets import QApplication, QMessageBox
+            app = QApplication.instance()
+            if app is not None:
+                from pdf_signer.i18n import t
+                mb = QMessageBox()
+                mb.setIcon(QMessageBox.Icon.Critical)
+                mb.setWindowTitle(t("dlg_crash_title"))
+                mb.setText(t("dlg_crash_msg", log_path=str(crash_log)))
+                mb.setDetailedText(tb_text)
+                btn_continue = mb.addButton(
+                    t("dlg_crash_continue"), QMessageBox.ButtonRole.AcceptRole)
+                btn_quit = mb.addButton(
+                    t("dlg_crash_quit"), QMessageBox.ButtonRole.DestructiveRole)
+                mb.exec()
+                if mb.clickedButton() is btn_quit:
+                    app.quit()
+                    return
+        except Exception:
+            pass
+
         _orig_hook(exc_type, exc_value, exc_tb)
 
     sys.excepthook = _excepthook
-    print(f"[crash handler] Log: {crash_log}", file=sys.stderr)
+    print(f"[crash handler] Log: {startup_log}", file=sys.stderr)
 
 
 def main() -> None:

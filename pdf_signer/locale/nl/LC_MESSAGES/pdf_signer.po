@@ -1798,3 +1798,15 @@ msgstr ""
 
 msgid "form_fields_editable_status"
 msgstr ""
+
+msgid "dlg_crash_title"
+msgstr "Onverwachte fout"
+
+msgid "dlg_crash_msg"
+msgstr "Er is een onverwachte fout opgetreden.\n\nDe toepassing kan mogelijk verder worden gebruikt, maar het wordt aanbevolen om niet-opgeslagen wijzigingen op te slaan en de toepassing opnieuw te starten.\n\nDetails zijn opgeslagen in:\n{log_path}"
+
+msgid "dlg_crash_continue"
+msgstr "Doorgaan"
+
+msgid "dlg_crash_quit"
+msgstr "Toepassing beëindigen"

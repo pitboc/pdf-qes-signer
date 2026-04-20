@@ -1879,3 +1879,15 @@ msgstr "Dieses Dokument enthält Felder, die hier nicht bearbeitet werden könne
 
 msgid "form_fields_editable_status"
 msgstr "Formularfelder ausfüllen, dann signieren."
+
+msgid "dlg_crash_title"
+msgstr "Unerwarteter Fehler"
+
+msgid "dlg_crash_msg"
+msgstr "Ein unerwarteter Fehler ist aufgetreten.\n\nDie Anwendung kann möglicherweise weiter verwendet werden, es wird jedoch empfohlen, nicht gespeicherte Änderungen zu sichern und die Anwendung neu zu starten.\n\nDetails wurden gespeichert in:\n{log_path}"
+
+msgid "dlg_crash_continue"
+msgstr "Weiter"
+
+msgid "dlg_crash_quit"
+msgstr "Applikation beenden"

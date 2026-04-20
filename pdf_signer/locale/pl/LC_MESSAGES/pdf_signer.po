@@ -1877,3 +1877,15 @@ msgstr ""
 
 msgid "form_fields_editable_status"
 msgstr ""
+
+msgid "dlg_crash_title"
+msgstr "Nieoczekiwany błąd"
+
+msgid "dlg_crash_msg"
+msgstr "Wystąpił nieoczekiwany błąd.\n\nAplikacja może nadal działać, ale zaleca się zapisanie niezapisanych zmian i ponowne uruchomienie aplikacji.\n\nSzczegóły zostały zapisane w:\n{log_path}"
+
+msgid "dlg_crash_continue"
+msgstr "Kontynuuj"
+
+msgid "dlg_crash_quit"
+msgstr "Zamknij aplikację"
