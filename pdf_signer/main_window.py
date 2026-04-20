@@ -1691,20 +1691,27 @@ class PDFSignerApp(QMainWindow):
             actual_name = field_name
             target_xref = 0
 
+        # For radio buttons: widget.update() sets /AS to on_state for ALL buttons
+        # in the group (bug in fitz), regardless of field_value.  Strategy:
+        # 1. Call update() on the target → generates proper appearance streams.
+        # 2. Collect sibling xrefs; fix their /AS to /Off afterwards.
+        # 3. Set /V as a PDF name (e.g. /Opt1) on target, siblings, and parent
+        #    (if present).  fitz leaves /V as the string (Yes) which Firefox/
+        #    PDF.js cannot match against the /AP/N keys → wrong display in FF.
+        radio_sibling_xrefs: list[int] = []
+        radio_on_state: str = ""
         for page_num in range(len(self.pdf_doc)):
             page = self.pdf_doc[page_num]
             for widget in page.widgets():
                 if widget.field_name != actual_name:
                     continue
                 if is_radio:
-                    # fitz's widget.update() for radio buttons sets /AS to the
-                    # on_state regardless of field_value, making all buttons
-                    # appear selected.  Use xref_set_key to set /AS directly.
                     if widget.xref == target_xref:
-                        self.pdf_doc.xref_set_key(widget.xref, "AS",
-                                                   f"/{widget.on_state()}")
+                        radio_on_state = widget.on_state()
+                        widget.field_value = radio_on_state
+                        widget.update()
                     else:
-                        self.pdf_doc.xref_set_key(widget.xref, "AS", "/Off")
+                        radio_sibling_xrefs.append(widget.xref)
                 else:
                     widget.field_value = new_value
                     # For multiline text: auto-shrink font to fit all lines,
@@ -1724,6 +1731,23 @@ class PDFSignerApp(QMainWindow):
                             base_fs = max(4.0, avail_h / (len(lines) * 1.2))
                         widget.text_fontsize = base_fs
                     widget.update()
+
+        # Fix sibling /AS values that widget.update() set to their on_state.
+        for _xref in radio_sibling_xrefs:
+            self.pdf_doc.xref_set_key(_xref, "AS", "/Off")
+
+        # Fix /V on all widgets of the group and the parent field (if any).
+        # Must be a PDF name like /Opt1, not the string (Yes) fitz writes.
+        if is_radio and radio_on_state:
+            v_val = f"/{radio_on_state}"
+            self.pdf_doc.xref_set_key(target_xref, "V", v_val)
+            for _xref in radio_sibling_xrefs:
+                self.pdf_doc.xref_set_key(_xref, "V", v_val)
+            _parent_m = re.search(
+                r'/Parent\s+(\d+)\s+0\s+R',
+                self.pdf_doc.xref_object(target_xref, compressed=False))
+            if _parent_m:
+                self.pdf_doc.xref_set_key(int(_parent_m.group(1)), "V", v_val)
 
         # Mirror update in _form_fields
         for ff in self._form_fields:
@@ -1800,8 +1824,9 @@ class PDFSignerApp(QMainWindow):
             self._pending_close = False
             QMessageBox.warning(self, t("dlg_no_doc"), t("dlg_no_doc_msg"))
             return
-        has_text = bool([a for a in self.text_annots if a.text.strip()])
-        if not self.sig_fields and not has_text:
+        has_text       = bool([a for a in self.text_annots if a.text.strip()])
+        has_form_edits = bool(self._form_fields and self._has_unsaved_changes)
+        if not self.sig_fields and not has_text and not has_form_edits:
             self._pending_close = False
             QMessageBox.warning(self, t("dlg_no_fields"), t("dlg_no_fields_msg"))
             return
@@ -1811,6 +1836,12 @@ class PDFSignerApp(QMainWindow):
             QMessageBox.critical(
                 self, t("dlg_save_error_title"), t("dlg_pyhanko_missing"))
             return
+
+        # Aktuelle pdf_doc-Bytes serialisieren – enthält Formularfeld-Änderungen
+        # (Texte via widget.update(), Radio-Buttons via xref_set_key für /AS und
+        # /V, die nicht in _working_bytes stehen).
+        current_bytes = (self.pdf_doc.tobytes(garbage=0, deflate=False)
+                         if has_form_edits else self._working_bytes)
 
         # Vorschlag für den Ausgabedateinamen: Originalname + Suffix + ".pdf"
         pdf_dir = str(Path(self.pdf_path).parent)
@@ -1824,7 +1855,7 @@ class PDFSignerApp(QMainWindow):
         self._set_status(t("status_saving_fields"))
         # SaveFieldsWorker im Hintergrund-Thread starten; UI bleibt reaktionsfähig
         self._worker = SaveFieldsWorker(
-            self._working_bytes, out,
+            current_bytes, out,
             list(self.sig_fields), list(self.text_annots))
         self._worker.finished.connect(self._on_save_done)
         self._worker.error.connect(self._on_save_error)
