@@ -5,7 +5,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased] – 0.3.10.dev0
+## [0.3.10] – 2026-04-20
+
+### Added
+- **Interactive PDF form field editing:** Text fields, checkboxes, and radio
+  buttons in existing PDF forms can now be filled in directly in the viewer.
+  Changes are serialised back into the document on save or sign.
+- **Flatten form fields on sign:** When signing, all filled form fields are
+  flattened into the page content so the values are permanently embedded in
+  the signed PDF.
+- **Classic Save / Save As:** The toolbar and File menu now provide a standard
+  Save (Ctrl+S) action that writes directly to the opened file, and a
+  Save As (Ctrl+Shift+S) action that opens a file dialog and switches the
+  working context to the new file.  Both actions are greyed out when no
+  document is loaded; Save is additionally greyed out when there are no
+  unsaved changes.
+
+### Fixed
+- **Radio button selection (Firefox/PDF.js):** The `/V` entry on radio button
+  parent fields is now written as a PDF name object (`/OnState`) instead of a
+  plain string, fixing incorrect display in Firefox and PDF.js viewers.
+- **Radio button structure (LibreOffice PDFs):** Radio button groups exported
+  by LibreOffice use a non-standard flat structure; the app now normalises
+  them into the standard parent/kids hierarchy before editing.
+- **Crash log rotation:** The crash log (`~/.local/share/pdf-signer/crash.log`)
+  now rotates daily and shows a user-facing error dialog for unhandled
+  exceptions in addition to writing to the log file.
+- **Text mode reset on file open:** Opening a new PDF while text-annotation
+  mode was active could crash with a `RuntimeError` on the deleted overlay
+  widget; text mode is now cleanly exited before the new document is loaded.
 
 ---
 
