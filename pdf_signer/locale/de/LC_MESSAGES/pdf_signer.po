@@ -174,16 +174,16 @@ msgid "tb_fit_height"
 msgstr "Seitenhöhe anpassen"
 
 msgid "tb_sign"
-msgstr "✍ Signieren"
+msgstr "✍ Signieren  [S]"
 
 msgid "tb_check_sigs"
-msgstr "🔍 Signatur prüfen"
+msgstr "🔍 Signatur prüfen  [C]"
 
 msgid "tb_save_fields"
 msgstr "💾 Speichern"
 
 msgid "tb_text_mode"
-msgstr "Textfeld einfügen"
+msgstr "Textfeld einfügen  [T]"
 
 msgid "tb_text_mode_signed"
 msgstr "Textfelder können nur bei nicht signierten Dokumenten eingefügt werden"

@@ -171,16 +171,16 @@ msgid "tb_fit_height"
 msgstr "Fit Page Height"
 
 msgid "tb_sign"
-msgstr "✍ Sign"
+msgstr "✍ Sign  [S]"
 
 msgid "tb_check_sigs"
-msgstr "🔍 Check signatures"
+msgstr "🔍 Check signatures  [C]"
 
 msgid "tb_save_fields"
 msgstr "💾 Save PDF"
 
 msgid "tb_text_mode"
-msgstr "Insert text field"
+msgstr "Insert text field  [T]"
 
 msgid "tb_text_mode_signed"
 msgstr "Text fields can only be inserted in unsigned documents"

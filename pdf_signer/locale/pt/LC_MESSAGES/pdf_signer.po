@@ -171,16 +171,16 @@ msgid "tb_fit_height"
 msgstr "Ajustar altura"
 
 msgid "tb_sign"
-msgstr "✍ Assinar"
+msgstr "✍ Assinar  [S]"
 
 msgid "tb_check_sigs"
-msgstr "🔍 Verificar assinaturas"
+msgstr "🔍 Verificar assinaturas  [C]"
 
 msgid "tb_save_fields"
 msgstr "💾 Guardar PDF"
 
 msgid "tb_text_mode"
-msgstr "Inserir campo de texto"
+msgstr "Inserir campo de texto  [T]"
 
 msgid "tb_text_mode_signed"
 msgstr "Os campos de texto só podem ser inseridos em documentos não assinados"

@@ -171,16 +171,16 @@ msgid "tb_fit_height"
 msgstr "Dopasuj wysokość"
 
 msgid "tb_sign"
-msgstr "✍ Podpisz"
+msgstr "✍ Podpisz  [S]"
 
 msgid "tb_check_sigs"
-msgstr "🔍 Sprawdź podpisy"
+msgstr "🔍 Sprawdź podpisy  [C]"
 
 msgid "tb_save_fields"
 msgstr "💾 Zapisz PDF"
 
 msgid "tb_text_mode"
-msgstr "Wstaw pole tekstowe"
+msgstr "Wstaw pole tekstowe  [T]"
 
 msgid "tb_text_mode_signed"
 msgstr "Pola tekstowe można wstawiać tylko w niepodpisanych dokumentach"

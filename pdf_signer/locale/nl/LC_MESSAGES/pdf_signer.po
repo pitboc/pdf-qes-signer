@@ -164,16 +164,16 @@ msgid "tb_fit_height"
 msgstr "Aanpassen aan hoogte"
 
 msgid "tb_sign"
-msgstr "✍ Ondertekenen"
+msgstr "✍ Ondertekenen  [S]"
 
 msgid "tb_check_sigs"
-msgstr "🔍 Handtekening controleren"
+msgstr "🔍 Handtekening controleren  [C]"
 
 msgid "tb_save_fields"
 msgstr "💾 PDF opslaan"
 
 msgid "tb_text_mode"
-msgstr "Tekstveld invoegen"
+msgstr "Tekstveld invoegen  [T]"
 
 msgid "tb_text_mode_signed"
 msgstr "Tekstvelden kunnen alleen worden ingevoegd in niet-ondertekende documenten"
