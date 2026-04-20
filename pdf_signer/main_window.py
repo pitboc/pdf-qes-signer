@@ -363,7 +363,7 @@ class PDFSignerApp(QMainWindow):
         # Aktuell fokussierte Text-Overlay-Box (für Toolbar-Kopplung)
         self._focused_overlay: Optional[TextAnnotOverlay] = None
         # Ungespeicherte Änderungen: True wenn sig_fields oder text_annots verändert wurden
-        self._has_unsaved_changes: bool = False
+        self.__has_unsaved_changes: bool = False
         # Schließen ausstehend (nach async Save abschließen)
         self._pending_close: bool = False
         # Worker-Referenzen halten damit GC sie nicht vorzeitig zerstört
@@ -423,9 +423,15 @@ class PDFSignerApp(QMainWindow):
         self._act_open.triggered.connect(self.open_pdf)
         self._menu_file.addAction(self._act_open)
         self._act_save_fields = QAction(self)
-        # Speichert PDF mit eingebetteten Signaturfeld-Annotationen (ohne Signatur)
+        self._act_save_fields.setShortcut(QKeySequence.StandardKey.Save)
+        self._act_save_fields.setEnabled(False)
         self._act_save_fields.triggered.connect(self.save_with_fields)
         self._menu_file.addAction(self._act_save_fields)
+        self._act_save_as = QAction(self)
+        self._act_save_as.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        self._act_save_as.setEnabled(False)
+        self._act_save_as.triggered.connect(self.save_as)
+        self._menu_file.addAction(self._act_save_as)
         self._menu_file.addSeparator()
         self._act_quit = QAction(self)
         self._act_quit.setShortcut(QKeySequence.StandardKey.Quit)
@@ -468,6 +474,7 @@ class PDFSignerApp(QMainWindow):
         self._tb_open.triggered.connect(self.open_pdf)
         tb.addAction(self._tb_open)
         self._tb_save_fields = QAction(self)
+        self._tb_save_fields.setEnabled(False)
         self._tb_save_fields.triggered.connect(self.save_with_fields)
         tb.addAction(self._tb_save_fields)
         tb.addSeparator()
@@ -760,6 +767,7 @@ class PDFSignerApp(QMainWindow):
         self._menu_file.setTitle(t("menu_file"))
         self._act_open.setText(t("menu_file_open"))
         self._act_save_fields.setText(t("menu_file_save_fields"))
+        self._act_save_as.setText(t("menu_file_save_as"))
         self._act_quit.setText(t("menu_file_quit"))
         self._menu_settings.setTitle(t("menu_settings"))
         self._act_settings.setText(t("menu_settings_open"))
@@ -788,6 +796,26 @@ class PDFSignerApp(QMainWindow):
         self._tsa_chk.setText(t("tsa_enabled_label"))
         # Appearance panel – retranslate all inline widgets via AppearancePanel
         self._ap_panel.retranslate(t)
+
+    # ── Unsaved-changes property ──────────────────────────────────────────
+
+    @property
+    def _has_unsaved_changes(self) -> bool:
+        return self.__has_unsaved_changes
+
+    @_has_unsaved_changes.setter
+    def _has_unsaved_changes(self, value: bool) -> None:
+        self.__has_unsaved_changes = value
+        if hasattr(self, '_act_save_fields'):
+            self._update_save_actions_state()
+
+    def _update_save_actions_state(self) -> None:
+        """Speichern/Speichern-unter je nach Dokumentzustand en-/deaktivieren."""
+        has_doc     = self.pdf_doc is not None
+        has_changes = self.__has_unsaved_changes
+        self._act_save_fields.setEnabled(has_doc and has_changes)
+        self._tb_save_fields.setEnabled(has_doc and has_changes)
+        self._act_save_as.setEnabled(has_doc)
 
     # ── Utility methods ───────────────────────────────────────────────────
 
@@ -1442,6 +1470,11 @@ class PDFSignerApp(QMainWindow):
         try:
             # Pfad normalisieren (Symlinks auflösen, absolut machen)
             path = str(Path(path).resolve())
+            # Textmodus beenden bevor alte Overlays ungültig werden
+            self._focused_overlay = None
+            if self._tb_text_mode.isChecked():
+                self._tb_text_mode.setChecked(False)
+                self._toggle_text_mode(False)
             doc = fitz.open(path)
             self.pdf_doc      = doc
             self.pdf_path     = path
@@ -1963,42 +1996,64 @@ class PDFSignerApp(QMainWindow):
             self._update_field_list()
             self._render_current_page()
 
-    def save_with_fields(self) -> None:
-        # Vorbedingungen prüfen: Dokument geladen, etwas zum Speichern vorhanden
+    def _save_preconditions(self) -> tuple[bool, bool, bytes] | None:
+        """Vorbedingungen für Speichern prüfen; gibt (has_text, has_form_edits, current_bytes) zurück.
+
+        Setzt _pending_close=False und zeigt einen Dialog bei Fehler.
+        Gibt None zurück wenn die Aktion abgebrochen werden soll.
+        """
         if not self.pdf_doc:
             self._pending_close = False
             QMessageBox.warning(self, t("dlg_no_doc"), t("dlg_no_doc_msg"))
-            return
+            return None
         has_text       = bool([a for a in self.text_annots if a.text.strip()])
         has_form_edits = bool(self._form_fields and self._has_unsaved_changes)
         if not self.sig_fields and not has_text and not has_form_edits:
             self._pending_close = False
             QMessageBox.warning(self, t("dlg_no_fields"), t("dlg_no_fields_msg"))
-            return
-        # sig_fields benötigen pyhanko; text_annots allein brauchen es nicht
+            return None
         if self.sig_fields and not _pyhanko_available:
             self._pending_close = False
             QMessageBox.critical(
                 self, t("dlg_save_error_title"), t("dlg_pyhanko_missing"))
-            return
-
-        # Aktuelle pdf_doc-Bytes serialisieren – enthält Formularfeld-Änderungen
-        # (Texte via widget.update(), Radio-Buttons via xref_set_key für /AS und
-        # /V, die nicht in _working_bytes stehen).
+            return None
         current_bytes = (self.pdf_doc.tobytes(garbage=0, deflate=False)
                          if has_form_edits else self._working_bytes)
+        return has_text, has_form_edits, current_bytes
 
-        # Vorschlag für den Ausgabedateinamen: Originalname + Suffix + ".pdf"
+    def save_with_fields(self) -> None:
+        """Speichert direkt auf die geöffnete Datei (kein Dialog)."""
+        result = self._save_preconditions()
+        if result is None:
+            return
+        _has_text, _has_form_edits, current_bytes = result
+        self._set_status(t("status_saving_fields"))
+        self._worker = SaveFieldsWorker(
+            current_bytes, self.pdf_path,
+            list(self.sig_fields), list(self.text_annots))
+        self._worker.finished.connect(self._on_save_direct_done)
+        self._worker.error.connect(self._on_save_error)
+        self._worker.start()
+
+    def save_as(self) -> None:
+        """Speichert in eine vom User gewählte Datei (Dateidialog)."""
+        if not self.pdf_doc:
+            return
+        if self.sig_fields and not _pyhanko_available:
+            QMessageBox.critical(self, t("dlg_save_error_title"), t("dlg_pyhanko_missing"))
+            return
+        has_form_edits = bool(self._form_fields and self._has_unsaved_changes)
+        current_bytes  = (self.pdf_doc.tobytes(garbage=0, deflate=False)
+                          if has_form_edits else self._working_bytes)
         pdf_dir = str(Path(self.pdf_path).parent)
         stem    = Path(self.pdf_path).stem
-        default = str(Path(pdf_dir) / (stem + t("dlg_save_fields_suffix") + ".pdf"))
+        default = str(Path(pdf_dir) / (stem + ".pdf"))
         out, _  = QFileDialog.getSaveFileName(
             self, t("dlg_save_fields_title"), default, t("dlg_pdf_filter"))
         if not out:
             self._pending_close = False
             return
         self._set_status(t("status_saving_fields"))
-        # SaveFieldsWorker im Hintergrund-Thread starten; UI bleibt reaktionsfähig
         self._worker = SaveFieldsWorker(
             current_bytes, out,
             list(self.sig_fields), list(self.text_annots))
@@ -2006,9 +2061,31 @@ class PDFSignerApp(QMainWindow):
         self._worker.error.connect(self._on_save_error)
         self._worker.start()
 
-    def _on_save_done(self, path: str) -> None:
-        # Erfolgsmeldung in Statusleiste und Dialogfenster anzeigen
+    def _on_save_direct_done(self, path: str) -> None:
+        """Nach direktem Speichern: Arbeitskopie aktualisieren, Felder zurücksetzen."""
         self._has_unsaved_changes = False
+        self._set_status(t("status_saved", path=path))
+        self._working_bytes = Path(path).read_bytes()
+        self._focused_overlay = None
+        self.sig_fields.clear()
+        self.text_annots.clear()
+        self._update_field_list()
+        self._render_current_page()
+        if self._pending_close:
+            self._pending_close = False
+            self.close()
+
+    def _on_save_done(self, path: str) -> None:
+        """Nach Speichern-unter: Kontext auf neue Datei umschalten."""
+        self.pdf_path         = path
+        self._working_bytes   = Path(path).read_bytes()
+        self._focused_overlay = None
+        self.sig_fields.clear()
+        self.text_annots.clear()
+        self._has_unsaved_changes = False
+        self._update_field_list()
+        self._render_current_page()
+        self.setWindowTitle(f"PDF QES Signer – {os.path.basename(path)}")
         self._set_status(t("status_saved", path=path))
         QMessageBox.information(
             self, t("dlg_save_success_title"),
@@ -2466,11 +2543,13 @@ class PDFSignerApp(QMainWindow):
 
     def _set_modifying_actions_enabled(self, enabled: bool) -> None:
         """Enable or disable all actions that would modify or replace the PDF."""
-        for act in (self._tb_sign,
-                    self._act_save_fields, self._tb_save_fields,
-                    self._act_open, self._tb_open,
-                    self._tb_check_sigs):
+        for act in (self._tb_sign, self._act_open, self._tb_open, self._tb_check_sigs):
             act.setEnabled(enabled)
+        if enabled:
+            self._update_save_actions_state()
+        else:
+            for act in (self._act_save_fields, self._act_save_as, self._tb_save_fields):
+                act.setEnabled(False)
         # Delete button: only active when enabled AND a free field is selected
         if enabled:
             row   = self._field_list.currentRow()
@@ -2529,9 +2608,12 @@ class PDFSignerApp(QMainWindow):
         Also propagates to the field-drawing views so that no drag/name-dialog
         can be started when *enabled* is False.
         """
-        for act in (self._tb_sign,
-                    self._act_save_fields, self._tb_save_fields):
-            act.setEnabled(enabled)
+        self._tb_sign.setEnabled(enabled)
+        if enabled:
+            self._update_save_actions_state()
+        else:
+            for act in (self._act_save_fields, self._act_save_as, self._tb_save_fields):
+                act.setEnabled(False)
         if enabled:
             row   = self._field_list.currentRow()
             n_sig = len(self.sig_fields)

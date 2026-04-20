@@ -120,7 +120,10 @@ msgid "menu_file_open"
 msgstr "PDF öffnen…"
 
 msgid "menu_file_save_fields"
-msgstr "Felder speichern (Kopie)…"
+msgstr "Speichern"
+
+msgid "menu_file_save_as"
+msgstr "Speichern unter…"
 
 msgid "menu_file_quit"
 msgstr "Beenden"
@@ -177,7 +180,7 @@ msgid "tb_check_sigs"
 msgstr "🔍 Signatur prüfen"
 
 msgid "tb_save_fields"
-msgstr "💾 PDF speichern"
+msgstr "💾 Speichern"
 
 msgid "tb_text_mode"
 msgstr "Textfeld einfügen"
@@ -315,7 +318,7 @@ msgid "status_field_deleted"
 msgstr "Feld '{name}' gelöscht."
 
 msgid "status_saving_fields"
-msgstr "Signaturfelder werden eingebettet…"
+msgstr "Wird gespeichert…"
 
 msgid "status_saved"
 msgstr "Gespeichert: {path}"
@@ -436,7 +439,7 @@ msgstr "Erfolg"
 
 msgid "dlg_save_success_msg"
 msgstr ""
-"PDF mit Signaturfeldern gespeichert:\n"
+"PDF gespeichert:\n"
 "{path}"
 
 msgid "dlg_sign_success_title"
