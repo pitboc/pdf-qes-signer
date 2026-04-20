@@ -281,3 +281,89 @@ Form field overlays are rendered **below** signature field overlays in Z-order.
 **4. `_write_field_text()` positioning** – Verify that baseline position, font name, and font size extracted from the widget's `/DA` string produce correct visual alignment within the field rect for the common cases (single-line, multiline with word wrap). Test with the `test_form.pdf` fixture before integration.
 
 **5. Unsaved-changes warning** – Verify that `_check_unsaved_changes()` correctly triggers when the user has edited form fields and tries to open a new file. Covered by `_unsaved_changes = True` in `_apply_form_field_edit()`, but needs integration test.
+
+---
+
+## Radio Button /V Bug – Investigation & Fix (2026-04-20)
+
+### Symptom
+
+After saving a PDF with a changed radio button selection in pdf-signer, Firefox/PDF.js showed no button as selected, while Chromium/PDFium showed the correct selection.
+
+### Root Cause
+
+**fitz creates radio button widgets as "merged" objects** (widget annotation and field dictionary in the same PDF object, no separate `/Parent` field).  In this structure each widget contains both `/AS` (appearance state, per-widget) and `/V` (group value, conceptually shared).
+
+fitz's `widget.update()` sets `/V` as the PDF string `(Yes)` – in round brackets – instead of a PDF name like `/Opt1`.  This is wrong in two ways:
+
+1. The value `Yes` does not match any key in `/AP/N` (which was patched by `_fix_radio_group` to use option-specific names like `Opt1`, `Opt2`).
+2. The encoding as a string `(Yes)` instead of a name `/Yes` is technically incorrect for `/V` in a button field.
+
+**How each browser reads radio button state:**
+
+| Browser | Primary key used | Effect |
+|---------|-----------------|--------|
+| Chromium / PDFium | `/AS` per widget | Correct – we set `/AS` properly |
+| Firefox / PDF.js | `/V` of the field | Wrong – fitz wrote `(Yes)`, no `/AP/N` key matches → no button shown |
+| Adobe Acrobat | Unknown (pending Windows VM test) | – |
+
+**Additional fitz bug** (already known, workaround in place): `widget.update()` on the target button also sets `/AS` to `on_state()` on *all* sibling buttons, not only the target. The existing fix resets sibling `/AS` to `/Off` via `xref_set_key` afterwards.
+
+### Investigation Method
+
+Test PDFs were created in two sets:
+
+- **Set A** – `/AS` correct per widget, `/V` left as fitz default `(Yes)` → Chromium correct, Firefox shows nothing (confirms root cause)
+- **Set B** – `/AS` correct, `/V` set as PDF name `/Opt1` / `/Opt2` on all widgets → both browsers correct (confirms fix)
+
+Browser-saved PDFs were then analysed with `tests/analyze_radio_pdf.py`:
+
+| Browser saves Opt2 selected | Widget (Opt1, off) | Widget (Opt2, selected) |
+|---|---|---|
+| **Firefox** | `/AS /Off`, `/V /Opt1` (unchanged) | `/AS /Opt2`, `/V /Opt2` (own name) |
+| **Chromium** | `/AS /Off`, `/V /Opt2` (group value) | `/AS /Opt2`, `/V /Opt1` (sibling name) |
+
+Firefox sets `/V` only on the selected widget to its own export name; other widgets keep their previous `/V`.  
+Chromium's `/V` behaviour is inconsistent (appears to swap values), but since Chromium itself reads `/AS`, it renders correctly regardless.
+
+### Fix
+
+In `_update_form_field` (`main_window.py`), after the existing sibling `/AS` correction, `/V` is now explicitly set as a PDF name on every widget in the group and on the parent field dict (if one exists):
+
+```python
+if is_radio and radio_on_state:
+    v_val = f"/{radio_on_state}"                          # e.g. "/Opt1"
+    self.pdf_doc.xref_set_key(target_xref, "V", v_val)
+    for _xref in radio_sibling_xrefs:
+        self.pdf_doc.xref_set_key(_xref, "V", v_val)
+    _parent_m = re.search(r'/Parent\s+(\d+)\s+0\s+R',
+                          self.pdf_doc.xref_object(target_xref, compressed=False))
+    if _parent_m:
+        self.pdf_doc.xref_set_key(int(_parent_m.group(1)), "V", v_val)
+```
+
+Verified: `radio_a_opt1_fixed.pdf` (set A + `/V` patched) shows Opt1 correctly in Firefox.
+
+### Test Coverage
+
+`tests/test_radio_button_save.py` (28 assertions, all pass):
+
+| Test | What it checks |
+|------|---------------|
+| `test_select_opt2_from_opt1` | `/AS` and `/V` after direction change; save+reload |
+| `test_select_opt1_from_opt2` | Reverse direction |
+| `test_three_options` | Group with 3 buttons, middle selected; all `/V` match |
+| `test_no_v_string_remains` | `/V (Yes)` string never present; `/V` is always a name |
+| `test_firefox_saved_roundtrip` | Firefox-saved PDF: `/AS` readable by fitz |
+| `test_chromium_saved_roundtrip` | Chromium-saved PDF: `/AS` readable by fitz |
+
+### Tools
+
+- `tests/create_radio_test_pdfs.py` – generates Set A / Set B test PDFs
+- `tests/analyze_radio_pdf.py` – dumps raw `/AS`, `/V`, `/AP/N`, `/Ff`, parent structure for any PDF
+- `tests/radio_ff_opt2.pdf` / `tests/radio_chromium_opt2.pdf` – reference saves from browsers
+
+### Open
+
+- **Adobe Acrobat Reader** – behaviour not yet verified (requires Windows VM).  
+  Use `python tests/analyze_radio_pdf.py <acrobat-saved.pdf>` and `tests/test_radio_button_save.py` after saving.
