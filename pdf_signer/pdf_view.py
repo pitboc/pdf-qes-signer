@@ -513,6 +513,8 @@ class PDFViewWidget(QWidget):
     exit_text_mode      = pyqtSignal()                   # ESC or right-click while in text mode
     # Emitted when the user edits a form field value (field_name, new_value)
     form_field_changed  = pyqtSignal(str, str)
+    # Emitted when text in an overlay changes (marks document dirty without committing)
+    form_field_dirty    = pyqtSignal()
 
     def __init__(self, appearance: SigAppearance, parent=None) -> None:
         super().__init__(parent)
@@ -772,6 +774,25 @@ class PDFViewWidget(QWidget):
         ov.hide()
         ov.deleteLater()
 
+    def flush_form_overlay(self) -> None:
+        """Commit any open text/combobox overlay by emitting form_field_changed.
+
+        Call this before saving so that in-progress edits are not lost even if
+        the user never pressed Return or moved focus away from the overlay.
+        """
+        ov   = self._form_overlay
+        fdef = self._form_overlay_fdef
+        if ov is None or fdef is None:
+            return
+        if isinstance(ov, QPlainTextEdit):
+            val = ov.toPlainText()
+        elif isinstance(ov, QLineEdit):
+            val = ov.text()
+        else:
+            return  # combobox commits immediately via activated; nothing to flush
+        self.form_field_changed.emit(fdef.field_name, val)
+        self._close_form_overlay()
+
     def _on_form_field_click(self, fdef: FormFieldDef) -> None:
         """React to a click on an editable form field."""
         import fitz as _fitz
@@ -852,6 +873,9 @@ class PDFViewWidget(QWidget):
                         self._close_form_overlay(),
                     )
                 )
+                ov.textChanged.connect(lambda _: self.form_field_dirty.emit())
+            else:
+                ov.textChanged.connect(lambda: self.form_field_dirty.emit())
             self._form_overlay = ov
             self._form_overlay_fdef = fdef
 

@@ -9,6 +9,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.0.1] – 2026-04-21
+
+### Fixed
+- **Form field text edits now correctly mark the document as modified:** Typing
+  in a PDF text-form-field overlay no longer leaves the Save button grayed out.
+  A pending overlay is also flushed automatically before any save action, so
+  edits are never silently discarded.
+- **Text annotations survive Save / Save As for continued editing:** After
+  saving, text annotation overlays remain visible and editable.  Subsequent
+  saves correctly pick up any further changes instead of writing a byte-identical
+  copy.  The pre-annotation base bytes are preserved so annotations are never
+  embedded twice.
+- **Shared last-used directory for Open and Save dialogs:** The Open-PDF,
+  Save As, and Sign-Save dialogs now share a single last-used directory.
+  Changing the directory in any of these dialogs updates the default for all
+  of them.
+
+---
+
 ## [1.0.0] – 2026-04-20
 
 ### Added

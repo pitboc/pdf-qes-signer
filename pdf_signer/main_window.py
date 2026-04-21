@@ -637,6 +637,8 @@ class PDFSignerApp(QMainWindow):
         self._pdf_view.text_annot_deleted.connect(self._on_text_annot_deleted)
         self._pdf_view.exit_text_mode.connect(self._on_exit_text_mode)
         self._pdf_view.form_field_changed.connect(self._apply_form_field_edit)
+        self._pdf_view.form_field_dirty.connect(
+            lambda: setattr(self, '_has_unsaved_changes', True))
 
         self._outer_layout.addWidget(self._pdf_view)
         self._scroll_area.setWidget(self._outer_container)
@@ -1233,6 +1235,7 @@ class PDFSignerApp(QMainWindow):
         # and _focused_overlay is correctly assigned to this new overlay.
         ov.focused.connect(self._on_text_overlay_focused)
         ov.tab_requested.connect(self._on_text_tab)
+        ov.content_changed.connect(lambda: setattr(self, '_has_unsaved_changes', True))
         ov._edit.setFocus()
 
     def _on_text_annot_deleted(self, ann: TextAnnotDef) -> None:
@@ -2042,6 +2045,7 @@ class PDFSignerApp(QMainWindow):
 
     def save_with_fields(self) -> None:
         """Speichert direkt auf die geöffnete Datei (kein Dialog)."""
+        self._pdf_view.flush_form_overlay()
         result = self._save_preconditions()
         if result is None:
             return
@@ -2056,6 +2060,7 @@ class PDFSignerApp(QMainWindow):
 
     def save_as(self) -> None:
         """Speichert in eine vom User gewählte Datei (Dateidialog)."""
+        self._pdf_view.flush_form_overlay()
         if not self.pdf_doc:
             return
         if self.sig_fields and not _pyhanko_available:
@@ -2064,14 +2069,16 @@ class PDFSignerApp(QMainWindow):
         has_form_edits = bool(self._form_fields and self._has_unsaved_changes)
         current_bytes  = (self.pdf_doc.tobytes(garbage=0, deflate=False)
                           if has_form_edits else self._working_bytes)
-        pdf_dir = str(Path(self.pdf_path).parent)
-        stem    = Path(self.pdf_path).stem
-        default = str(Path(pdf_dir) / (stem + ".pdf"))
-        out, _  = QFileDialog.getSaveFileName(
+        last_dir = self.config.get("paths", "last_open_dir") or str(Path(self.pdf_path).parent)
+        stem     = Path(self.pdf_path).stem
+        default  = str(Path(last_dir) / (stem + ".pdf"))
+        out, _   = QFileDialog.getSaveFileName(
             self, t("dlg_save_fields_title"), default, t("dlg_pdf_filter"))
         if not out:
             self._pending_close = False
             return
+        self.config.set("paths", "last_open_dir", str(Path(out).parent))
+        self.config.save()
         self._set_status(t("status_saving_fields"))
         self._worker = SaveFieldsWorker(
             current_bytes, out,
@@ -2082,12 +2089,19 @@ class PDFSignerApp(QMainWindow):
 
     def _on_save_direct_done(self, path: str) -> None:
         """Nach direktem Speichern: Arbeitskopie aktualisieren, Felder zurücksetzen."""
+        had_sig_fields = bool(self.sig_fields)
         self._has_unsaved_changes = False
         self._set_status(t("status_saved", path=path))
-        self._working_bytes = Path(path).read_bytes()
         self._focused_overlay = None
         self.sig_fields.clear()
-        self.text_annots.clear()
+        if had_sig_fields:
+            # Signatures are incremental writes in the saved file; must use it as new base.
+            # Text annotations are also embedded at this point.
+            self._working_bytes = Path(path).read_bytes()
+            self.text_annots.clear()
+            self._pdf_view.clear_text_overlays()
+        # else: keep _working_bytes (pre-annotation base) and text_annots so the user
+        # can keep editing and re-save without the text being applied twice.
         self._update_field_list()
         self._render_current_page()
         if self._pending_close:
@@ -2096,11 +2110,18 @@ class PDFSignerApp(QMainWindow):
 
     def _on_save_done(self, path: str) -> None:
         """Nach Speichern-unter: Kontext auf neue Datei umschalten."""
+        had_sig_fields = bool(self.sig_fields)
         self.pdf_path         = path
-        self._working_bytes   = Path(path).read_bytes()
         self._focused_overlay = None
         self.sig_fields.clear()
-        self.text_annots.clear()
+        if had_sig_fields:
+            # Signatures are incremental writes in the saved file; must use it as new base.
+            # Text annotations are also embedded at this point.
+            self._working_bytes = Path(path).read_bytes()
+            self.text_annots.clear()
+            self._pdf_view.clear_text_overlays()
+        # else: keep _working_bytes (pre-annotation base) and text_annots so the user
+        # can keep editing and re-save without the text being applied twice.
         self._has_unsaved_changes = False
         self._update_field_list()
         self._render_current_page()
@@ -2327,13 +2348,15 @@ class PDFSignerApp(QMainWindow):
             fdef = self.locked_fields[row - n_sig - 1]
 
         # Vorschlag für Ausgabedateiname: Originalname + Signatur-Suffix + ".pdf"
-        pdf_dir = str(Path(self.pdf_path).parent)
-        stem    = Path(self.pdf_path).stem
-        default = str(Path(pdf_dir) / (stem + t("dlg_save_signed_suffix") + ".pdf"))
-        out, _  = QFileDialog.getSaveFileName(
+        last_dir = self.config.get("paths", "last_open_dir") or str(Path(self.pdf_path).parent)
+        stem     = Path(self.pdf_path).stem
+        default  = str(Path(last_dir) / (stem + t("dlg_save_signed_suffix") + ".pdf"))
+        out, _   = QFileDialog.getSaveFileName(
             self, t("dlg_save_signed_title"), default, t("dlg_pdf_filter"))
         if not out:
             return
+        self.config.set("paths", "last_open_dir", str(Path(out).parent))
+        self.config.save()
 
         # Erste Signatur: docMDP-Einschränkung vom User abfragen
         docmdp = "none"
