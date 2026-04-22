@@ -2087,19 +2087,42 @@ class PDFSignerApp(QMainWindow):
         self._worker.error.connect(self._on_save_error)
         self._worker.start()
 
+    def _reload_after_save(self, path: str) -> None:
+        """Reopen the fitz document from *path* and reclassify all fields.
+
+        Called after SaveFieldsWorker embeds unsigned sig fields (and text
+        annotations) into the PDF.  The saved file becomes the new working
+        base: we close the old fitz document, open a fresh one from the saved
+        bytes, and let _load_existing_fields re-classify the now-embedded sig
+        fields (→ sig_fields again, stripped from the display doc) so the user
+        can continue working – sign them, move them, or add more – without
+        stale state or duplicate-name errors on the next save.
+
+        Text overlays are also rebuilt so they remain visible after the reload.
+        """
+        _new_bytes = Path(path).read_bytes()
+        _new_doc   = fitz.open(stream=_new_bytes, filetype="pdf")
+        if self.pdf_doc:
+            self.pdf_doc.close()
+        self.pdf_doc = _new_doc
+        self._load_existing_fields(_new_doc)
+        # Rebuild text overlays (cleared by _load_existing_fields)
+        for _ann in self.text_annots:
+            _ov = self._pdf_view.add_text_overlay(_ann)
+            _ov.focused.connect(self._on_text_overlay_focused)
+            _ov.tab_requested.connect(self._on_text_tab)
+
     def _on_save_direct_done(self, path: str) -> None:
         """Nach direktem Speichern: Arbeitskopie aktualisieren, Felder zurücksetzen."""
         had_sig_fields = bool(self.sig_fields)
         self._has_unsaved_changes = False
         self._set_status(t("status_saved", path=path))
         self._focused_overlay = None
-        self.sig_fields.clear()
         if had_sig_fields:
-            # Signatures are incremental writes in the saved file; must use it as new base.
-            # Text annotations are also embedded at this point.
-            self._working_bytes = Path(path).read_bytes()
-            self.text_annots.clear()
-            self._pdf_view.clear_text_overlays()
+            # Fields are now embedded in the saved file.  Re-open the fitz document
+            # so _load_existing_fields re-classifies them; the user can continue
+            # working (sign, move, add more) without duplicate-name errors.
+            self._reload_after_save(path)
         # else: keep _working_bytes (pre-annotation base) and text_annots so the user
         # can keep editing and re-save without the text being applied twice.
         self._update_field_list()
@@ -2113,13 +2136,11 @@ class PDFSignerApp(QMainWindow):
         had_sig_fields = bool(self.sig_fields)
         self.pdf_path         = path
         self._focused_overlay = None
-        self.sig_fields.clear()
         if had_sig_fields:
-            # Signatures are incremental writes in the saved file; must use it as new base.
-            # Text annotations are also embedded at this point.
-            self._working_bytes = Path(path).read_bytes()
-            self.text_annots.clear()
-            self._pdf_view.clear_text_overlays()
+            # Fields are now embedded in the saved file.  Re-open the fitz document
+            # so _load_existing_fields re-classifies them; the user can continue
+            # working (sign, move, add more) without duplicate-name errors.
+            self._reload_after_save(path)
         # else: keep _working_bytes (pre-annotation base) and text_annots so the user
         # can keep editing and re-save without the text being applied twice.
         self._has_unsaved_changes = False
