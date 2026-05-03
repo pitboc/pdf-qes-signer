@@ -80,6 +80,29 @@ rasterised image.
 This ensures the highlight is never lost when a placeholder is promoted to a
 rendered widget.
 
+### Single-page mode
+
+``set_single_page_mode(enabled: bool, current_page: int = 0)`` toggles between
+continuous and single-page layout without changing the document or field state.
+
+In single-page mode:
+
+- The ``_container`` is sized to exactly one page (the current page).
+- All other page slots are moved to ``y = -height`` so the scroll area clips
+  them completely.
+- The vertical scroll bar covers only the current page; when the page fits in
+  the viewport it is hidden automatically (``ScrollBarAsNeeded``).
+- ``show_page(idx)`` switches to a different page: unrenders the old slot,
+  repositions the new slot to ``y = 0``, resizes the container, and resets the
+  scroll position to 0.
+- Scrolling past the bottom or top of the current page via mouse wheel or
+  ``Page Down`` / ``Page Up`` automatically calls ``show_page`` for the
+  adjacent page.
+
+Switching back to continuous mode restores all slots to their
+``_page_y_offsets`` positions and resizes the container to the full document
+height.
+
 ### Zoom
 
 ``set_zoom(factor: float, cursor_vp: QPoint | None = None)`` – recalculates
@@ -89,7 +112,8 @@ coordinates).  If *cursor_vp* is ``None`` the viewport centre is used.
 
 All rendered ``PDFViewWidget`` slots are replaced with correctly-sized
 ``_PagePlaceholder`` instances, then ``_update_visible()`` re-renders the
-currently visible ones.
+currently visible ones (continuous mode) or ``_apply_single_page_layout()``
+repositions the current page (single-page mode).
 
 Horizontal centering: if the widest page is narrower than the viewport, the
 scroll area centres ``_container`` visually (``AlignHCenter``).  The zoom
@@ -121,7 +145,7 @@ from PyQt6.QtCore import pyqtSignal, Qt, QPoint, QRectF
 from PyQt6.QtGui import QColor, QPainter
 from PyQt6.QtWidgets import QScrollArea, QWidget
 
-from .pdf_view import PDFViewWidget, SignatureFieldDef
+from .pdf_view import PDFViewWidget, SignatureFieldDef, TextAnnotDef, TextAnnotOverlay
 from .appearance import SigAppearance
 
 
@@ -177,12 +201,17 @@ class ContinuousView(QScrollArea):
     to either widget using the same slots.
     """
 
-    page_changed  = pyqtSignal(int)    # 0-based page index while scrolling
-    field_clicked = pyqtSignal(object) # SignatureFieldDef
-    field_added   = pyqtSignal(object) # SignatureFieldDef
-    field_deleted = pyqtSignal(object) # SignatureFieldDef
-    field_moved   = pyqtSignal(object) # SignatureFieldDef
-    zoom_changed  = pyqtSignal(float)  # new zoom factor after set_zoom()
+    page_changed       = pyqtSignal(int)    # 0-based page index while scrolling
+    field_clicked      = pyqtSignal(object) # SignatureFieldDef
+    field_added        = pyqtSignal(object) # SignatureFieldDef
+    field_deleted      = pyqtSignal(object) # SignatureFieldDef
+    field_moved        = pyqtSignal(object) # SignatureFieldDef
+    zoom_changed       = pyqtSignal(float)  # new zoom factor after set_zoom()
+    text_annot_placed  = pyqtSignal(int, float, float)  # relay: page, x_pdf, y_pdf
+    text_annot_deleted = pyqtSignal(object)              # relay: TextAnnotDef
+    exit_text_mode     = pyqtSignal()                    # relay: ESC / right-click
+    form_field_changed = pyqtSignal(str, str)            # relay: field_name, new_value
+    form_field_dirty   = pyqtSignal()                    # relay: unsaved change flag
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -203,6 +232,14 @@ class ContinuousView(QScrollArea):
         self._pan_hbar_start: int = 0            # scrollbar origin for middle-drag panning
         self._pan_vbar_start: int = 0
         self._drawing_enabled: bool = True       # propagated to all PDFViewWidget slots
+        self._text_mode:       bool = False      # propagated to all PDFViewWidget slots
+        self._text_annots:     list[TextAnnotDef] = []
+        self._overlay_setup_cb = None  # callable(TextAnnotOverlay) – wires signals
+
+        # Single-page mode: container shows only the current page
+        self._single_page_mode: bool = False
+        self._current_page_sp:  int  = 0        # current page index in single-page mode
+        self._page_sizes: list[tuple[int, int]] = []  # (w, h) per page at current zoom
 
         # Per-slot state: one entry per page; each is either a
         # _PagePlaceholder or a rendered PDFViewWidget
@@ -218,6 +255,8 @@ class ContinuousView(QScrollArea):
         self._locked_fields:  list[SignatureFieldDef]          = []
         self._signed_fields:  list[SignatureFieldDef]          = []
         self._selected_field: Optional[SignatureFieldDef]      = None
+        self._form_fields:           list                      = []
+        self._form_fields_editable:  bool                      = False
 
         self.verticalScrollBar().valueChanged.connect(self._on_scroll)
 
@@ -230,16 +269,21 @@ class ContinuousView(QScrollArea):
         sig_fields: list[SignatureFieldDef],
         locked_fields: list[SignatureFieldDef],
         signed_fields: list[SignatureFieldDef],
+        form_fields: list | None = None,
+        form_fields_editable: bool = False,
     ) -> None:
         """Populate the view for *doc*.  Creates placeholders for all pages,
-        then renders the initially visible ones."""
+        then renders the initially visible ones (continuous) or the current
+        page (single-page mode)."""
         # Store references for lazy rendering
-        self._doc           = doc
-        self._appearance    = appearance
-        self._sig_fields    = sig_fields
-        self._locked_fields = locked_fields
-        self._signed_fields = signed_fields
-        self._selected_field = None
+        self._doc                  = doc
+        self._appearance           = appearance
+        self._sig_fields           = sig_fields
+        self._locked_fields        = locked_fields
+        self._signed_fields        = signed_fields
+        self._form_fields          = list(form_fields or [])
+        self._form_fields_editable = form_fields_editable
+        self._selected_field       = None
 
         # Remove old slots
         for w in self._slots:
@@ -247,6 +291,7 @@ class ContinuousView(QScrollArea):
             w.deleteLater()
         self._slots          = []
         self._page_y_offsets = []
+        self._page_sizes     = []
 
         # Calculate page sizes from MediaBox (no rendering yet)
         zoom   = self._zoom
@@ -262,10 +307,11 @@ class ContinuousView(QScrollArea):
             y += h + PAGE_GAP
             max_w = max(max_w, w)
 
-        self._max_w = max_w
-        total_h = y - PAGE_GAP if sizes else 0
+        self._page_sizes = sizes
+        self._max_w      = max_w
+        total_h          = y - PAGE_GAP if sizes else 0
 
-        # Create placeholder for every page
+        # Create placeholder for every page using full continuous y-offsets
         for i, (w, h) in enumerate(sizes):
             ph = _PagePlaceholder(w, h, self._container)
             x  = (max_w - w) // 2
@@ -276,8 +322,12 @@ class ContinuousView(QScrollArea):
         self._container.resize(max_w, total_h)
         self._doc_id = id(doc)
 
-        # Render the initially visible pages
-        self._update_visible()
+        if self._single_page_mode:
+            # Single-page mode: shrink container to current page and render it
+            self._apply_single_page_layout()
+        else:
+            # Continuous mode: render the initially visible pages
+            self._update_visible()
 
     def is_open_for(self, doc: fitz.Document) -> bool:
         """Return True if the view currently displays *doc*."""
@@ -297,6 +347,23 @@ class ContinuousView(QScrollArea):
             if isinstance(slot, PDFViewWidget):
                 slot.update_fields(sig_fields, locked_fields, signed_fields)
 
+    def update_form_fields(self, form_fields: list, editable: bool) -> None:
+        """Update the form-field list and refresh all rendered slots."""
+        self._form_fields          = list(form_fields)
+        self._form_fields_editable = editable
+        for slot in self._slots:
+            if isinstance(slot, PDFViewWidget):
+                slot._form_fields          = [f for f in form_fields
+                                              if f.page == slot._current_page]
+                slot._form_fields_editable = editable
+                slot.update()
+
+    def flush_form_overlay(self) -> None:
+        """Commit any open form-field text overlay on all rendered slots."""
+        for slot in self._slots:
+            if isinstance(slot, PDFViewWidget):
+                slot.flush_form_overlay()
+
     @property
     def drawing_enabled(self) -> bool:
         return self._drawing_enabled
@@ -307,6 +374,68 @@ class ContinuousView(QScrollArea):
         for slot in self._slots:
             if isinstance(slot, PDFViewWidget):
                 slot.drawing_enabled = value
+
+    @property
+    def text_mode(self) -> bool:
+        return self._text_mode
+
+    @text_mode.setter
+    def text_mode(self, value: bool) -> None:
+        self._text_mode = value
+        for slot in self._slots:
+            if isinstance(slot, PDFViewWidget):
+                slot.text_mode = value
+
+    def set_overlay_setup_cb(self, cb) -> None:
+        """Set a callback invoked for each new TextAnnotOverlay (connects signals)."""
+        self._overlay_setup_cb = cb
+
+    def set_text_annots(self, annots: list) -> None:
+        """Replace the stored annotation list.
+
+        Call this *before* ``open()`` so that ``_render_page`` can create
+        overlays for the initially visible pages.
+        """
+        self._text_annots = list(annots)
+
+    def add_text_overlay(self, ann: TextAnnotDef) -> Optional[TextAnnotOverlay]:
+        """Store *ann* and create an overlay on its page slot if rendered.
+
+        Returns the overlay if the page is currently rendered, else ``None``
+        (the overlay will be created lazily when the page enters the viewport).
+        """
+        if ann not in self._text_annots:
+            self._text_annots.append(ann)
+        if ann.page < len(self._slots):
+            slot = self._slots[ann.page]
+            if isinstance(slot, PDFViewWidget):
+                ov = slot.add_text_overlay(ann)
+                if self._overlay_setup_cb:
+                    self._overlay_setup_cb(ov)
+                return ov
+        return None
+
+    def all_text_overlays(self) -> list:
+        """Return all TextAnnotOverlay instances from currently rendered slots."""
+        result = []
+        for slot in self._slots:
+            if isinstance(slot, PDFViewWidget):
+                result.extend(slot._text_overlays)
+        return result
+
+    def clear_text_overlays(self) -> None:
+        """Clear the annotation list.
+
+        Widget overlays are destroyed together with their parent PDFViewWidget
+        slots (e.g. during ``open()``); no explicit widget destruction is needed.
+        """
+        self._text_annots.clear()
+
+    def _on_slot_annot_deleted(self, ann: TextAnnotDef) -> None:
+        """Called when a slot PDFViewWidget emits text_annot_deleted."""
+        if ann in self._text_annots:
+            self._text_annots.remove(ann)
+        self.text_annot_deleted.emit(ann)
 
     def set_selected_field(self, fdef: SignatureFieldDef | None) -> None:
         """Highlight *fdef* on its page widget; clear highlight on all others."""
@@ -355,7 +484,7 @@ class ContinuousView(QScrollArea):
         vbar       = self.verticalScrollBar()
         viewport_h = self.viewport().height()
         slot       = self._slots[fdef.page]
-        page_top   = self._page_y_offsets[fdef.page]
+        page_top   = 0 if self._single_page_mode else self._page_y_offsets[fdef.page]
 
         if not isinstance(slot, PDFViewWidget):
             # Fallback: scroll to page top
@@ -438,6 +567,7 @@ class ContinuousView(QScrollArea):
             self._slots[i] = ph
 
         self._page_y_offsets = new_offsets
+        self._page_sizes     = new_sizes
         self._max_w          = new_max_w
         self._container.resize(new_max_w, total_h)
 
@@ -446,7 +576,11 @@ class ContinuousView(QScrollArea):
         hbar.setValue(int(wx * zoom_ratio + cx_new - cursor_vp.x()))
         vbar.setValue(int(wy * zoom_ratio         - cursor_vp.y()))
 
-        self._update_visible()
+        if self._single_page_mode:
+            # Resize container to the new size of the current page only
+            self._apply_single_page_layout()
+        else:
+            self._update_visible()
         self.zoom_changed.emit(self._zoom)
 
     # ── Private: lazy rendering ───────────────────────────────────────────
@@ -455,6 +589,8 @@ class ContinuousView(QScrollArea):
         """Return (first, last) page indices that intersect the lookahead band."""
         if not self._slots:
             return 0, 0
+        if self._single_page_mode:
+            return self._current_page_sp, self._current_page_sp
         scroll_top = self.verticalScrollBar().value()
         band_top   = max(0, scroll_top - LOOKAHEAD_PX)
         band_bot   = scroll_top + self.viewport().height() + LOOKAHEAD_PX
@@ -468,8 +604,12 @@ class ContinuousView(QScrollArea):
         return first, last
 
     def _update_visible(self) -> None:
-        """Render pages entering the lookahead band; unrender those leaving it."""
-        if not self._slots:
+        """Render pages entering the lookahead band; unrender those leaving it.
+
+        In single-page mode this is a no-op – ``show_page`` / ``_apply_single_page_layout``
+        manage rendering directly.
+        """
+        if not self._slots or self._single_page_mode:
             return
         first, last = self._visible_range()
         for i, slot in enumerate(self._slots):
@@ -499,6 +639,8 @@ class ContinuousView(QScrollArea):
             self._sig_fields, idx,
             self._locked_fields,
             self._signed_fields,
+            form_fields=self._form_fields,
+            form_fields_editable=self._form_fields_editable,
         )
         pv.field_added.connect(self.field_added)
         pv.field_deleted.connect(self.field_deleted)
@@ -511,6 +653,12 @@ class ContinuousView(QScrollArea):
         pv.hscroll_requested.connect(self._on_pv_hscroll)
         pv.pan_started.connect(self._on_pv_pan_started)
         pv.pan_requested.connect(self._on_pv_pan)
+        pv.text_annot_placed.connect(self.text_annot_placed)
+        pv.text_annot_deleted.connect(self._on_slot_annot_deleted)
+        pv.exit_text_mode.connect(self.exit_text_mode)
+        pv.form_field_changed.connect(self.form_field_changed)
+        pv.form_field_dirty.connect(self.form_field_dirty)
+        pv.text_mode = self._text_mode
         pv.setParent(self._container)
         pv.move(x, y)
         pv.show()
@@ -520,6 +668,13 @@ class ContinuousView(QScrollArea):
         if (self._selected_field is not None
                 and self._selected_field.page == idx):
             pv.set_selected_field(self._selected_field)
+
+        # Create overlays for text annotations on this page
+        for ann in self._text_annots:
+            if ann.page == idx:
+                ov = pv.add_text_overlay(ann)
+                if self._overlay_setup_cb:
+                    self._overlay_setup_cb(ov)
 
     def _unrender_page(self, idx: int) -> None:
         """Replace the rendered widget at *idx* with a placeholder."""
@@ -539,12 +694,105 @@ class ContinuousView(QScrollArea):
         ph.show()
         self._slots[idx] = ph
 
+    # ── Single-page mode ─────────────────────────────────────────────────
+
+    def set_single_page_mode(self, enabled: bool,
+                             current_page: int = 0,
+                             target_scroll: int | None = None) -> None:
+        """Switch between single-page and continuous layout.
+
+        In single-page mode the container is sized to one page; in continuous
+        mode the container spans all pages.  The document, fields, and zoom
+        level are unchanged.
+
+        *target_scroll* (continuous mode only): set the vertical scrollbar to
+        this value before the first ``_update_visible()`` call so that the
+        correct pages stay rendered.  Without it the bar would still be at the
+        old single-page offset and pages near that raw offset (typically the
+        document top) would be treated as visible, causing the focused page to
+        be unrendered and any active text overlay to lose focus.
+        """
+        if self._single_page_mode == enabled:
+            return
+        self._single_page_mode = enabled
+        if not self._slots:
+            return
+        if enabled:
+            self._current_page_sp = max(0, min(current_page, len(self._slots) - 1))
+            self._apply_single_page_layout()
+        else:
+            # Restore full continuous layout
+            total_h = (self._page_y_offsets[-1] + self._page_sizes[-1][1]
+                       if self._page_sizes else 0)
+            for i, slot in enumerate(self._slots):
+                w, h = self._page_sizes[i]
+                x    = (self._max_w - w) // 2
+                slot.move(x, self._page_y_offsets[i])
+            self._container.resize(self._max_w, total_h)
+            if target_scroll is not None:
+                vbar    = self.verticalScrollBar()
+                clamped = max(0, min(target_scroll, vbar.maximum()))
+                if vbar.value() != clamped:
+                    # setValue fires valueChanged → _on_scroll → _update_visible,
+                    # and also moves the viewport via Qt's internal connection.
+                    vbar.setValue(clamped)
+                else:
+                    # Value unchanged → no signal, no auto-scroll; call explicitly.
+                    self._update_visible()
+            else:
+                self._update_visible()
+
+    def show_page(self, idx: int) -> None:
+        """Single-page mode: display page *idx*, unrender the previous page.
+
+        Resets the vertical scroll to 0 and emits ``page_changed``.
+        Has no effect in continuous mode.
+        """
+        if not self._single_page_mode or not self._slots or not self._page_sizes:
+            return
+        idx = max(0, min(idx, len(self._slots) - 1))
+        old = self._current_page_sp
+        if old != idx:
+            self._unrender_page(old)
+            ow, oh = self._page_sizes[old]
+            self._slots[old].move((self._max_w - ow) // 2, -oh)
+
+        self._current_page_sp = idx
+        w, h = self._page_sizes[idx]
+        x    = (self._max_w - w) // 2
+        self._slots[idx].move(x, 0)
+        self._container.resize(self._max_w, h)
+        self.verticalScrollBar().setValue(0)
+
+        if isinstance(self._slots[idx], _PagePlaceholder):
+            self._render_page(idx)
+
+        self.page_changed.emit(idx)
+
+    def _apply_single_page_layout(self) -> None:
+        """Position current page at y=0; move all others off-screen; resize container."""
+        if not self._slots or not self._page_sizes:
+            return
+        idx  = self._current_page_sp
+        w, h = self._page_sizes[idx]
+        x    = (self._max_w - w) // 2
+        self._slots[idx].move(x, 0)
+        for i, slot in enumerate(self._slots):
+            if i != idx:
+                ow, oh = self._page_sizes[i]
+                slot.move((self._max_w - ow) // 2, -oh)
+        self._container.resize(self._max_w, h)
+        if isinstance(self._slots[idx], _PagePlaceholder):
+            self._render_page(idx)
+
     # ── Private: scroll handling ──────────────────────────────────────────
 
     def _on_scroll(self, value: int) -> None:
         """Update the page indicator and trigger lazy render/unrender."""
         if not self._page_y_offsets:
             return
+        if self._single_page_mode:
+            return  # page indicator unchanged; no lazy rendering needed
         viewport_mid = value + self.viewport().height() // 2
         current = 0
         for i, y_off in enumerate(self._page_y_offsets):
@@ -631,3 +879,45 @@ class ContinuousView(QScrollArea):
         """Middle-drag panning from a rendered page (dx/dy = total offset from pan start)."""
         self.horizontalScrollBar().setValue(self._pan_hbar_start - dx)
         self.verticalScrollBar().setValue(self._pan_vbar_start - dy)
+
+    # ── Single-page wheel / keyboard navigation ───────────────────────────
+
+    def wheelEvent(self, event) -> None:
+        """In single-page mode: flip page when scrolling past the edge."""
+        if (self._single_page_mode
+                and not event.modifiers() & (Qt.KeyboardModifier.ControlModifier
+                                             | Qt.KeyboardModifier.ShiftModifier)):
+            delta = event.angleDelta().y()
+            vbar  = self.verticalScrollBar()
+            if delta < 0 and vbar.value() >= vbar.maximum():
+                next_p = self._current_page_sp + 1
+                if next_p < len(self._slots):
+                    self.show_page(next_p)
+                event.accept()
+                return
+            if delta > 0 and vbar.value() <= vbar.minimum():
+                prev_p = self._current_page_sp - 1
+                if prev_p >= 0:
+                    self.show_page(prev_p)
+                event.accept()
+                return
+        super().wheelEvent(event)
+
+    def keyPressEvent(self, event) -> None:
+        """In single-page mode: Page Down / Page Up flip pages at the edge."""
+        if self._single_page_mode:
+            k    = event.key()
+            vbar = self.verticalScrollBar()
+            if k == Qt.Key.Key_PageDown and vbar.value() >= vbar.maximum():
+                next_p = self._current_page_sp + 1
+                if next_p < len(self._slots):
+                    self.show_page(next_p)
+                event.accept()
+                return
+            if k == Qt.Key.Key_PageUp and vbar.value() <= vbar.minimum():
+                prev_p = self._current_page_sp - 1
+                if prev_p >= 0:
+                    self.show_page(prev_p)
+                event.accept()
+                return
+        super().keyPressEvent(event)

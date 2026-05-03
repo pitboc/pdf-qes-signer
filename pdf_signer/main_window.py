@@ -70,8 +70,8 @@ from PyQt6.QtGui import QAction, QColor, QFont, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication, QColorDialog, QComboBox, QDoubleSpinBox, QFileDialog,
     QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QMainWindow, QMessageBox, QPushButton, QScrollArea, QSizePolicy,
-    QStackedWidget, QSplitter, QTextEdit, QVBoxLayout, QWidget, QCheckBox,
+    QMainWindow, QMessageBox, QPushButton, QSizePolicy,
+    QSplitter, QTextEdit, QVBoxLayout, QWidget, QCheckBox,
 )
 
 from .config import AppConfig
@@ -369,8 +369,6 @@ class PDFSignerApp(QMainWindow):
         # Worker-Referenzen halten damit GC sie nicht vorzeitig zerstört
         self._worker      = None
         self._sign_worker = None
-        # Fortlaufende Ansicht: Modus-Flag; Widget wird in _build_ui erstellt
-        self._continuous_mode: bool = False
         # Aktueller Zoom-Faktor (1.0 = 100 %, geteilt von Einzel- und Fortlaufend-Ansicht)
         self._zoom_factor: float = 1.5
         # Signaturprüfungs-Dialog (nicht-modal); None wenn geschlossen
@@ -379,10 +377,6 @@ class PDFSignerApp(QMainWindow):
         self._historical_doc: Optional[fitz.Document] = None
         # Gecachtes Extraktionsergebnis (Phase 1); wird beim Öffnen befüllt
         self._doc_validation = None
-        # Scrollbar-Startwerte für Middle-Drag-Panning (single-page mode)
-        self._pan_hbar_start: int = 0
-        self._pan_vbar_start: int = 0
-
         self._update_worker = None        # UpdateCheckWorker – Referenz halten damit GC nicht löscht
         self._update_found: str | None = None  # gefundene neue Version (Tag), oder None
 
@@ -608,43 +602,10 @@ class PDFSignerApp(QMainWindow):
         _central_layout.addWidget(splitter)
         self.setCentralWidget(_central)
 
-        # Einzelseitenansicht: PDF-Canvas in ScrollArea (zoombar)
-        # _outer_container ist das permanente ScrollArea-Widget (wird NIE ersetzt).
-        # ID-Selektor (#name) kaskadiert nicht auf Kind-Widgets – verhindert,
-        # dass QInputDialog-Dialoge den dunklen Hintergrund erben.
-        self._scroll_area = QScrollArea()
-        self._scroll_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._scroll_area.setStyleSheet("QScrollArea { background: #404040; }")
-        self._outer_container = QWidget()
-        self._outer_container.setObjectName("pdfOuterContainer")
-        self._outer_container.setStyleSheet(
-            "#pdfOuterContainer { background: #404040; }")
-        self._outer_layout = QVBoxLayout(self._outer_container)
-        self._outer_layout.setContentsMargins(0, 0, 0, 0)
-        self._outer_layout.setSpacing(0)
-        self._outer_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self._pdf_view = PDFViewWidget(self.appearance)
-        self._pdf_view.field_added.connect(self._on_field_added)
-        self._pdf_view.field_deleted.connect(self._on_field_deleted)
-        self._pdf_view.field_clicked.connect(self._on_field_clicked_in_view)
-        self._pdf_view.field_moved.connect(self._on_field_moved)
-        self._pdf_view.zoom_requested.connect(self._on_zoom_wheel)
-        self._pdf_view.zoom_rect_requested.connect(self._on_zoom_rect_single)
-        self._pdf_view.pan_started.connect(self._on_pan_started_single)
-        self._pdf_view.pan_requested.connect(self._on_pan_single)
-        self._pdf_view.hscroll_requested.connect(self._on_hscroll_single)
-        self._pdf_view.text_annot_placed.connect(self._on_text_annot_placed)
-        self._pdf_view.text_annot_deleted.connect(self._on_text_annot_deleted)
-        self._pdf_view.exit_text_mode.connect(self._on_exit_text_mode)
-        self._pdf_view.form_field_changed.connect(self._apply_form_field_edit)
-        self._pdf_view.form_field_dirty.connect(
-            lambda: setattr(self, '_has_unsaved_changes', True))
-
-        self._outer_layout.addWidget(self._pdf_view)
-        self._scroll_area.setWidget(self._outer_container)
-        self._scroll_area.setWidgetResizable(False)
-
-        # Fortlaufende Ansicht: ContinuousView kapselt die gesamte Logik
+        # PDF-Canvas: ContinuousView für beide Darstellungsmodi
+        # Im Single-Page-Modus zeigt ContinuousView nur eine Seite auf einmal;
+        # im Fortlaufend-Modus werden alle Seiten gestapelt angezeigt.
+        # Standard: Single-Page-Modus (set_single_page_mode in _build_ui)
         self._cv = ContinuousView()
         self._cv.page_changed.connect(self._on_cv_page_changed)
         self._cv.field_clicked.connect(self._on_field_clicked_in_view)
@@ -652,12 +613,16 @@ class PDFSignerApp(QMainWindow):
         self._cv.field_deleted.connect(self._on_field_deleted)
         self._cv.field_moved.connect(self._on_field_moved)
         self._cv.zoom_changed.connect(self._on_cv_zoom_changed)
-
-        # QStackedWidget schaltet zwischen den beiden Ansichten um
-        self._stacked = QStackedWidget()
-        self._stacked.addWidget(self._scroll_area)  # Index 0: Einzelseite
-        self._stacked.addWidget(self._cv)           # Index 1: Fortlaufend
-        splitter.addWidget(self._stacked)
+        self._cv.text_annot_placed.connect(self._on_text_annot_placed)
+        self._cv.text_annot_deleted.connect(self._on_text_annot_deleted)
+        self._cv.exit_text_mode.connect(self._on_exit_text_mode)
+        self._cv.form_field_changed.connect(self._apply_form_field_edit)
+        self._cv.form_field_dirty.connect(
+            lambda: setattr(self, '_has_unsaved_changes', True))
+        self._cv.set_overlay_setup_cb(self._setup_text_overlay)
+        # Standard: Einzelseitenansicht (wie bisheriger Default)
+        self._cv._single_page_mode = True
+        splitter.addWidget(self._cv)
 
         # Right panel
         # Rechtes Panel: Feldliste, PIN-Eingabe, TSA-Checkbox, Erscheinungsbild-Tabs
@@ -886,13 +851,12 @@ class PDFSignerApp(QMainWindow):
                   packages="\n".join(f"  • {m}" for m in missing)))
 
     def _render_current_page(self) -> None:
-        """Render the current page (single-page mode) or refresh overlays
-        (continuous mode).  A full rebuild of the continuous view is triggered
-        whenever the loaded document changed since the last open() call.
+        """Refresh the PDF canvas.
 
-        Uses ``_active_doc`` so that the historical revision selected in the
-        validation dialog is shown instead of the real document when applicable.
-        In historical mode the signature field overlays are suppressed.
+        Calls ``ContinuousView.open()`` when a new document is detected, or
+        ``update_fields`` / ``update_form_fields`` otherwise.  Uses
+        ``_active_doc`` so the historical revision is shown when the validation
+        dialog requests it; field overlays are suppressed in historical mode.
         """
         doc = self._active_doc
         if not doc:
@@ -901,25 +865,22 @@ class PDFSignerApp(QMainWindow):
         sig    = [] if historical else self.sig_fields
         locked = [] if historical else self.locked_fields
         signed = [] if historical else self.signed_fields
-        if self._continuous_mode:
-            if not self._cv.is_open_for(doc):
-                self._cv._zoom = self._zoom_factor
-                self._cv.open(doc, self.appearance, sig, locked, signed)
+        ff     = [] if historical else self._form_fields
+        ff_ed  = (not historical) and self._form_fields_editable
+        if not self._cv.is_open_for(doc):
+            self._cv._zoom = self._zoom_factor
+            if self._cv._single_page_mode:
+                self._cv._current_page_sp = self.current_page
+            self._cv.set_text_annots(self.text_annots)
+            self._cv.open(doc, self.appearance, sig, locked, signed,
+                          form_fields=ff, form_fields_editable=ff_ed)
+            if not self._cv._single_page_mode:
                 self._cv.scroll_to_page(self.current_page)
-            else:
-                self._cv.update_fields(sig, locked, signed)
-                if abs(self._cv._zoom - self._zoom_factor) > 0.001:
-                    self._cv.set_zoom(self._zoom_factor)
-            self._page_edit.setText(str(self.current_page + 1))
-            self._page_total_lbl.setText(f"/ {len(doc)}")
-            return
-        self._pdf_view._zoom = self._zoom_factor
-        page = doc[self.current_page]
-        ff       = [] if historical else self._form_fields
-        ff_edit  = (not historical) and self._form_fields_editable
-        self._pdf_view.set_page(page, sig, self.current_page, locked, signed,
-                                form_fields=ff, form_fields_editable=ff_edit)
-        self._outer_container.adjustSize()
+        else:
+            self._cv.update_fields(sig, locked, signed)
+            self._cv.update_form_fields(ff, ff_ed)
+            if abs(self._cv._zoom - self._zoom_factor) > 0.001:
+                self._cv.set_zoom(self._zoom_factor)
         self._page_edit.setText(str(self.current_page + 1))
         self._page_total_lbl.setText(f"/ {len(doc)}")
 
@@ -927,111 +888,18 @@ class PDFSignerApp(QMainWindow):
 
     def _set_zoom(self, new_zoom: float,
                   cursor_vp: "QPoint | None" = None) -> None:
-        """Apply *new_zoom* to the active view.
-
-        In continuous mode delegates to ``ContinuousView.set_zoom``.
-        In single-page mode re-renders the current page and adjusts the
-        scroll bars so that the content under *cursor_vp* (viewport
-        coordinates) stays at the same screen position.
-        """
+        """Apply *new_zoom* to ContinuousView (handles both single-page and continuous)."""
         new_zoom = max(0.10, min(10.0, new_zoom))
         if abs(new_zoom - self._zoom_factor) < 0.001:
             return
-        zoom_ratio       = new_zoom / self._zoom_factor
         self._zoom_factor = new_zoom
         self._zoom_edit.setText(f"{round(new_zoom * 100)}%")
-
-        if self._continuous_mode:
-            self._cv.set_zoom(new_zoom)   # ContinuousView handles its own centering
-            return
-
-        # ── Single-page mode ──────────────────────────────────────────────
-        hbar = self._scroll_area.horizontalScrollBar()
-        vbar = self._scroll_area.verticalScrollBar()
-        vp   = self._scroll_area.viewport()
-
-        if cursor_vp is not None:
-            # Content coordinates under cursor before zoom.
-            # cursor_vp.x() = centering_offset - hbar + wx  →  wx = hbar + cursor_vp - centering
-            old_w  = self._pdf_view.width()
-            old_h  = self._pdf_view.height()
-            cx_old = max(0, (vp.width()  - old_w) // 2)
-            cy_old = max(0, (vp.height() - old_h) // 2)
-            wx = hbar.value() + cursor_vp.x() - cx_old
-            wy = vbar.value() + cursor_vp.y() - cy_old
-
-        self._render_current_page()
-
-        if cursor_vp is not None:
-            new_w  = self._pdf_view.width()
-            new_h  = self._pdf_view.height()
-            cx_new = max(0, (vp.width()  - new_w) // 2)
-            cy_new = max(0, (vp.height() - new_h) // 2)
-            hbar.setValue(int(wx * zoom_ratio + cx_new - cursor_vp.x()))
-            vbar.setValue(int(wy * zoom_ratio + cy_new - cursor_vp.y()))
-
-    def _on_zoom_wheel(self, delta: int, cursor_widget_pos) -> None:
-        """Ctrl+wheel from single-page PDFViewWidget: zoom centred on cursor."""
-        factor   = 1.1 if delta > 0 else 1.0 / 1.1
-        new_zoom = max(0.10, min(10.0, self._zoom_factor * factor))
-        cursor_vp = self._pdf_view.mapTo(
-            self._scroll_area.viewport(),
-            QPoint(int(cursor_widget_pos.x()), int(cursor_widget_pos.y())),
-        )
-        self._set_zoom(new_zoom, cursor_vp)
-
-    def _on_zoom_rect_single(self, rect: QRectF) -> None:
-        """Ctrl+drag rubber-band zoom in single-page mode."""
-        if rect.width() < 1 or rect.height() < 1:
-            return
-        vp   = self._scroll_area.viewport()
-        vp_w = vp.width()
-        vp_h = vp.height()
-        zoom_ratio   = min(vp_w / rect.width(), vp_h / rect.height())
-        new_zoom     = max(0.10, min(10.0, self._zoom_factor * zoom_ratio))
-        if abs(new_zoom - self._zoom_factor) < 0.001:
-            return
-        actual_ratio      = new_zoom / self._zoom_factor
-        self._zoom_factor = new_zoom
-        self._zoom_edit.setText(f"{round(new_zoom * 100)}%")
-        cx = rect.center().x()   # rect centre in current widget coords
-        cy = rect.center().y()
-        self._render_current_page()
-        new_w    = self._pdf_view.width()
-        new_h    = self._pdf_view.height()
-        cx_new   = max(0, (vp_w - new_w) // 2)
-        cy_new   = max(0, (vp_h - new_h) // 2)
-        hbar_max = max(0, new_w - vp_w)
-        vbar_max = max(0, new_h - vp_h)
-        hbar = self._scroll_area.horizontalScrollBar()
-        vbar = self._scroll_area.verticalScrollBar()
-        if hbar_max > 0:
-            hbar.setRange(0, hbar_max)
-        if vbar_max > 0:
-            vbar.setRange(0, vbar_max)
-        hbar.setValue(max(0, min(int(cx * actual_ratio + cx_new - vp_w / 2), hbar_max)))
-        vbar.setValue(max(0, min(int(cy * actual_ratio + cy_new - vp_h / 2), vbar_max)))
-
-    def _on_pan_started_single(self) -> None:
-        """Capture scrollbar origin when middle-drag pan begins (single-page mode)."""
-        self._pan_hbar_start = self._scroll_area.horizontalScrollBar().value()
-        self._pan_vbar_start = self._scroll_area.verticalScrollBar().value()
-
-    def _on_pan_single(self, dx: int, dy: int) -> None:
-        """Middle-drag panning in single-page mode (dx/dy = total offset from pan start)."""
-        self._scroll_area.horizontalScrollBar().setValue(self._pan_hbar_start - dx)
-        self._scroll_area.verticalScrollBar().setValue(self._pan_vbar_start - dy)
+        self._cv.set_zoom(new_zoom, cursor_vp)
 
     def _on_cv_zoom_changed(self, factor: float) -> None:
         """ContinuousView reports an internal zoom change (e.g. Ctrl+wheel)."""
         self._zoom_factor = factor
         self._zoom_edit.setText(f"{round(factor * 100)}%")
-
-    def _on_hscroll_single(self, delta: int) -> None:
-        """Shift+wheel from single-page PDFViewWidget: horizontal scroll."""
-        hbar = self._scroll_area.horizontalScrollBar()
-        step = max(20, hbar.singleStep()) * 3
-        hbar.setValue(hbar.value() - delta * step // 120)
 
     def _on_zoom_in(self) -> None:
         self._set_zoom(self._zoom_factor * 1.25)
@@ -1053,34 +921,27 @@ class PDFSignerApp(QMainWindow):
         if not self.pdf_doc:
             return
         page_w = self.pdf_doc[self.current_page].rect.width
-        vp_w   = self._scroll_area.viewport().width()
+        vp_w   = self._cv.viewport().width()
         self._set_zoom(vp_w / page_w)
-        if self._continuous_mode:
-            hbar    = self._cv.horizontalScrollBar()
-            cw      = self._cv.widget().width() if self._cv.widget() else 0
-            vp_w_cv = self._cv.viewport().width()
-            hbar.setValue(max(0, (cw - vp_w_cv) // 2))
+        # Centre horizontally after fit-width (container may be narrower than viewport)
+        hbar = self._cv.horizontalScrollBar()
+        cw   = self._cv.widget().width() if self._cv.widget() else 0
+        hbar.setValue(max(0, (cw - vp_w) // 2))
 
     def _on_zoom_fit_height(self) -> None:
-        """Zoom so die aktuelle Seite genau die Viewport-Höhe ausfüllt.
-
-        Seitenoberkante und Seitenunterkante fallen mit Viewport-Top und
-        Viewport-Bottom zusammen.  In der Einzelseitenansicht genügt vbar=0,
-        da die Seite allein im Scroll-Bereich liegt.  In der fortlaufenden
-        Ansicht wird zusätzlich zum Seitenanfang gescrollt.
-        """
+        """Zoom so die aktuelle Seite genau die Viewport-Höhe ausfüllt."""
         if not self.pdf_doc:
             return
         page_h = self.pdf_doc[self.current_page].rect.height
-        vp_h   = self._scroll_area.viewport().height()
+        vp_h   = self._cv.viewport().height()
         self._set_zoom(vp_h / page_h)
-        # Scroll so Seitenanfang = Viewport-Top
-        if self._continuous_mode:
+        # In continuous mode scroll to page top; in single-page mode vbar is already 0
+        if not self._cv._single_page_mode:
             if self.current_page < len(self._cv._page_y_offsets):
                 self._cv.verticalScrollBar().setValue(
                     self._cv._page_y_offsets[self.current_page])
         else:
-            self._scroll_area.verticalScrollBar().setValue(0)
+            self._cv.verticalScrollBar().setValue(0)
 
     # ── Field list selection ──────────────────────────────────────────────
 
@@ -1105,11 +966,7 @@ class PDFSignerApp(QMainWindow):
             if n_sig + n_locked + 1 <= row <= n_sig + n_locked + n_signed:
                 selected_for_scroll = self.signed_fields[row - n_sig - n_locked - 1]
 
-        # Vorschau-Hervorhebung auf dem richtigen Widget setzen
-        if self._continuous_mode:
-            self._cv.set_selected_field(fdef_preview)
-        else:
-            self._pdf_view.set_selected_field(fdef_preview)
+        self._cv.set_selected_field(fdef_preview)
 
         if selected_for_scroll is not None:
             self._scroll_to_field(selected_for_scroll)
@@ -1126,83 +983,49 @@ class PDFSignerApp(QMainWindow):
             self._page_edit.setText(str(self.current_page + 1))
             return
         page = max(0, min(page, len(self.pdf_doc) - 1))
-        if self._continuous_mode:
+        if page != self.current_page:
             self.current_page = page
-            self._cv.scroll_to_page(page)
-            self._page_edit.setText(str(page + 1))
-        elif page != self.current_page:
-            self.current_page = page
-            self._render_current_page()
-        else:
-            # Restore correct text if the entered value was out of range
-            self._page_edit.setText(str(self.current_page + 1))
+            if self._cv._single_page_mode:
+                self._cv.show_page(page)
+            else:
+                self._cv.scroll_to_page(page)
+        self._page_edit.setText(str(self.current_page + 1))
 
     def _scroll_to_field(self, fdef: SignatureFieldDef) -> None:
-        """Ensure *fdef* is visible; scroll so it appears in the lower 80 % of
-        the viewport.  In continuous mode delegates to ContinuousView.
-
-        Single-page mode: the page top is clamped to the viewport top so that
-        the page never appears to start below the visible area.
-        """
-        if self._continuous_mode:
-            self._cv.scroll_to_field(fdef)
-            return
-
-        # Einzelseitenansicht
-        vbar       = self._scroll_area.verticalScrollBar()
-        viewport_h = self._scroll_area.viewport().height()
-        page_changed = fdef.page != self.current_page
-        if page_changed:
+        """Ensure *fdef* is visible in the canvas."""
+        if self._cv._single_page_mode and fdef.page != self.current_page:
             self.current_page = fdef.page
-            self._render_current_page()
-        tl = self._pdf_view._pdf_to_w(fdef.x1, fdef.y2)
-        br = self._pdf_view._pdf_to_w(fdef.x2, fdef.y1)
-        field_top_y    = min(tl.y(), br.y())
-        field_bottom_y = max(tl.y(), br.y())
-        cur_scroll = vbar.value()
-        if page_changed or cur_scroll > field_top_y or field_bottom_y > cur_scroll + viewport_h:
-            target = int(field_bottom_y - viewport_h * 0.80)
-            vbar.setValue(max(0, min(target, vbar.maximum())))
+            self._cv.show_page(fdef.page)
+        self._cv.scroll_to_field(fdef)
 
-        hbar      = self._scroll_area.horizontalScrollBar()
-        viewport_w = self._scroll_area.viewport().width()
-        field_left  = self._pdf_view.x() + min(tl.x(), br.x())
-        field_right = self._pdf_view.x() + max(tl.x(), br.x())
-        _adjust_hscroll(hbar, viewport_w, field_left, field_right)
+    # ── Text overlay helpers ──────────────────────────────────────────────
 
-    # ── Continuous / single-page view toggle ──────────────────────────────
+    def _setup_text_overlay(self, ov: TextAnnotOverlay) -> None:
+        """Connect the standard signals for a text overlay (both view modes)."""
+        ov.focused.connect(self._on_text_overlay_focused)
+        ov.tab_requested.connect(self._on_text_tab)
+        ov.content_changed.connect(lambda: setattr(self, '_has_unsaved_changes', True))
 
-    @staticmethod
-    def _apply_hscroll(src_hbar, src_cw: int,
-                       dst_hbar, dst_cw: int, dst_vp_w: int) -> None:
-        """Transfer the horizontal scroll position when switching view modes.
+    def _active_text_overlays(self) -> list:
+        """Return all live TextAnnotOverlay instances."""
+        return self._cv.all_text_overlays()
 
-        Rules:
-        - No scrollbar in source (src_cw <= viewport): centre destination.
-          hbar_new = (dst_cw - dst_vp_w) / 2
-        - Scrollbar in source: preserve offset from centre.
-          hbar_new = (dst_cw - src_cw) / 2 + hbar_old
-        Both results are clamped to [0, dst_cw - dst_vp_w].
-        """
-        dst_max = max(0, dst_cw - dst_vp_w)
-        if dst_max > 0:
-            dst_hbar.setRange(0, dst_max)
-        if src_hbar.maximum() > 0:
-            hval = (dst_cw - src_cw) // 2 + src_hbar.value()
-        else:
-            hval = dst_max // 2
-        dst_hbar.setValue(max(0, min(hval, dst_max)))
+    def _delete_overlay_silent(self, ov: TextAnnotOverlay) -> None:
+        """Delete *ov* on whichever PDFViewWidget owns it."""
+        pv = ov.parent()
+        if isinstance(pv, PDFViewWidget):
+            pv.delete_overlay_silent(ov)
 
     def _toggle_text_mode(self, checked: bool) -> None:
         """Show/hide the text-annotation toolbar and switch the canvas mode."""
         self._text_tb.setVisible(checked)
-        self._pdf_view.text_mode = checked
+        self._cv.text_mode = checked
         if not checked:
             # Deselect rule 2: text mode turned off.
             # Empty overlays are deleted silently; non-empty lose keyboard focus.
-            for ov in list(self._pdf_view._text_overlays):
+            for ov in list(self._active_text_overlays()):
                 if not ov.annot.text.strip():
-                    self._pdf_view.delete_overlay_silent(ov)
+                    self._delete_overlay_silent(ov)
                 else:
                     ov._edit.clearFocus()
                     ov.set_selected(False)
@@ -1230,13 +1053,10 @@ class PDFSignerApp(QMainWindow):
         )
         self.text_annots.append(ann)
         self._has_unsaved_changes = True
-        ov = self._pdf_view.add_text_overlay(ann)
-        # Connect BEFORE setFocus so the FocusIn event finds the signal wired up
-        # and _focused_overlay is correctly assigned to this new overlay.
-        ov.focused.connect(self._on_text_overlay_focused)
-        ov.tab_requested.connect(self._on_text_tab)
-        ov.content_changed.connect(lambda: setattr(self, '_has_unsaved_changes', True))
-        ov._edit.setFocus()
+        # _setup_text_overlay is called via _overlay_setup_cb inside add_text_overlay
+        ov = self._cv.add_text_overlay(ann)
+        if ov is not None:
+            ov._edit.setFocus()
 
     def _on_text_annot_deleted(self, ann: TextAnnotDef) -> None:
         """Remove *ann* from the list when its overlay is deleted by the user."""
@@ -1250,21 +1070,35 @@ class PDFSignerApp(QMainWindow):
         """Update toolbar to reflect the settings of the focused overlay."""
         # Deselect rule 1: another box is focused.
         # Silently delete the previously focused overlay if it is empty.
+        # Both old and ov may be C++-deleted when their page was unrendered
+        # by the lazy-scroll logic in continuous mode; guard every access.
         old = self._focused_overlay
         if old is not None and old is not ov:
-            old.set_selected(False)
-            if not old.annot.text.strip():
-                self._pdf_view.delete_overlay_silent(old)
+            try:
+                old.set_selected(False)
+                if not old.annot.text.strip():
+                    self._delete_overlay_silent(old)
+            except RuntimeError:
+                pass  # C++ object gone; TextAnnotDef survives in text_annots
 
         self._focused_overlay = ov
-        ov.set_selected(True)
+        try:
+            ov.set_selected(True)
+        except RuntimeError:
+            self._focused_overlay = None
+            return
+
         # Auto-enable text mode when an overlay receives focus so that
         # the toolbar is visible even if the user clicked without enabling it.
         if not self._tb_text_mode.isChecked():
             self._tb_text_mode.setChecked(True)
             self._text_tb.setVisible(True)
-            self._pdf_view.text_mode = True
-        ann = ov.annot
+            self._cv.text_mode = True
+        try:
+            ann = ov.annot
+        except RuntimeError:
+            self._focused_overlay = None
+            return
         # Block signals to avoid triggering _on_text_prop_changed while updating
         for w in (self._tb2_font, self._tb2_font_size, self._tb2_char_spacing):
             w.blockSignals(True)
@@ -1283,7 +1117,7 @@ class PDFSignerApp(QMainWindow):
     def _on_text_tab(self, ov: "TextAnnotOverlay", direction: int) -> None:
         """Move focus to the next/previous text annotation overlay (Tab / Shift+Tab)."""
         overlays = sorted(
-            self._pdf_view._text_overlays,
+            self._active_text_overlays(),
             key=lambda o: (o.annot.page, -o.annot.y, o.annot.x),
         )
         if not overlays:
@@ -1305,7 +1139,7 @@ class PDFSignerApp(QMainWindow):
         """
         # Primary: overlay that currently shows the active-focus border
         target = next(
-            (ov for ov in self._pdf_view._text_overlays if ov._is_focused),
+            (ov for ov in self._active_text_overlays() if ov._is_focused),
             self._focused_overlay,
         )
         if not target:
@@ -1324,7 +1158,9 @@ class PDFSignerApp(QMainWindow):
         target._relayout()
         # Re-anchor: widget top = baseline_y - new_font_px, so the text
         # baseline stays at the original click position regardless of font size.
-        self._pdf_view._position_overlay(target, update_style=False)
+        pv = target.parent()
+        if isinstance(pv, PDFViewWidget):
+            pv._position_overlay(target, update_style=False)
 
     def _pick_text_color(self) -> None:
         """Open color dialog and update text color button."""
@@ -1343,68 +1179,30 @@ class PDFSignerApp(QMainWindow):
 
     def _toggle_view_mode(self) -> None:
         """Switch between single-page and continuous scroll view."""
-        self._continuous_mode = self._tb_view_toggle.isChecked()
-        if self._continuous_mode:
-            # single-page → continuous
-            sp_offset = self._scroll_area.verticalScrollBar().value()
-            page      = self.current_page
-            src_hbar  = self._scroll_area.horizontalScrollBar()
-            src_cw    = self._scroll_area.widget().width() if self._scroll_area.widget() else 0
-            self._tb_view_toggle.setIcon(svg_to_icon(ICON_SINGLE_PAGE))
-            self._tb_view_toggle.setToolTip("Einzelseitenansicht")
-            self._stacked.setCurrentIndex(1)
-            if self.pdf_doc:
-                self._render_current_page()
-                dst_cw   = self._cv.widget().width() if self._cv.widget() else 0
-                dst_vp_w = self._cv.viewport().width()
-                self._apply_hscroll(src_hbar, src_cw,
-                                    self._cv.horizontalScrollBar(),
-                                    dst_cw, dst_vp_w)
-                if page < len(self._cv._page_y_offsets):
-                    target    = self._cv._page_y_offsets[page] + sp_offset
-                    vbar      = self._cv.verticalScrollBar()
-                    container = self._cv.widget()
-                    vbar_max  = max(0, (container.height() if container else 0)
-                                   - self._cv.viewport().height())
-                    if vbar_max > 0:
-                        vbar.setRange(0, vbar_max)
-                    vbar.setValue(max(0, min(target, vbar_max)))
-        else:
-            # continuous → single-page
-            top_vis, bot_vis = self._cv.page_edge_visibility(self.current_page)
-            cv_vbar_val = self._cv.verticalScrollBar().value()
+        want_single = not self._tb_view_toggle.isChecked()  # checked = continuous
+        if want_single:
+            # continuous → single-page: preserve within-page scroll offset
             page_top    = (self._cv._page_y_offsets[self.current_page]
                            if self.current_page < len(self._cv._page_y_offsets) else 0)
-            src_hbar = self._cv.horizontalScrollBar()
-            src_cw   = self._cv.widget().width() if self._cv.widget() else 0
+            within_page = self._cv.verticalScrollBar().value() - page_top
+            self._cv.set_single_page_mode(True, self.current_page)
+            sp_h    = self._cv.widget().height() if self._cv.widget() else 0
+            vbar_max = max(0, sp_h - self._cv.viewport().height())
+            self._cv.verticalScrollBar().setValue(max(0, min(within_page, vbar_max)))
             self._tb_view_toggle.setIcon(svg_to_icon(ICON_MULTI_PAGE))
             self._tb_view_toggle.setToolTip("Fortlaufende Seitenansicht")
-            self._stacked.setCurrentIndex(0)
-            self._render_current_page()
-            dst_cw   = self._scroll_area.widget().width() if self._scroll_area.widget() else 0
-            dst_vp_w = self._scroll_area.viewport().width()
-            self._apply_hscroll(src_hbar, src_cw,
-                                self._scroll_area.horizontalScrollBar(),
-                                dst_cw, dst_vp_w)
-            vbar      = self._scroll_area.verticalScrollBar()
-            container = self._scroll_area.widget()
-            vbar_max  = max(0, (container.height() if container else 0)
-                           - self._scroll_area.viewport().height())
-            if vbar_max > 0:
-                vbar.setRange(0, vbar_max)
-            if top_vis and bot_vis:
-                # Whole page was visible → centre vertically
-                vbar.setValue(max(0, vbar_max // 2))
-            elif top_vis:
-                # Only top visible → show page top
-                vbar.setValue(0)
-            elif bot_vis:
-                # Only bottom visible → show page bottom
-                vbar.setValue(vbar_max)
-            else:
-                # Page filled viewport entirely → transfer within-page offset
-                offset = cv_vbar_val - page_top
-                vbar.setValue(max(0, min(offset, vbar_max)))
+        else:
+            # single-page → continuous: scroll so the page stays at the same position.
+            # target_scroll is passed into set_single_page_mode so that _update_visible()
+            # runs with the correct scroll offset and does NOT unrender the current page
+            # (which would destroy any active text overlay and lose keyboard focus).
+            sp_offset = self._cv.verticalScrollBar().value()
+            page      = self.current_page
+            target    = (self._cv._page_y_offsets[page] + sp_offset
+                         if page < len(self._cv._page_y_offsets) else sp_offset)
+            self._cv.set_single_page_mode(False, page, target_scroll=target)
+            self._tb_view_toggle.setIcon(svg_to_icon(ICON_SINGLE_PAGE))
+            self._tb_view_toggle.setToolTip("Einzelseitenansicht")
 
     def _on_cv_page_changed(self, page: int) -> None:
         """Update toolbar page indicator when ContinuousView reports a scroll."""
@@ -1502,11 +1300,8 @@ class PDFSignerApp(QMainWindow):
             self.current_page = 0
             # Bestehende Signaturfelder klassifizieren und _working_bytes setzen
             self._load_existing_fields(doc)
-            # Geladene Text-Annotationen als Overlays aufbauen (ohne Focus)
-            for _ann in self.text_annots:
-                _ov = self._pdf_view.add_text_overlay(_ann)
-                _ov.focused.connect(self._on_text_overlay_focused)
-                _ov.tab_requested.connect(self._on_text_tab)
+            # Text-Overlays werden lazy in _render_current_page → cv.set_text_annots
+            # und bei _render_page erzeugt (über _overlay_setup_cb).
             self._update_field_list()
             # Beim Öffnen immer das letzte unsigned freie Feld selektieren
             # (unabhängig von der Auswahl im vorherigen Dokument).
@@ -1568,22 +1363,20 @@ class PDFSignerApp(QMainWindow):
 
         # In Einzelseitenansicht gleich auf Zielseite wechseln, damit
         # _set_zoom nur einmal rendert (statt erst Seite 0, dann Zielseite)
-        if not self._continuous_mode:
+        if self._cv._single_page_mode:
             self.current_page = target_page
 
         # Zoom auf Breite der Zielseite anpassen
         page_w   = self.pdf_doc[target_page].rect.width
-        vp_w     = self._scroll_area.viewport().width()
+        vp_w     = self._cv.viewport().width()
         new_zoom = max(0.10, min(10.0, vp_w / page_w))
         self._set_zoom(new_zoom)
 
         # Zum Zielfeld scrollen oder Dokumentanfang anzeigen
         if target is not None:
             self._scroll_to_field(target)
-        elif self._continuous_mode:
-            self._cv.verticalScrollBar().setValue(0)
         else:
-            self._scroll_area.verticalScrollBar().setValue(0)
+            self._cv.verticalScrollBar().setValue(0)
 
     def _load_existing_fields(self, doc: fitz.Document) -> None:
         """Scan all pages for existing signature widgets and classify them.
@@ -1620,7 +1413,6 @@ class PDFSignerApp(QMainWindow):
         self.signed_fields.clear()
         self.text_annots.clear()
         self._form_fields.clear()
-        self._pdf_view.clear_text_overlays()
 
         # First pass: collect all signature widgets
         # all_unsigned: Sammlung aller noch nicht signierten Widget-Felder mit ihrem xref.
@@ -1844,6 +1636,7 @@ class PDFSignerApp(QMainWindow):
                     multiline=bool(_widget.field_flags & fitz.PDF_TX_FIELD_IS_MULTILINE),
                     xref=_widget.xref,
                     orig_fontsize=float(_widget.text_fontsize or 0.0),
+                    font_name=str(_widget.text_font or ""),
                 )
                 self._form_fields.append(_ff)
 
@@ -1962,26 +1755,24 @@ class PDFSignerApp(QMainWindow):
         self._render_current_page()
 
     def prev_page(self) -> None:
-        # Eine Seite zurückblättern (Minimum: Seite 0)
         doc = self._active_doc
         if doc and self.current_page > 0:
             self.current_page -= 1
-            if self._continuous_mode:
-                self._cv.scroll_to_page(self.current_page)
-                self._page_edit.setText(str(self.current_page + 1))
+            if self._cv._single_page_mode:
+                self._cv.show_page(self.current_page)
             else:
-                self._render_current_page()
+                self._cv.scroll_to_page(self.current_page)
+            self._page_edit.setText(str(self.current_page + 1))
 
     def next_page(self) -> None:
-        # Eine Seite vorblättern (Maximum: letzte Seite)
         doc = self._active_doc
         if doc and self.current_page < len(doc) - 1:
             self.current_page += 1
-            if self._continuous_mode:
-                self._cv.scroll_to_page(self.current_page)
-                self._page_edit.setText(str(self.current_page + 1))
+            if self._cv._single_page_mode:
+                self._cv.show_page(self.current_page)
             else:
-                self._render_current_page()
+                self._cv.scroll_to_page(self.current_page)
+            self._page_edit.setText(str(self.current_page + 1))
 
     # ── Field management ──────────────────────────────────────────────────
 
@@ -2045,7 +1836,7 @@ class PDFSignerApp(QMainWindow):
 
     def save_with_fields(self) -> None:
         """Speichert direkt auf die geöffnete Datei (kein Dialog)."""
-        self._pdf_view.flush_form_overlay()
+        self._cv.flush_form_overlay()
         result = self._save_preconditions()
         if result is None:
             return
@@ -2060,7 +1851,7 @@ class PDFSignerApp(QMainWindow):
 
     def save_as(self) -> None:
         """Speichert in eine vom User gewählte Datei (Dateidialog)."""
-        self._pdf_view.flush_form_overlay()
+        self._cv.flush_form_overlay()
         if not self.pdf_doc:
             return
         if self.sig_fields and not _pyhanko_available:
@@ -2106,11 +1897,7 @@ class PDFSignerApp(QMainWindow):
             self.pdf_doc.close()
         self.pdf_doc = _new_doc
         self._load_existing_fields(_new_doc)
-        # Rebuild text overlays (cleared by _load_existing_fields)
-        for _ann in self.text_annots:
-            _ov = self._pdf_view.add_text_overlay(_ann)
-            _ov.focused.connect(self._on_text_overlay_focused)
-            _ov.tab_requested.connect(self._on_text_tab)
+        # Text overlays are rebuilt lazily in _render_current_page → cv.set_text_annots.
 
     def _on_save_direct_done(self, path: str) -> None:
         """Nach direktem Speichern: Arbeitskopie aktualisieren, Felder zurücksetzen."""
@@ -2723,8 +2510,7 @@ class PDFSignerApp(QMainWindow):
             self._btn_delete.setEnabled(1 <= row <= n_sig)
         else:
             self._btn_delete.setEnabled(False)
-        self._pdf_view.drawing_enabled = enabled
-        self._cv.drawing_enabled       = enabled
+        self._cv.drawing_enabled = enabled
 
     def _update_main_warning(self) -> None:
         """Warnbanner im Hauptfenster ein- oder ausblenden; docMDP-Sperre anwenden.

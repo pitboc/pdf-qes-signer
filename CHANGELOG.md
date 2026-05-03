@@ -9,6 +9,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.0.2] – 2026-05-03
+
+### Changed
+- **Single-page mode is now handled inside `ContinuousView`:** Previously the
+  application maintained two separate rendering code paths (single-page and
+  continuous).  Single-page mode is now a layout mode of `ContinuousView`
+  (`_single_page_mode` flag): the container is sized to exactly one page, all
+  other slots are moved off-screen, and the scroll bar covers only the current
+  page.  Page Down / Page Up and scrolling past the page edge automatically
+  flip to the next or previous page.  This eliminates duplicated code and
+  ensures that bugs fixed in one mode apply to both.
+
+### Fixed
+- **Form field value not displayed after leaving the field:** Text and combobox
+  form field values were only visible inside the active overlay widget (QLineEdit
+  / QPlainTextEdit).  After clicking away the field appeared empty.  The value
+  stored in `FormFieldDef.value` is now drawn directly in `paintEvent` whenever
+  no overlay is active for that field.
+- **Form field font matches PDF specification:** The font family and style
+  (bold / italic) specified in the field's `/DA` string are now applied both
+  to the static value rendering and to the active edit overlay.  A shared
+  `make_form_field_qfont()` helper in `config.py` maps all 14 Base-14 PDF font
+  aliases to Qt font families, reusing the existing `_HELV_QT` / `_TIRO_QT` /
+  `_COUR_QT` fallback lists.
+- **Scroll-to-field jumped to page bottom in single-page mode:** `scroll_to_field`
+  used the continuous-mode y-offset as `page_top`, which added a large offset
+  and caused the scrollbar to clamp at its maximum.  In single-page mode the
+  active page slot is always at y = 0, so `page_top` is now 0 in that mode.
+- **Active text overlay lost focus when switching to continuous mode:**
+  `set_single_page_mode(False)` triggered `_update_visible()` while the
+  scrollbar still held the old single-page value, so the active page was
+  considered out of range and unrendered, destroying the focused overlay.
+  The target scroll position is now set before `_update_visible()` runs.
+
+---
+
 ## [1.0.1] – 2026-04-21
 
 ### Fixed

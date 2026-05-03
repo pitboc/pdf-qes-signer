@@ -80,6 +80,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .appearance import SigAppearance
+from .config import make_form_field_qfont
 from .i18n import t
 
 # Pixels per PDF point for the off-canvas preview panel (96 screen DPI / 72 pt DPI)
@@ -142,6 +143,7 @@ class FormFieldDef:
     multiline:   bool  = False
     xref:        int   = 0     # PDF object xref for widget lookup
     orig_fontsize: float = 0.0  # original /DA font size (0 = auto-size)
+    font_name:   str   = ""    # fitz short name from /DA (e.g. "Helv", "TiRo")
 
 
 @dataclass
@@ -834,6 +836,10 @@ class PDFViewWidget(QWidget):
             else:
                 ov = QLineEdit(self)
                 ov.setText(fdef.value)
+            px = (int(fdef.orig_fontsize * self._zoom)
+                  if fdef.orig_fontsize > 0
+                  else max(8, int(rect_w.height() * 0.60)))
+            ov.setFont(make_form_field_qfont(fdef.font_name, px))
             ov.setGeometry(rect_w.toRect())
             ov.show()
             ov.setFocus()
@@ -988,6 +994,27 @@ class PDFViewWidget(QWidget):
                     if fdef.value == "Yes":
                         painter.setPen(QPen(QColor("#2e7d32"), 2))
                         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "✓")
+                # Text / combobox: draw stored value when no overlay is active
+                elif (fdef.value
+                      and fdef is not self._form_overlay_fdef
+                      and fdef.field_type in (
+                          _fitz_pev.PDF_WIDGET_TYPE_TEXT,
+                          _fitz_pev.PDF_WIDGET_TYPE_COMBOBOX,
+                      )):
+                    px = (int(fdef.orig_fontsize * self._zoom)
+                          if fdef.orig_fontsize > 0
+                          else max(8, int(rect.height() * 0.60)))
+                    painter.setFont(make_form_field_qfont(fdef.font_name, px))
+                    painter.setPen(QPen(QColor("#000000")))
+                    pad  = 3
+                    text_rect = rect.adjusted(pad, pad, -pad, -pad)
+                    flags = (Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
+                             if not fdef.multiline
+                             else Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+                    painter.save()
+                    painter.setClipRect(rect)
+                    painter.drawText(text_rect, flags, fdef.value)
+                    painter.restore()
 
         # Drag-to-draw preview rectangle (signature field)
         if self._drag_start and self._drag_end:

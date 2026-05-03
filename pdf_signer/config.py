@@ -93,6 +93,42 @@ PDF_STANDARD_FONTS: list[tuple[str, str, float, list[str]]] = [
     ("Courier Oblique",   "Courier-Oblique",    0.6,  _COUR_QT),
 ]
 
+# Mapping from fitz widget.text_font short names (case-insensitive) to
+# (Qt family candidates, bold, italic).  Covers all 14 Base-14 PDF fonts.
+# Qt tries each family in order and uses the first one installed.
+_PDF_DA_FONT_MAP: dict[str, tuple[list[str], bool, bool]] = {
+    "helv": (_HELV_QT, False, False),
+    "hebo": (_HELV_QT, True,  False),
+    "heit": (_HELV_QT, False, True),
+    "hebi": (_HELV_QT, True,  True),
+    "tiro": (_TIRO_QT, False, False),
+    "tibo": (_TIRO_QT, True,  False),
+    "tiit": (_TIRO_QT, False, True),
+    "tibi": (_TIRO_QT, True,  True),
+    "cour": (_COUR_QT, False, False),
+    "cobo": (_COUR_QT, True,  False),
+    "coit": (_COUR_QT, False, True),
+    "cobi": (_COUR_QT, True,  True),
+    "symb": (["Symbol"],        False, False),
+    "zadb": (["ZapfDingbats"],  False, False),
+}
+
+
+def make_form_field_qfont(font_name: str, pixel_size: int) -> "QFont":
+    """Return a QFont for a PDF form field /DA font name at *pixel_size* px.
+
+    *font_name* is the value of ``fitz.Widget.text_font`` (e.g. ``"Helv"``,
+    ``"TiRo"``).  Unknown names fall back to the system default font.
+    """
+    from PyQt6.QtGui import QFont
+    key = font_name.strip("/").lower()
+    families, bold, italic = _PDF_DA_FONT_MAP.get(key, ([], False, False))
+    f = QFont(families) if families else QFont()
+    f.setBold(bold)
+    f.setItalic(italic)
+    f.setPixelSize(max(6, pixel_size))
+    return f
+
 if sys.platform == "win32":
     CONFIG_DIR = Path(os.environ.get("APPDATA", Path.home())) / "pdf-signer"
 else:
