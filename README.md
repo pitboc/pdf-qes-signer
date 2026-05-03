@@ -371,7 +371,7 @@ pdf_signer/
 ├── appearance.py           # SigAppearance, Qt and Pillow renderers
 ├── signer.py               # SaveFieldsWorker, SignWorker, PKCS#11 logic
 ├── pdf_view.py             # PDFViewWidget, SignatureFieldDef
-├── continuous_view.py      # ContinuousView (multi-page scroll mode)
+├── continuous_view.py      # ContinuousView (continuous and single-page mode)
 ├── dialogs.py              # Pkcs11ConfigDialog, AppearanceConfigDialog, TokenInfoDialog, DocMDPDialog, CertChainDetailWindow
 ├── main_window.py          # PDFSignerApp main window
 ├── validation_result.py    # DocumentValidation data model (revisions, signatures, PAdES profiles)

@@ -72,6 +72,9 @@ class FormFieldDef:
     value: str               # Current field value (always string; "Yes"/"Off" for checkbox/radio)
     options: list[str]       # ComboBox choices; empty for other types
     multiline: bool          # Text fields only
+    orig_fontsize: float     # /DA font size in PDF points (0 = auto-size)
+    font_name: str           # fitz short name from /DA (e.g. "Helv", "TiRo", "Cour")
+    xref: int                # PDF object xref for widget lookup
 ```
 
 Radio button groups share a `field_name` in PDF. Each option is a separate widget. We store them as individual `FormFieldDef` objects with the same `field_name`.
@@ -103,7 +106,7 @@ for page_idx in range(len(doc)):
 self._form_fields_editable = not bool(self._signed_fields or self._locked_fields)
 ```
 
-Form fields are **not stripped** from the fitz doc – they remain so fitz can render their current appearance automatically.
+Form fields are **not stripped** from the fitz doc – they remain so fitz can render their base appearance.  When `_form_fields_editable` is True, `PDFViewWidget.paintEvent` additionally draws the stored `fdef.value` for text and combobox fields whenever no edit overlay is active, using the font and style from the field's `/DA` string (via `make_form_field_qfont()` in `config.py`).
 
 ---
 
@@ -190,7 +193,7 @@ def _burn_in_form_fields(self, pdf_bytes: bytes) -> bytes:
     return out.getvalue()
 ```
 
-`_write_field_text()` extracts font name and size from the widget's `/DA` (Default Appearance) string – the same parsing already used for text annotations – and writes the field value at the correct baseline position within the widget rect.
+`_write_field_text()` uses `FormFieldDef.font_name` and `orig_fontsize` (populated from `widget.text_font` / `widget.text_fontsize` when loading) to write the field value at the correct baseline position within the widget rect.
 
 ### Full Signing Flow (when form fields present)
 
@@ -217,8 +220,9 @@ Form fields use a single visual style (editable) plus the implicit read-only sta
 
 | State | Border | Fill | Notes |
 |-------|--------|------|-------|
-| Editable | Green `#2e7d32` | Light green tint | Cursor `IBeam` / `PointingHand` |
-| Focused | Green, 2px | White | Overlay widget visible |
+| Editable, empty | Green `#2e7d32` | Light green tint | Cursor `IBeam` / `PointingHand` |
+| Editable, value set | Green `#2e7d32` | Light green tint | Value drawn in paintEvent using /DA font via `make_form_field_qfont()` |
+| Focused (overlay active) | Green, 2px | White | QLineEdit / QPlainTextEdit / QComboBox overlay visible, same font applied |
 | Not editable (already signed doc) | No overlay | – | fitz renders field appearance as-is |
 
 Form field overlays are rendered **below** signature field overlays in Z-order.

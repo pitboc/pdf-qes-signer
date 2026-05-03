@@ -2,7 +2,7 @@
 """
 Continuous-scroll PDF viewer for PDF QES Signer.
 
-## ContinuousView – lazy-rendering scroll widget for multi-page PDF display
+## ContinuousView – lazy-rendering scroll widget for PDF display
 
 ### Overview
 
@@ -54,12 +54,9 @@ rasterised image.
    *currently rendered* slots (placeholders need no update).
 
 7. **scroll_to_field(fdef)** – scrolls the viewport so that the field is
-   positioned in the lower 80 % of the visible area.  No additional clamping
-   to the page top is applied; the scrollbar's natural minimum (y = 0) already
-   prevents scrolling above the document start.  (The page-top constraint used
-   in single-page mode – ``PDFSignerApp._scroll_to_field()`` in
-   ``main_window.py`` – is not meaningful here, because adjacent pages are
-   visible above and below.  Each mode has its own implementation.)
+   positioned in the lower 80 % of the visible area.  In continuous mode
+   ``page_top`` is the absolute y-offset of the page; in single-page mode it
+   is 0 (the active page is always at the container origin).
 
 ### Placeholder widget
 
