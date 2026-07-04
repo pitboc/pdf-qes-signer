@@ -2380,7 +2380,9 @@ class PDFSignerApp(QMainWindow):
         self._open_doc_pdf("user-manual.pdf")
 
     def _open_signature_levels(self) -> None:
-        self._open_doc_pdf("signatur-stufen.pdf")
+        # German original vs. English translation, picked by active UI language
+        filename = "signatur-stufen.pdf" if i18n.lang == "de" else "signature-levels.pdf"
+        self._open_doc_pdf(filename)
 
     def _show_about(self) -> None:
         """Über-Dialog mit Update-Suchen- und Update-Installieren-Button."""

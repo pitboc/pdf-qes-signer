@@ -1,0 +1,184 @@
+%% PDF QES Signer -- pandoc LaTeX template for the English "Electronic
+%% Signatures Explained" document (lualatex). English-language sibling of
+%% qes_template.tex (title/footer/babel adapted; layout otherwise identical).
+\documentclass[a4paper,10pt]{article}
+
+%% lualatex: native UTF-8, no inputenc needed
+\usepackage{fontspec}
+\usepackage[english]{babel}
+\usepackage[a4paper, top=2cm, right=2.5cm, bottom=2.5cm, left=2.5cm]{geometry}
+
+%% Colors
+\usepackage[table]{xcolor}
+\definecolor{qesblue}{RGB}{0,74,128}
+\definecolor{qesbg}{RGB}{230,240,255}
+\definecolor{codebg}{RGB}{240,240,240}
+\definecolor{quotebg}{RGB}{240,244,248}
+\definecolor{qesgreen}{RGB}{40,130,60}
+\definecolor{qesamber}{RGB}{190,130,10}
+\definecolor{qesred}{RGB}{170,40,40}
+
+%% Images (logo in the title block)
+\usepackage{graphicx}
+
+%% Math symbols (e.g. \triangleq, \checkmark)
+\usepackage{amssymb}
+
+%% Monospace font with box-drawing support
+\setmonofont[Scale=0.85]{DejaVu Sans Mono}
+
+%% Typography
+\usepackage{microtype}
+\usepackage{parskip}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt plus 2pt minus 1pt}
+
+%% Section headings
+\usepackage{titlesec}
+%% Prevents orphaned headings (heading + only 1-2 lines of text before a
+%% page break): reserves minimum space before each heading, otherwise the
+%% heading migrates entirely to the next page.
+\usepackage{needspace}
+\titleformat{\section}
+  {\needspace{8\baselineskip}\raggedright\large\bfseries\color{qesblue}}{\thesection}{0.6em}{}
+  [\color{qesblue}\rule{\linewidth}{1.5pt}]
+\titleformat{\subsection}
+  {\needspace{4\baselineskip}\raggedright\normalsize\bfseries\color{qesblue}}{\thesubsection}{0.5em}{}
+  [\color{qesblue!50}\rule{\linewidth}{0.4pt}]
+\titleformat{\subsubsection}
+  {\needspace{3\baselineskip}\raggedright\normalsize\bfseries\color{qesblue!80!black}}{\thesubsubsection}{0.5em}{}
+\titlespacing*{\section}{0pt}{16pt}{6pt}
+\titlespacing*{\subsection}{0pt}{10pt}{3pt}
+\titlespacing*{\subsubsection}{0pt}{7pt}{2pt}
+
+%% Header/footer
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[C]{%
+  \footnotesize\color{gray}%
+  PDF QES Signer -- Electronic Signatures Explained%
+  \enspace|\enspace Page \thepage\ of \pageref{LastPage}}
+\renewcommand{\headrulewidth}{0pt}
+
+%% Tables
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{calc}
+\setlength{\tabcolsep}{8pt}
+\renewcommand{\arraystretch}{1.3}
+
+%% TikZ for diagrams
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, fit, calc, backgrounds, shapes.geometric}
+
+%% Float placement
+\usepackage{float}
+
+%% Figure captions
+\usepackage[labelfont=bf, textfont=it, labelsep=period, font=small]{caption}
+
+%% Code blocks (fvextra instead of fancyvrb: supports breaklines/breakanywhere
+%% so long lines without whitespace -- e.g. install one-liners -- wrap inside
+%% the PDF instead of overflowing the page margin. fvextra loads fancyvrb
+%% internally, so it's a drop-in replacement for its \usepackage.)
+\usepackage{fvextra}
+\usepackage{upquote}
+\fvset{breaklines=true, breakanywhere=true, fontsize=\small}
+
+%% Syntax-highlighting macros (injected by pandoc)
+$if(highlighting-macros)$
+$highlighting-macros$
+$endif$
+
+%% Shaded environment (pandoc code blocks with a language, overrides the
+%% pandoc default if already defined by the macros above; otherwise a
+%% fallback definition so documents WITHOUT code blocks don't fail with
+%% "Environment Shaded undefined" -- \highlighting-macros is only emitted by
+%% pandoc when the document contains at least one code block)
+\makeatletter
+\@ifundefined{Shaded}{\newenvironment{Shaded}{}{}}{}
+\makeatother
+\renewenvironment{Shaded}{%
+  \begin{mdframed}[%
+    backgroundcolor=codebg,
+    linecolor=gray!40,
+    linewidth=0.4pt,
+    innerleftmargin=10pt,
+    innerrightmargin=10pt,
+    innertopmargin=5pt,
+    innerbottommargin=5pt,
+    skipabove=6pt,
+    skipbelow=4pt,
+  ]}{\end{mdframed}}
+\usepackage{mdframed}
+
+%% Verbatim environment (pandoc code blocks without a language)
+\DefineVerbatimEnvironment{verbatim}{Verbatim}{
+  fontsize=\small,
+  xleftmargin=10pt,
+  xrightmargin=10pt,
+  frame=single,
+  framerule=0.4pt,
+  framesep=5pt,
+  rulecolor=\color{gray!40},
+  fillcolor=\color{codebg},
+}
+
+%% Blockquote
+\renewenvironment{quote}{%
+  \begin{mdframed}[%
+    linecolor=qesblue,
+    linewidth=3pt,
+    topline=false,
+    rightline=false,
+    bottomline=false,
+    backgroundcolor=quotebg,
+    innerleftmargin=12pt,
+    innerrightmargin=8pt,
+    innertopmargin=5pt,
+    innerbottommargin=5pt,
+    skipabove=6pt,
+    skipbelow=4pt,
+  ]\small}{\end{mdframed}}
+
+%% Lists
+\usepackage{enumitem}
+\setlist{nosep, topsep=3pt, leftmargin=*}
+
+%% Hyperlinks
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=qesblue, urlcolor=qesblue, hidelinks}
+
+%% Pandoc's required macro
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{2pt}\setlength{\parskip}{0pt}}
+
+\begin{document}
+\thispagestyle{fancy}
+
+%% Title block
+\begin{center}
+  {\LARGE\bfseries\color{qesblue}
+    Electronic Signatures Explained}\\[0.5cm]
+  {\large\bfseries Simple, Advanced, and Qualified Signatures Compared}\\[0.3cm]
+  {\small\color{gray}
+    PDF QES Signer \enspace|\enspace A brief introduction to the eIDAS Regulation (EU) No.\,910/2014}
+\end{center}
+{\color{qesblue}\rule{\linewidth}{2pt}}
+\vspace{0.6cm}
+
+$if(toc)$
+{
+\hypersetup{linkcolor=qesblue}
+\setcounter{tocdepth}{$toc-depth$}
+\tableofcontents
+\clearpage
+}
+$endif$
+
+$body$
+
+\end{document}
