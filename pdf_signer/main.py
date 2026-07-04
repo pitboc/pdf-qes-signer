@@ -68,40 +68,54 @@ def _install_crash_handler() -> None:
     _orig_hook = sys.excepthook
 
     def _excepthook(exc_type, exc_value, exc_tb):
-        crash_log = _today_log()
-        tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        # A RecursionError reaching here means the interpreter's call stack was
+        # already at (or near) sys.getrecursionlimit() when it was raised. Every
+        # subsequent call this handler makes (open(), traceback formatting, Qt
+        # dialog construction, i18n lookups, ...) adds more frames and would
+        # immediately trip the same limit again, causing Python to report a
+        # *second* RecursionError from inside sys.excepthook and swallow the
+        # original traceback entirely. Raise the limit for the duration of the
+        # handler so it can actually do its job.
+        old_limit = sys.getrecursionlimit()
+        if isinstance(exc_value, RecursionError):
+            sys.setrecursionlimit(old_limit + 2000)
         try:
-            with open(crash_log, "a", encoding="utf-8") as f:
-                f.write(
-                    f"\n{'=' * 60}\n"
-                    f"Unhandled exception: {datetime.datetime.now().isoformat()}\n"
-                )
-                f.write(tb_text)
-        except Exception:
-            pass
+            crash_log = _today_log()
+            tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+            try:
+                with open(crash_log, "a", encoding="utf-8") as f:
+                    f.write(
+                        f"\n{'=' * 60}\n"
+                        f"Unhandled exception: {datetime.datetime.now().isoformat()}\n"
+                    )
+                    f.write(tb_text)
+            except Exception:
+                pass
 
-        try:
-            from PyQt6.QtWidgets import QApplication, QMessageBox
-            app = QApplication.instance()
-            if app is not None:
-                from pdf_signer.i18n import t
-                mb = QMessageBox()
-                mb.setIcon(QMessageBox.Icon.Critical)
-                mb.setWindowTitle(t("dlg_crash_title"))
-                mb.setText(t("dlg_crash_msg", log_path=str(crash_log)))
-                mb.setDetailedText(tb_text)
-                btn_continue = mb.addButton(
-                    t("dlg_crash_continue"), QMessageBox.ButtonRole.AcceptRole)
-                btn_quit = mb.addButton(
-                    t("dlg_crash_quit"), QMessageBox.ButtonRole.DestructiveRole)
-                mb.exec()
-                if mb.clickedButton() is btn_quit:
-                    app.quit()
-                    return
-        except Exception:
-            pass
+            try:
+                from PyQt6.QtWidgets import QApplication, QMessageBox
+                app = QApplication.instance()
+                if app is not None:
+                    from pdf_signer.i18n import t
+                    mb = QMessageBox()
+                    mb.setIcon(QMessageBox.Icon.Critical)
+                    mb.setWindowTitle(t("dlg_crash_title"))
+                    mb.setText(t("dlg_crash_msg", log_path=str(crash_log)))
+                    mb.setDetailedText(tb_text)
+                    btn_continue = mb.addButton(
+                        t("dlg_crash_continue"), QMessageBox.ButtonRole.AcceptRole)
+                    btn_quit = mb.addButton(
+                        t("dlg_crash_quit"), QMessageBox.ButtonRole.DestructiveRole)
+                    mb.exec()
+                    if mb.clickedButton() is btn_quit:
+                        app.quit()
+                        return
+            except Exception:
+                pass
 
-        _orig_hook(exc_type, exc_value, exc_tb)
+            _orig_hook(exc_type, exc_value, exc_tb)
+        finally:
+            sys.setrecursionlimit(old_limit)
 
     sys.excepthook = _excepthook
     print(f"[crash handler] Log: {startup_log}", file=sys.stderr)
