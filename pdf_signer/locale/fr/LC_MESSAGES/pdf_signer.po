@@ -136,6 +136,18 @@ msgstr "Langue / Language"
 msgid "menu_help"
 msgstr "Aide"
 
+msgid "menu_help_manual"
+msgstr "Manuel utilisateur…"
+
+msgid "menu_help_signature_levels"
+msgstr "Signatures électroniques expliquées…"
+
+msgid "menu_help_doc_missing_title"
+msgstr "Document introuvable"
+
+msgid "menu_help_doc_missing_msg"
+msgstr "Le fichier {filename} est introuvable dans cette installation."
+
 msgid "menu_help_about"
 msgstr "À propos…"
 
@@ -614,7 +626,7 @@ msgid "cfg_tsa_url"
 msgstr "URL TSA :"
 
 msgid "cfg_tsa_hint"
-msgstr "Service d'horodatage RFC 3161. Laisser vide pour la valeur par défaut (BaltStamp)."
+msgstr "Service d'horodatage RFC 3161. Laisser vide pour la valeur par défaut (ACCV)."
 
 msgid "cfg_lib_label"
 msgstr "Chemin de la bibliothèque (.so / .dll) :"

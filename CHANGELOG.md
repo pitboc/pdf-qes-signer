@@ -7,6 +7,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Help menu: "User Manual" and "Electronic Signatures Explained" entries**
+  open the bundled `user-manual.pdf` / `signatur-stufen.pdf` in the OS's
+  default PDF viewer (`QDesktopServices.openUrl`). Both PDFs now ship inside
+  the installed wheel (`pdf_signer/docs/`) alongside their canonical,
+  git-tracked copies in the repo's `docs/` directory.
+
+### Fixed
+- **Default TSA switched from BalTstamp to ACCV:** `http://tsa.baltstamp.lt`
+  stopped responding. The default/placeholder RFC-3161 timestamp server is
+  now `http://tss.accv.es:8318/tsa`.
+- **Crash handler could swallow the original traceback on `RecursionError`:**
+  A `RecursionError` reaching `sys.excepthook` left the interpreter's call
+  stack at the recursion limit, so the handler's own bookkeeping (log file
+  write, traceback formatting, Qt dialog) immediately tripped the same limit
+  again. Python then discarded the original traceback and only printed
+  "Error in sys.excepthook" to the console. The handler now temporarily
+  raises the recursion limit so it can actually log and display the original
+  exception.
+
 ---
 
 ## [1.0.2] – 2026-05-03

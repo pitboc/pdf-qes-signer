@@ -136,6 +136,18 @@ msgstr "Taal / Language"
 msgid "menu_help"
 msgstr "Help"
 
+msgid "menu_help_manual"
+msgstr "Gebruikershandleiding…"
+
+msgid "menu_help_signature_levels"
+msgstr "Elektronische handtekeningen uitgelegd…"
+
+msgid "menu_help_doc_missing_title"
+msgstr "Document niet gevonden"
+
+msgid "menu_help_doc_missing_msg"
+msgstr "Het bestand {filename} is niet gevonden in deze installatie."
+
 msgid "menu_help_about"
 msgstr "Over…"
 
@@ -614,7 +626,7 @@ msgid "cfg_tsa_url"
 msgstr "TSA-URL:"
 
 msgid "cfg_tsa_hint"
-msgstr "RFC 3161-tijdstempelservice. Leeg laten voor standaard (BaltStamp)."
+msgstr "RFC 3161-tijdstempelservice. Leeg laten voor standaard (ACCV)."
 
 msgid "cfg_lib_label"
 msgstr "Bibliotheekpad (.so / .dll):"

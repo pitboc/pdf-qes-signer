@@ -143,6 +143,18 @@ msgstr "Language / Sprache"
 msgid "menu_help"
 msgstr "Help"
 
+msgid "menu_help_manual"
+msgstr "User Manual…"
+
+msgid "menu_help_signature_levels"
+msgstr "Electronic Signatures Explained…"
+
+msgid "menu_help_doc_missing_title"
+msgstr "Document not found"
+
+msgid "menu_help_doc_missing_msg"
+msgstr "The file {filename} was not found in this installation."
+
 msgid "menu_help_about"
 msgstr "About…"
 
@@ -639,7 +651,7 @@ msgid "cfg_tsa_url"
 msgstr "TSA URL:"
 
 msgid "cfg_tsa_hint"
-msgstr "RFC 3161 timestamp service. Leave empty for default (BaltStamp)."
+msgstr "RFC 3161 timestamp service. Leave empty for default (ACCV)."
 
 msgid "cfg_lib_label"
 msgstr "Library path (.so / .dll):"

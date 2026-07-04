@@ -136,6 +136,18 @@ msgstr "Lingua / Language"
 msgid "menu_help"
 msgstr "Aiuto"
 
+msgid "menu_help_manual"
+msgstr "Manuale utente…"
+
+msgid "menu_help_signature_levels"
+msgstr "Firme elettroniche spiegate…"
+
+msgid "menu_help_doc_missing_title"
+msgstr "Documento non trovato"
+
+msgid "menu_help_doc_missing_msg"
+msgstr "Il file {filename} non è stato trovato in questa installazione."
+
 msgid "menu_help_about"
 msgstr "Informazioni…"
 
@@ -614,7 +626,7 @@ msgid "cfg_tsa_url"
 msgstr "URL TSA:"
 
 msgid "cfg_tsa_hint"
-msgstr "Servizio di marca temporale RFC 3161. Lasciare vuoto per il valore predefinito (BaltStamp)."
+msgstr "Servizio di marca temporale RFC 3161. Lasciare vuoto per il valore predefinito (ACCV)."
 
 msgid "cfg_lib_label"
 msgstr "Percorso libreria (.so / .dll):"

@@ -143,6 +143,18 @@ msgstr "Język / Language"
 msgid "menu_help"
 msgstr "Pomoc"
 
+msgid "menu_help_manual"
+msgstr "Podręcznik użytkownika…"
+
+msgid "menu_help_signature_levels"
+msgstr "Wyjaśnienie podpisów elektronicznych…"
+
+msgid "menu_help_doc_missing_title"
+msgstr "Nie znaleziono dokumentu"
+
+msgid "menu_help_doc_missing_msg"
+msgstr "Nie znaleziono pliku {filename} w tej instalacji."
+
 msgid "menu_help_about"
 msgstr "O programie…"
 
@@ -639,7 +651,7 @@ msgid "cfg_tsa_url"
 msgstr "URL TSA:"
 
 msgid "cfg_tsa_hint"
-msgstr "Usługa znaczników czasu RFC 3161. Zostaw puste dla domyślnego (BaltStamp)."
+msgstr "Usługa znaczników czasu RFC 3161. Zostaw puste dla domyślnego (ACCV)."
 
 msgid "cfg_lib_label"
 msgstr "Ścieżka biblioteki (.so / .dll):"

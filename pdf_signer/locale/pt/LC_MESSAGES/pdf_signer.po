@@ -143,6 +143,18 @@ msgstr "Idioma / Language"
 msgid "menu_help"
 msgstr "Ajuda"
 
+msgid "menu_help_manual"
+msgstr "Manual do utilizador…"
+
+msgid "menu_help_signature_levels"
+msgstr "Assinaturas eletrónicas explicadas…"
+
+msgid "menu_help_doc_missing_title"
+msgstr "Documento não encontrado"
+
+msgid "menu_help_doc_missing_msg"
+msgstr "O ficheiro {filename} não foi encontrado nesta instalação."
+
 msgid "menu_help_about"
 msgstr "Sobre…"
 
@@ -639,7 +651,7 @@ msgid "cfg_tsa_url"
 msgstr "URL TSA:"
 
 msgid "cfg_tsa_hint"
-msgstr "Serviço de carimbo de tempo RFC 3161. Deixe vazio para o padrão (BaltStamp)."
+msgstr "Serviço de carimbo de tempo RFC 3161. Deixe vazio para o padrão (ACCV)."
 
 msgid "cfg_lib_label"
 msgstr "Caminho da biblioteca (.so / .dll):"

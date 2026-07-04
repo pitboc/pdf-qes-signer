@@ -57,7 +57,7 @@ from typing import Optional
 
 import fitz  # PyMuPDF
 
-from PyQt6.QtCore import Qt, QEvent, QPoint, QRectF, QTimer
+from PyQt6.QtCore import Qt, QEvent, QPoint, QRectF, QTimer, QUrl
 from pdf_signer.icons import (
     svg_to_icon,
     ICON_CHEVRON_UP, ICON_CHEVRON_DOWN,
@@ -66,7 +66,7 @@ from pdf_signer.icons import (
     ICON_PAGE_WIDTH, ICON_PAGE_HEIGHT,
     ICON_TEXT_MODE,
 )
-from PyQt6.QtGui import QAction, QColor, QFont, QKeySequence
+from PyQt6.QtGui import QAction, QColor, QDesktopServices, QFont, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication, QColorDialog, QComboBox, QDoubleSpinBox, QFileDialog,
     QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
@@ -453,6 +453,13 @@ class PDFSignerApp(QMainWindow):
         self.statusBar().addPermanentWidget(self._profile_lbl)
 
         self._menu_help = self.menuBar().addMenu("")
+        self._act_manual = QAction(self)
+        self._act_manual.triggered.connect(self._open_manual)
+        self._menu_help.addAction(self._act_manual)
+        self._act_signature_levels = QAction(self)
+        self._act_signature_levels.triggered.connect(self._open_signature_levels)
+        self._menu_help.addAction(self._act_signature_levels)
+        self._menu_help.addSeparator()
         self._act_about = QAction(self)
         self._act_about.triggered.connect(self._show_about)
         self._menu_help.addAction(self._act_about)
@@ -742,6 +749,8 @@ class PDFSignerApp(QMainWindow):
         self._act_settings.setText(t("menu_settings_open"))
         self._act_profile.setText(t("menu_profile"))
         self._menu_help.setTitle(t("menu_help"))
+        self._act_manual.setText(t("menu_help_manual"))
+        self._act_signature_levels.setText(t("menu_help_signature_levels"))
         self._act_about.setText(t("menu_help_about"))
         self._act_license.setText(t("menu_help_license"))
         self._tb_open.setText(t("tb_open"))
@@ -2357,6 +2366,21 @@ class PDFSignerApp(QMainWindow):
         from .dialogs import UpdateAvailableDialog
         channel = self.config.get("update", "channel")
         UpdateAvailableDialog(tag, url, body, channel=channel, parent=self).exec()
+
+    def _open_doc_pdf(self, filename: str) -> None:
+        """Open a bundled PDF (docs/) in the OS's default viewer, as an external process."""
+        path = Path(__file__).parent / "docs" / filename
+        if not path.is_file():
+            QMessageBox.warning(self, t("menu_help_doc_missing_title"),
+                                 t("menu_help_doc_missing_msg", filename=filename))
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    def _open_manual(self) -> None:
+        self._open_doc_pdf("user-manual.pdf")
+
+    def _open_signature_levels(self) -> None:
+        self._open_doc_pdf("signatur-stufen.pdf")
 
     def _show_about(self) -> None:
         """Über-Dialog mit Update-Suchen- und Update-Installieren-Button."""

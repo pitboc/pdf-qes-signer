@@ -12,4 +12,8 @@ pandoc docs/signatur-stufen.md \
   -V lang=de \
   -o docs/signatur-stufen.pdf
 
+mkdir -p pdf_signer/docs
+cp docs/signatur-stufen.pdf pdf_signer/docs/signatur-stufen.pdf
+
 echo "PDF erstellt: docs/signatur-stufen.pdf"
+echo "Kopiert für Packaging: pdf_signer/docs/signatur-stufen.pdf"

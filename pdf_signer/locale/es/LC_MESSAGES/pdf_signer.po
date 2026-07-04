@@ -136,6 +136,18 @@ msgstr "Idioma / Language"
 msgid "menu_help"
 msgstr "Ayuda"
 
+msgid "menu_help_manual"
+msgstr "Manual de usuario…"
+
+msgid "menu_help_signature_levels"
+msgstr "Firmas electrónicas explicadas…"
+
+msgid "menu_help_doc_missing_title"
+msgstr "Documento no encontrado"
+
+msgid "menu_help_doc_missing_msg"
+msgstr "No se encontró el archivo {filename} en esta instalación."
+
 msgid "menu_help_about"
 msgstr "Acerca de…"
 
@@ -614,7 +626,7 @@ msgid "cfg_tsa_url"
 msgstr "URL TSA:"
 
 msgid "cfg_tsa_hint"
-msgstr "Servicio de sellado de tiempo RFC 3161. Dejar vacío para el valor predeterminado (BaltStamp)."
+msgstr "Servicio de sellado de tiempo RFC 3161. Dejar vacío para el valor predeterminado (ACCV)."
 
 msgid "cfg_lib_label"
 msgstr "Ruta de la biblioteca (.so / .dll):"
