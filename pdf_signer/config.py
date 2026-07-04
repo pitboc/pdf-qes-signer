@@ -202,7 +202,7 @@ class AppConfig:
         },
         "tsa": {
             "enabled":              "0",
-            "url":                  "http://tsa.baltstamp.lt",
+            "url":                  "http://tss.accv.es:8318/tsa",
             "embed_validation_info": "0",
         },
         "signing": {

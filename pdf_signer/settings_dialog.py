@@ -268,7 +268,7 @@ class SettingsDialog(QDialog):
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
         self._tsa_url_edit = QLineEdit()
-        self._tsa_url_edit.setPlaceholderText("http://tsa.baltstamp.lt")
+        self._tsa_url_edit.setPlaceholderText("http://tss.accv.es:8318/tsa")
         tsa_hint = QLabel(t("cfg_tsa_hint"))
         tsa_hint.setStyleSheet("color: gray; font-size: 10px;")
         tsa_hint.setWordWrap(True)
