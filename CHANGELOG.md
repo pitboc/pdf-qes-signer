@@ -7,12 +7,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+---
+
+## [1.0.3] – 2026-07-04
+
 ### Added
 - **Help menu: "User Manual" and "Electronic Signatures Explained" entries**
-  open the bundled `user-manual.pdf` / `signatur-stufen.pdf` in the OS's
-  default PDF viewer (`QDesktopServices.openUrl`). Both PDFs now ship inside
-  the installed wheel (`pdf_signer/docs/`) alongside their canonical,
-  git-tracked copies in the repo's `docs/` directory.
+  open the bundled `user-manual.pdf` / `signatur-stufen.pdf` (or
+  `signature-levels.pdf` when the UI language isn't German) in the OS's
+  default PDF viewer (`QDesktopServices.openUrl`). All three PDFs now ship
+  inside the installed wheel (`pdf_signer/docs/`) alongside their
+  canonical, git-tracked copies in the repo's `docs/` directory.
+- **English translation of the eIDAS signature-levels explainer**
+  (`docs/signature-levels.md` / `.pdf`), sibling of the existing German
+  `signatur-stufen.md` / `.pdf`.
 
 ### Fixed
 - **Default TSA switched from BalTstamp to ACCV:** `http://tsa.baltstamp.lt`
