@@ -107,6 +107,7 @@ function Write-Log {
 function Save-Log {
     param($dir)
     try {
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
         $script:logLines | Set-Content (Join-Path $dir "install.log") -Encoding UTF8
     } catch { }
 }
@@ -640,8 +641,12 @@ if (Test-Path $INSTALL_DIR) {
 $MIN_PYTHON = [version]"3.11"
 
 function Test-PythonVersion($exe) {
-    # Returns the exe path if version >= $MIN_PYTHON, otherwise $null
-    $ver = & $exe --version 2>&1
+    # Returns the exe path if version >= $MIN_PYTHON, otherwise $null.
+    # MS Store stub exes can fail to launch ("Access denied") instead of
+    # just returning a bad version string, so guard against exceptions too.
+    try {
+        $ver = & $exe --version 2>&1
+    } catch { return $null }
     if ($ver -match "^Python (3\.\d+)") {
         if ([version]$Matches[1] -ge $script:MIN_PYTHON) { return $exe }
     }
@@ -678,7 +683,7 @@ function Find-Python {
         if (-not $ip) { continue }
         $exe = if ($ip.ExecutablePath) { $ip.ExecutablePath }
                else { Join-Path $ip.'(default)' "python.exe" }
-        if ($exe -and (Test-Path $exe)) {
+        if ($exe -and $exe -notlike "*WindowsApps*" -and (Test-Path $exe)) {
             $result = Test-PythonVersion $exe
             if ($result) { return $result }
         }

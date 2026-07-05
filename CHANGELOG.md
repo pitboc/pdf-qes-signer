@@ -7,6 +7,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Windows installer: `install.log` could fail to write** ("part of the
+  path could not be found") when an error occurred before the install
+  directory existed on disk (e.g. during the Python check in Step 1, which
+  runs before `New-Item` creates the directory in Step 3). `Save-Log` now
+  creates the directory first.
+- **Windows installer: Python detection could crash with "Access denied"**
+  if the registry (`HKCU`/`HKLM\SOFTWARE\Python\PythonCore`) pointed at a
+  Microsoft Store Python stub. Stage 3 (registry) now filters `WindowsApps`
+  paths like Stages 1 and 2 already did, and `Test-PythonVersion` no longer
+  lets a failed process launch crash the whole installer.
+
 ---
 
 ## [1.0.3] – 2026-07-04
