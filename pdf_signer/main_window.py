@@ -1752,6 +1752,7 @@ class PDFSignerApp(QMainWindow):
                             self.pdf_doc.xref_set_key(_xref, "V", f"/{_sib_on}")
 
         # Mirror update in _form_fields
+        edited_page = None
         for ff in self._form_fields:
             if ff.field_name != actual_name:
                 continue
@@ -1759,9 +1760,15 @@ class PDFSignerApp(QMainWindow):
                 ff.value = ff.field_name if ff.xref == target_xref else "Off"
             else:
                 ff.value = new_value
+            edited_page = ff.page
 
         self._has_unsaved_changes = True
         self._render_current_page()
+        if edited_page is not None:
+            # Checkbox/radio state only lives in fitz's appearance stream and
+            # is rasterised into the page pixmap; without this, a toggle
+            # stays invisible until the page is fully re-rendered.
+            self._cv.refresh_page_pixmap(edited_page)
 
     def prev_page(self) -> None:
         doc = self._active_doc

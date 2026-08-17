@@ -94,6 +94,16 @@ SUPPORTED_FORM_TYPES: frozenset[int] = frozenset({
     fitz.PDF_WIDGET_TYPE_COMBOBOX,
 })
 
+# Field types whose value we paint ourselves (paintEvent, matched to the
+# field's own /DA font) rather than relying on fitz's rasterised appearance
+# stream. Their widget annotation must be hidden from the base page pixmap
+# (see PDFViewWidget._render_base_pixmap) or fitz's own rendering of the
+# committed value would show a second, slightly misaligned copy underneath.
+MANUAL_PAINT_FORM_TYPES: frozenset[int] = frozenset({
+    fitz.PDF_WIDGET_TYPE_TEXT,
+    fitz.PDF_WIDGET_TYPE_COMBOBOX,
+})
+
 
 class SignatureFieldDef:
     """A signature field definition in PDF coordinates (72 DPI points).
@@ -556,6 +566,38 @@ class PDFViewWidget(QWidget):
         self._field_drag_start_w:   Optional[QPointF]        = None
         self._field_drag_start_pdf: Optional[tuple]          = None  # (x1,y1,x2,y2)
 
+    @staticmethod
+    def _render_base_pixmap(page: fitz.Page, mat: fitz.Matrix,
+                             form_fields: list[FormFieldDef] | None) -> fitz.Pixmap:
+        """Rasterise *page*, hiding text/combobox widget appearances.
+
+        Those field types are painted ourselves in ``paintEvent`` (using the
+        field's own /DA font); leaving them visible here would additionally
+        bake fitz's own rendering of the widget's /AP appearance stream into
+        the pixmap once it exists (created as soon as the field is committed
+        once via ``widget.update()``), producing a second, slightly
+        misaligned copy of the text underneath our own. The annotation
+        "NoView" flag (bit 6, value 32) is set on the affected widgets only
+        for the duration of this render, then restored.
+        """
+        NOVIEW = 32
+        xrefs = [f.xref for f in (form_fields or [])
+                 if f.field_type in MANUAL_PAINT_FORM_TYPES and f.xref]
+        if not xrefs:
+            return page.get_pixmap(matrix=mat, alpha=False)
+        doc = page.parent
+        saved: dict[int, str] = {}
+        for xref in xrefs:
+            _, val = doc.xref_get_key(xref, "F")
+            saved[xref] = val
+            base = int(val) if val not in (None, "null") else 0
+            doc.xref_set_key(xref, "F", str(base | NOVIEW))
+        try:
+            return page.get_pixmap(matrix=mat, alpha=False)
+        finally:
+            for xref, val in saved.items():
+                doc.xref_set_key(xref, "F", val if val not in (None, "null") else "0")
+
     def set_page(self, page: fitz.Page,
                  sig_fields: list[SignatureFieldDef],
                  current_page: int,
@@ -566,7 +608,7 @@ class PDFViewWidget(QWidget):
         """Render *page* at ``_zoom`` and store the field lists for painting."""
         self._close_form_overlay()
         mat = fitz.Matrix(self._zoom, self._zoom)
-        pix = page.get_pixmap(matrix=mat, alpha=False)
+        pix = self._render_base_pixmap(page, mat, form_fields)
         img = QImage(pix.samples, pix.width, pix.height,
                      pix.stride, QImage.Format.Format_RGB888)
         self._pixmap               = QPixmap.fromImage(img)
@@ -950,8 +992,15 @@ class PDFViewWidget(QWidget):
             tl   = self._pdf_to_w(fdef.x1, fdef.y2)
             br   = self._pdf_to_w(fdef.x2, fdef.y1)
             rect = QRectF(tl, br).normalized()
+            w, h = int(rect.width()), int(rect.height())
             is_selected = (fdef is self._selected_field)
-            painter.fillRect(rect, QColor(255, 180, 0, 50 if is_selected else 30))
+            if is_selected and w > 4 and h > 4:
+                # Full appearance preview only for the selected field
+                px = self.appearance.render_preview(
+                    w, h, pixels_per_point=self._zoom)
+                painter.drawPixmap(rect.toRect(), px)
+            else:
+                painter.fillRect(rect, QColor(255, 180, 0, 30))
             pen_width = 3 if is_selected else 1
             pen_style = Qt.PenStyle.SolidLine if is_selected else Qt.PenStyle.DashLine
             pen = QPen(QColor("#e67e00"), pen_width, pen_style)

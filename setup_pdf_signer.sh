@@ -297,6 +297,25 @@ else
     echo "  Creating Python virtual environment ..."
     "$PYTHON" -m venv "$VENV_DIR"
 fi
+
+# Some distros (e.g. minimal Debian/Ubuntu installs) create a venv without
+# pip even though python3-venv is present, because pip itself lives in the
+# separate python3-pip package. Bootstrap it via ensurepip if missing.
+if [[ ! -x "$VENV_DIR/bin/pip" ]]; then
+    echo "  pip missing in venv, bootstrapping via ensurepip ..."
+    if ! "$VENV_DIR/bin/python" -m ensurepip --upgrade --default-pip &>/dev/null; then
+        fail "Could not install pip into the virtual environment."
+        echo
+        echo "  Please install pip for your Python interpreter and re-run this installer:"
+        echo
+        echo "    Debian / Ubuntu:   sudo apt install python3-pip"
+        echo "    Fedora / RHEL:     sudo dnf install python3-pip"
+        echo "    Arch Linux:        sudo pacman -S python-pip"
+        echo "    openSUSE:          sudo zypper install python3-pip"
+        echo
+        die "Aborting. Re-run this installer after installing pip."
+    fi
+fi
 ok "venv ready"
 
 # pip install

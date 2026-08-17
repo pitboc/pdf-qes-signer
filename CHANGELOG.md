@@ -18,6 +18,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Microsoft Store Python stub. Stage 3 (registry) now filters `WindowsApps`
   paths like Stages 1 and 2 already did, and `Test-PythonVersion` no longer
   lets a failed process launch crash the whole installer.
+- **Linux installer: `pip` could be missing after venv creation** on minimal
+  distros (e.g. Debian/Ubuntu images without `python3-pip`), causing
+  `.venv/bin/pip: file or directory not found` even though `python3-venv`
+  was installed and `python3 -m venv` reported success. The installer now
+  bootstraps `pip` via `ensurepip` if it's missing after venv creation, and
+  prints a clear `python3-pip` install hint if that also fails.
+- **Locked (already-signable) signature fields didn't show the live
+  appearance preview** when selected — only the orange highlight border was
+  drawn. The preview pixmap is now rendered for locked fields too, matching
+  the behaviour of freely-editable fields.
+- **Form-field edits could be lost or shown stale after scrolling/paging**,
+  because `ContinuousView` destroys and recreates the per-page widget when a
+  page leaves the render band (lazy rendering, zoom rebuild, single-page
+  page-flip) without first committing an open text/combobox overlay. The
+  overlay is now flushed before any such teardown.
+- **Text/combobox form fields could render twice, slightly misaligned**,
+  after switching pages and back. The app draws these values itself
+  (matched to the field's own font) in addition to fitz's own rasterised
+  widget appearance, which only exists once the field has been committed at
+  least once; a fresh page render then baked both into the pixmap. The
+  affected widgets are now hidden (PDF `NoView` flag) while the base pixmap
+  is rendered, then restored.
+- **Checkbox/radio-button toggles didn't visually update** until navigating
+  away and back to the page. Their state lives only in fitz's rasterised
+  appearance stream (unlike text/combobox, they have no custom paintEvent
+  drawing), and normal field-list refreshes only repaint the existing
+  pixmap. The affected page is now explicitly re-rendered right after such
+  an edit is committed.
 
 ---
 

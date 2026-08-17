@@ -361,6 +361,30 @@ class ContinuousView(QScrollArea):
             if isinstance(slot, PDFViewWidget):
                 slot.flush_form_overlay()
 
+    def refresh_page_pixmap(self, idx: int) -> None:
+        """Re-rasterise page *idx* if it is currently rendered.
+
+        Checkbox/radio widgets have no manual paintEvent drawing of their
+        own (unlike text/combobox) — their new checked state only exists in
+        fitz's own appearance stream, which is baked in when the base pixmap
+        is rasterised. ``update_fields``/``update_form_fields`` only repaint
+        the existing pixmap, so a checkbox toggle would otherwise stay
+        visually unchanged until the page is fully re-rendered (e.g. by
+        navigating away and back). Call this right after committing such an
+        edit to force that re-rasterisation immediately.
+        """
+        if idx >= len(self._slots):
+            return
+        slot = self._slots[idx]
+        if not isinstance(slot, PDFViewWidget):
+            return
+        slot.set_page(
+            self._doc[idx], self._sig_fields, idx,
+            self._locked_fields, self._signed_fields,
+            form_fields=self._form_fields,
+            form_fields_editable=self._form_fields_editable,
+        )
+
     @property
     def drawing_enabled(self) -> bool:
         return self._drawing_enabled
@@ -556,6 +580,8 @@ class ContinuousView(QScrollArea):
             w, h  = new_sizes[i]
             x     = (new_max_w - w) // 2
             new_y = new_offsets[i]
+            if isinstance(slot, PDFViewWidget):
+                slot.flush_form_overlay()
             slot.hide()
             slot.deleteLater()
             ph = _PagePlaceholder(w, h, self._container)
@@ -683,6 +709,7 @@ class ContinuousView(QScrollArea):
 
         w, h = slot.width(), slot.height()
         x, y = slot.x(), slot.y()
+        slot.flush_form_overlay()
         slot.hide()
         slot.deleteLater()
 
