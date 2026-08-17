@@ -73,6 +73,12 @@ pkcs11-tool --module ./libpkcs11tcos_SigG_PCSC.so --list-slots
   automatically so further fields can be signed in sequence
 - Existing unsigned fields in already-signed PDFs are shown as locked (orange)
   and protected from modification to preserve the existing signature hash
+- **LibreOffice placeholder field conversion**: LibreOffice cannot create real
+  PDF signature fields, so some workflows add plain text form fields named
+  with a `Sign_` prefix as placeholders instead. On opening a PDF, if any
+  such fields are found, the app offers to convert them into real signature
+  fields (same as one drawn by hand). Enabled by default; toggle in
+  *Settings → General*.
 - **docMDP restriction** (Document Modification Detection and Prevention): when
   applying the first signature, a dialog lets you choose whether subsequent
   changes are allowed — no restriction, form fields & further signatures only
