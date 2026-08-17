@@ -7,6 +7,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Convert LibreOffice-style placeholder fields into signature fields on
+  open.** LibreOffice cannot create real PDF signature fields, so some
+  workflows add plain text form fields named with a `Sign_` prefix as
+  placeholders instead. On opening a PDF, if any such fields are found, the
+  app now offers to convert them into real (unembedded) signature fields —
+  same as one drawn by hand, only embedded on the next save/sign. Toggle in
+  Settings → General ("Automatically convert Sign_ placeholder fields into
+  signature fields on open", default: on).
+
 ### Fixed
 - **Windows installer: `install.log` could fail to write** ("part of the
   path could not be found") when an error occurred before the install

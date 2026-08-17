@@ -890,7 +890,7 @@ msgid "settings_nav_updates"
 msgstr "Mises à jour"
 
 msgid "settings_nav_general"
-msgstr "Langue"
+msgstr "Général"
 
 msgid "settings_tok_docmdp_label"
 msgstr "Restriction de document par défaut"
@@ -1825,3 +1825,16 @@ msgstr "Continuer"
 
 msgid "dlg_crash_quit"
 msgstr "Quitter l'application"
+
+msgid "settings_gen_convert_sign_label"
+msgstr "Convertir automatiquement les champs de remplacement Sign_ en champs de signature à l'ouverture"
+
+msgid "settings_gen_convert_sign_hint"
+msgstr "Pour les PDF issus d'applications comme LibreOffice qui ne prennent pas en charge les véritables champs de signature. Les champs de texte dont le nom commence par « Sign_ » sont détectés comme champs de signature à l'ouverture."
+
+msgid "dlg_convert_sign_title"
+msgstr "Champs de signature détectés"
+
+msgid "dlg_convert_sign_msg"
+msgstr "Ce document contient {count} champ(s) de texte dont le nom commence par « Sign_ », probablement des espaces réservés provenant de LibreOffice.\n\nLes convertir maintenant en champs de signature ?"
+

@@ -90,6 +90,12 @@ from .appearance_panel import AppearancePanel
 from .continuous_view import ContinuousView, _adjust_hscroll
 
 
+# Name prefix used by external tools (e.g. LibreOffice, which has no native
+# PDF signature field support) to mark plain text fields that should become
+# real signature fields. See PDFSignerApp._scan_and_convert_sign_placeholders.
+SIGN_PLACEHOLDER_PREFIX = "Sign_"
+
+
 # Display name → fitz short name for all 12 Base-14 text-annotation font variants
 _TEXT_FONT_ITEMS: list[tuple[str, str]] = [
     ("Helvetica",              "helv"),
@@ -1307,8 +1313,14 @@ class PDFSignerApp(QMainWindow):
             self.pdf_doc      = doc
             self.pdf_path     = path
             self.current_page = 0
+            # Sign_*-Platzhalterfelder (z.B. aus LibreOffice) vor der Klassifizierung
+            # umwandeln, damit _load_existing_fields/_working_bytes den bereinigten
+            # Zustand sehen (siehe _scan_and_convert_sign_placeholders).
+            converted_fields = self._scan_and_convert_sign_placeholders(doc)
             # Bestehende Signaturfelder klassifizieren und _working_bytes setzen
             self._load_existing_fields(doc)
+            if converted_fields:
+                self.sig_fields.extend(converted_fields)
             # Text-Overlays werden lazy in _render_current_page → cv.set_text_annots
             # und bei _render_page erzeugt (über _overlay_setup_cb).
             self._update_field_list()
@@ -1323,7 +1335,9 @@ class PDFSignerApp(QMainWindow):
                 self._field_list.setCurrentRow(n_sig + n_locked)  # letztes locked_field
             else:
                 self._field_list.setCurrentRow(0)              # unsichtbar / keine Felder
-            self._has_unsaved_changes = False
+            # Umgewandelte Sign_*-Felder sind noch nicht ins PDF eingebettet
+            # (wie frisch gezeichnete Felder) → als ungespeicherte Änderung markieren.
+            self._has_unsaved_changes = bool(converted_fields)
             self._render_current_page()
             self.setWindowTitle(f"PDF QES Signer – {os.path.basename(path)}")
             self._set_status(t("status_opened", path=path, pages=len(doc)))
@@ -1340,6 +1354,76 @@ class PDFSignerApp(QMainWindow):
             QMessageBox.critical(
                 self, t("dlg_open_error_title"),
                 t("dlg_open_error_msg", error=str(exc)))
+
+    def _scan_and_convert_sign_placeholders(
+            self, doc: fitz.Document) -> list[SignatureFieldDef]:
+        """Find text fields named ``Sign_*`` and offer to convert them.
+
+        Some tools (e.g. LibreOffice) cannot create real PDF signature
+        fields, so users work around this by adding plain text form fields
+        named with the ``Sign_`` prefix as placeholders. If any are found
+        and the ``app.convert_sign_fields`` setting is enabled, ask the user
+        once whether to convert them; on confirmation, strip the text
+        widgets from *doc* (like the pre-existing unsigned-signature-widget
+        stripping in ``_load_existing_fields``) and return them as
+        unembedded ``SignatureFieldDef`` objects — exactly like a field the
+        user drew by hand, only embedded into the PDF at the next
+        save/sign.
+
+        Must run *before* ``_load_existing_fields(doc)`` so that
+        ``_working_bytes`` (derived from *doc*) already reflects the
+        stripped state.
+        """
+        if not self.config.getbool("app", "convert_sign_fields"):
+            return []
+
+        # Carry only the xref (and pre-extracted rect/rotation) across the two
+        # phases below, not the fitz.Widget object itself: a Widget's page
+        # binding becomes invalid once the Page wrapper it came from is
+        # garbage-collected, which happens as soon as this loop moves on to
+        # the next page_num. Re-fetching by xref in the strip phase (like the
+        # existing unsigned-signature-widget stripping above) avoids that.
+        matches: list[tuple[int, int, str, tuple[float, float, float, float], int]] = []
+        for page_num in range(len(doc)):
+            page   = doc[page_num]
+            mbox_h = page.mediabox.height
+            for widget in page.widgets():
+                if (widget.field_type != fitz.PDF_WIDGET_TYPE_TEXT
+                        or not (widget.field_name or "").startswith(
+                            SIGN_PLACEHOLDER_PREFIX)):
+                    continue
+                r      = widget.rect
+                x1, y1 = r.x0, mbox_h - r.y1
+                x2, y2 = r.x1, mbox_h - r.y0
+                matches.append((page_num, widget.xref, widget.field_name,
+                                 (x1, y1, x2, y2), page.rotation))
+        if not matches:
+            return []
+
+        mb = QMessageBox(self)
+        mb.setWindowTitle(t("dlg_convert_sign_title"))
+        mb.setText(t("dlg_convert_sign_msg", count=len(matches)))
+        mb.setIcon(QMessageBox.Icon.Question)
+        yes_btn = mb.addButton(t("btn_yes"), QMessageBox.ButtonRole.YesRole)
+        mb.addButton(t("btn_no"), QMessageBox.ButtonRole.NoRole)
+        mb.setDefaultButton(yes_btn)
+        mb.exec()
+        if mb.clickedButton() is not yes_btn:
+            return []
+
+        strip_by_page: dict[int, set[int]] = {}
+        for page_num, xref, *_ in matches:
+            strip_by_page.setdefault(page_num, set()).add(xref)
+        for page_num, xrefs in strip_by_page.items():
+            page = doc[page_num]
+            for widget in list(page.widgets()):
+                if widget.xref in xrefs:
+                    page.delete_widget(widget)
+
+        return [
+            SignatureFieldDef(page_num, x1, y1, x2, y2, name, rotation=rotation)
+            for page_num, _xref, name, (x1, y1, x2, y2), rotation in matches
+        ]
 
     def _fit_and_jump_after_open(self) -> None:
         """Nach dem Öffnen eines PDFs: Zoom auf Seitenbreite setzen und

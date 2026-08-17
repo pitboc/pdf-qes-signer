@@ -890,7 +890,7 @@ msgid "settings_nav_updates"
 msgstr "Aggiornamenti"
 
 msgid "settings_nav_general"
-msgstr "Lingua"
+msgstr "Generale"
 
 msgid "settings_tok_docmdp_label"
 msgstr "Restrizione documento predefinita"
@@ -1821,3 +1821,16 @@ msgstr "Continua"
 
 msgid "dlg_crash_quit"
 msgstr "Chiudi l'applicazione"
+
+msgid "settings_gen_convert_sign_label"
+msgstr "Converti automaticamente i campi segnaposto Sign_ in campi firma all'apertura"
+
+msgid "settings_gen_convert_sign_hint"
+msgstr "Per i PDF creati con applicazioni come LibreOffice che non supportano campi firma reali. I campi di testo il cui nome inizia con \"Sign_\" vengono rilevati come campi firma all'apertura."
+
+msgid "dlg_convert_sign_title"
+msgstr "Campi firma rilevati"
+
+msgid "dlg_convert_sign_msg"
+msgstr "Questo documento contiene {count} campo/i di testo il cui nome inizia con \"Sign_\", probabilmente segnaposto di LibreOffice.\n\nConvertirli ora in campi firma?"
+

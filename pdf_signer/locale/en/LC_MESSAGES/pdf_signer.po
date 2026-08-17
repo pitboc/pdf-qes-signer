@@ -920,7 +920,7 @@ msgid "settings_nav_updates"
 msgstr "Updates"
 
 msgid "settings_nav_general"
-msgstr "Language"
+msgstr "General"
 
 msgid "settings_tok_docmdp_label"
 msgstr "Default Document Restriction"
@@ -1902,3 +1902,16 @@ msgstr "Continue"
 
 msgid "dlg_crash_quit"
 msgstr "Quit Application"
+
+msgid "settings_gen_convert_sign_label"
+msgstr "Automatically convert Sign_ placeholder fields into signature fields on open"
+
+msgid "settings_gen_convert_sign_hint"
+msgstr "For PDFs from applications like LibreOffice that don't support real signature fields. Text fields whose name starts with \"Sign_\" are detected as signature fields on open."
+
+msgid "dlg_convert_sign_title"
+msgstr "Signature fields detected"
+
+msgid "dlg_convert_sign_msg"
+msgstr "This document contains {count} text field(s) whose name starts with \"Sign_\", likely placeholders from LibreOffice.\n\nConvert them into signature fields now?"
+

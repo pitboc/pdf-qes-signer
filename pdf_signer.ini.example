@@ -19,6 +19,9 @@
 language = de
 # Name of the active profile (must match a file in profiles/)
 active_profile = default
+# On open, offer to convert LibreOffice-style placeholder text fields
+# (name prefix "Sign_") into real signature fields: 1 = ask, 0 = never ask
+convert_sign_fields = 1
 
 [validation]
 # Fetch missing OCSP responses from the network when checking signatures:

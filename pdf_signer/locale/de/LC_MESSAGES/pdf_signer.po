@@ -923,7 +923,7 @@ msgid "settings_nav_updates"
 msgstr "Updates"
 
 msgid "settings_nav_general"
-msgstr "Sprache"
+msgstr "Allgemein"
 
 msgid "settings_tok_docmdp_label"
 msgstr "Standard-Dokumenteinschränkung"
@@ -1906,3 +1906,16 @@ msgstr "Weiter"
 
 msgid "dlg_crash_quit"
 msgstr "Applikation beenden"
+
+msgid "settings_gen_convert_sign_label"
+msgstr "Sign_-Platzhalterfelder beim Öffnen automatisch in Signaturfelder umwandeln"
+
+msgid "settings_gen_convert_sign_hint"
+msgstr "Für PDFs aus Programmen wie LibreOffice, die keine echten Signaturfelder unterstützen. Textfelder mit dem Namenspräfix „Sign_\" werden beim Öffnen als Signaturfelder erkannt."
+
+msgid "dlg_convert_sign_title"
+msgstr "Signaturfelder erkannt"
+
+msgid "dlg_convert_sign_msg"
+msgstr "Dieses Dokument enthält {count} Textfeld(er) mit dem Namenspräfix „Sign_\", vermutlich Platzhalter aus LibreOffice.\n\nSollen diese jetzt in Signaturfelder umgewandelt werden?"
+

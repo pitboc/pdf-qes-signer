@@ -920,7 +920,7 @@ msgid "settings_nav_updates"
 msgstr "Atualizações"
 
 msgid "settings_nav_general"
-msgstr "Idioma"
+msgstr "Geral"
 
 msgid "settings_tok_docmdp_label"
 msgstr "Restrição de documento predefinida"
@@ -1900,3 +1900,16 @@ msgstr "Continuar"
 
 msgid "dlg_crash_quit"
 msgstr "Fechar a aplicação"
+
+msgid "settings_gen_convert_sign_label"
+msgstr "Converter automaticamente campos de espaço reservado Sign_ em campos de assinatura ao abrir"
+
+msgid "settings_gen_convert_sign_hint"
+msgstr "Para PDFs de aplicativos como o LibreOffice que não suportam campos de assinatura reais. Campos de texto cujo nome começa com \"Sign_\" são detectados como campos de assinatura ao abrir."
+
+msgid "dlg_convert_sign_title"
+msgstr "Campos de assinatura detectados"
+
+msgid "dlg_convert_sign_msg"
+msgstr "Este documento contém {count} campo(s) de texto cujo nome começa com \"Sign_\", provavelmente marcadores de posição do LibreOffice.\n\nConverter esses campos em campos de assinatura agora?"
+

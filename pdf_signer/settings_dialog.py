@@ -392,7 +392,18 @@ class SettingsDialog(QDialog):
             lang_lay.addWidget(rb)
             self._lang_rbs[code] = rb
         lay.addWidget(lang_grp)
+
+        self._convert_sign_chk = QCheckBox(t("settings_gen_convert_sign_label"))
+        convert_sign_hint = QLabel(t("settings_gen_convert_sign_hint"))
+        convert_sign_hint.setWordWrap(True)
+        convert_sign_hint.setStyleSheet("color: gray; font-size: 10px;")
+        lay.addWidget(self._convert_sign_chk)
+        lay.addWidget(convert_sign_hint)
+
         lay.addStretch()
+
+        self._convert_sign_chk.toggled.connect(
+            lambda v: self.config.setbool("app", "convert_sign_fields", v))
 
         return page
 
@@ -476,6 +487,11 @@ class SettingsDialog(QDialog):
             self._lang_rbs[lang].setChecked(True)
         for rb in self._lang_rbs.values():
             rb.blockSignals(False)
+
+        self._convert_sign_chk.blockSignals(True)
+        self._convert_sign_chk.setChecked(
+            self.config.getbool("app", "convert_sign_fields"))
+        self._convert_sign_chk.blockSignals(False)
 
     # ── Token page helpers ────────────────────────────────────────────────
 

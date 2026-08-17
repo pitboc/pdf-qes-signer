@@ -160,6 +160,9 @@ class AppConfig:
         "app": {
             "language":       "de",
             "active_profile": "default",
+            # "1" – on open, offer to convert LibreOffice-style placeholder
+            # text fields (name prefix "Sign_") into real signature fields.
+            "convert_sign_fields": "1",
         },
         "validation": {
             # "always" – fetch OCSP/AIA from network when not embedded

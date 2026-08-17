@@ -890,7 +890,7 @@ msgid "settings_nav_updates"
 msgstr "Updates"
 
 msgid "settings_nav_general"
-msgstr "Taal"
+msgstr "Algemeen"
 
 msgid "settings_tok_docmdp_label"
 msgstr "Standaard documentbeperking"
@@ -1822,3 +1822,16 @@ msgstr "Doorgaan"
 
 msgid "dlg_crash_quit"
 msgstr "Toepassing beëindigen"
+
+msgid "settings_gen_convert_sign_label"
+msgstr "Sign_-tijdelijke velden bij het openen automatisch omzetten in handtekeningvelden"
+
+msgid "settings_gen_convert_sign_hint"
+msgstr "Voor pdf's uit toepassingen zoals LibreOffice die geen echte handtekeningvelden ondersteunen. Tekstvelden waarvan de naam begint met \"Sign_\" worden bij het openen herkend als handtekeningvelden."
+
+msgid "dlg_convert_sign_title"
+msgstr "Handtekeningvelden gevonden"
+
+msgid "dlg_convert_sign_msg"
+msgstr "Dit document bevat {count} tekstveld(en) waarvan de naam begint met \"Sign_\", waarschijnlijk tijdelijke aanduidingen uit LibreOffice.\n\nWilt u deze nu omzetten in handtekeningvelden?"
+
