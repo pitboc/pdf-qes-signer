@@ -280,7 +280,8 @@ The main window is split into three areas:
   and an editable page-number field), a toggle between single-page and
   continuous scroll view, zoom controls (zoom out, an editable zoom
   percentage field, zoom in, fit-to-width, fit-to-height), a text-annotation
-  tool toggle, and — on the right — **Sign** and **Check signatures**.
+  tool toggle (`\autoref{sec-text-annotations}`{=latex}, keyboard shortcut
+  `T`), and — on the right — **Sign** (`S`) and **Check signatures** (`C`).
 - **PDF canvas** (left, largest area): displays the current page(s). Left-click
   and drag to draw a new signature field; click an existing field to select
   it; right-click to delete it. Existing PDF form fields (text fields,
@@ -311,6 +312,92 @@ The main window is split into three areas:
 \includegraphics[width=0.9\linewidth]{docs/screenshots/main-window-three-states.png}
 \caption{Full main window with a PDF open, one signed field (grey), one locked field (orange), and one free field (blue) visible in the field list, so all three colors are shown at once.}
 \label{fig:main-window-states}
+\end{figure}
+
+---
+
+# Converting LibreOffice "Sign_" Placeholder Fields {#sec-sign-placeholders}
+
+Some applications — LibreOffice in particular — cannot create real PDF
+signature fields at all. As a workaround, documents from such tools
+sometimes place ordinary **text form fields** whose name starts with
+`Sign_` (e.g. `Sign_1`, `Sign_Manager`) where a signature should later go.
+
+## Creating the placeholder fields in LibreOffice Writer
+
+If you're authoring the document rather than just signing it, here's how to
+place a `Sign_*` placeholder in LibreOffice Writer. LibreOffice's form-control
+UI is not very discoverable — this is the minimal path, skipping everything
+not needed for a plain placeholder (database binding, list boxes, and so on).
+
+1. Enable the form-control tools: **View → Toolbars → Form Controls**
+   (older versions), or the **Form** menu directly (newer versions). Turn on
+   **Design Mode** if it isn't already active.
+2. Insert a **Text Box** control and draw it at the position where the
+   signature should later appear (`\autoref{fig:lo-insert-textbox}`{=latex}).
+3. Right-click the control. The context menu offers **two** similarly named
+   entries — **Form…** and **Control…** — this is the single most common
+   mistake here, since the Form's own Name property means something
+   completely different (it names the invisible container the control
+   lives in, not the control itself) and has no effect on the exported PDF
+   field name. Pick **Control…** (or select the control and press `F4`).
+   On the **General** tab of that dialog, set **Name** to `Sign_` followed
+   by something that identifies the signer, e.g. `Sign_Landlord` or
+   `Sign_Tenant` — this exact name becomes the signature field's name in
+   PDF QES Signer later (`\autoref{fig:lo-control-properties}`{=latex}).
+4. Turn Design Mode back off, then **File → Export As → Export as PDF…**. On
+   the **General** tab, under **Forms**, tick **Create PDF form**
+   (`\autoref{fig:lo-pdf-export}`{=latex}) — without this, LibreOffice
+   flattens the control into plain page content instead of exporting it as
+   a real, detectable form field.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\linewidth]{docs/screenshots/libreoffice-insert-textbox.png}
+\caption{A freshly drawn Text Box control on the page, in Design Mode.}
+\label{fig:lo-insert-textbox}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\linewidth]{docs/screenshots/libreoffice-control-properties.png}
+\caption{Control Properties (not Form Properties!), General tab: the Name field is what PDF QES Signer reads back — it must start with \texttt{Sign\_}.}
+\label{fig:lo-control-properties}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\linewidth]{docs/screenshots/libreoffice-pdf-export-form.png}
+\caption{PDF export dialog with the required state: \textbf{Create PDF form} (under Forms) ticked — without it, the placeholder never reaches the PDF as a real field.}
+\label{fig:lo-pdf-export}
+\end{figure}
+
+## Opening the result in PDF QES Signer
+
+When you open a PDF that contains such fields, PDF QES Signer detects them
+automatically and asks once whether to convert them into real signature
+fields. Confirming removes the text-field widgets and turns each one into a
+free, editable signature field
+(`\autoref{sec-interface}`{=latex}) at the exact same position and page,
+ready to be signed like any field you drew yourself. Declining leaves the
+document unchanged — the fields remain plain, unusable text fields.
+
+This detection can be turned off entirely on the **General** settings page
+(`\autoref{sec-settings}`{=latex}) if you don't work with such documents, or
+if you'd rather convert them by hand each time.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.6\linewidth]{docs/screenshots/convert-sign-dialog.png}
+\caption{The confirmation prompt shown when \texttt{Sign\_*} placeholder fields are detected on open.}
+\label{fig:convert-sign-dialog}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\linewidth]{docs/screenshots/sign-placeholder-converted.png}
+\caption{After confirming: a real-world example (a loan agreement with two \texttt{Sign\_*} placeholders, one per party) with both fields now converted to free signature fields at their original position, one selected to show its live appearance preview.}
+\label{fig:sign-placeholder-converted}
 \end{figure}
 
 ---
@@ -367,6 +454,57 @@ place, alongside the visible appearance, once you actually sign — see
 \includegraphics[width=0.9\linewidth]{docs/screenshots/form-fields.png}
 \caption{A PDF with editable form fields: text fields, checkboxes, radio buttons, a dropdown, and a multi-select list box.}
 \label{fig:form-fields}
+\end{figure}
+
+---
+
+# Adding Text Annotations {#sec-text-annotations}
+
+Independently of any form field in the PDF, you can place free-form text
+anywhere on the page yourself — a date, a note, initials next to where a
+signature will go, and so on.
+
+Click the **text-annotation tool** toggle in the toolbar (or press `T`) to
+enter text mode. A second toolbar appears above the canvas with:
+
+| Control | Meaning |
+|---|---|
+| **Font** | One of 12 standard PDF fonts: Helvetica, Times, and Courier, each in Regular, Bold, Oblique, and Bold Oblique. No font embedding is required, so text always renders identically everywhere. |
+| **Size** (`A↕`) | 6–72 pt. |
+| **Character spacing** (`A↔`) | 0–50 pt of extra space inserted between letters. |
+| **Color** | Click the swatch button to pick a text color. |
+
+While in text mode, **click anywhere on the page** to place a new text box
+and start typing immediately; the current toolbar settings apply to it.
+Press `Tab` / `Shift+Tab` to jump between text boxes in the order they were
+placed, same as for form-field text boxes
+(`\autoref{sec-form-fields}`{=latex}). Drag the small red handle in a box's
+top-left corner to reposition it. Right-click a box to delete it
+immediately (no confirmation, unlike deleting a signature field). A box you
+leave completely empty is discarded automatically once you click elsewhere.
+
+Press `Escape`, or click the toolbar toggle again, to leave text mode —
+boxes with content stay on the page, they just lose the editing cursor
+until you re-enter text mode and click them again.
+
+Like form fields (`\autoref{sec-form-fields}`{=latex}), text annotations can
+only be added while the document has **no signature fields yet**; the
+toolbar toggle is disabled once any signature field exists. At the moment
+you sign, text annotations are permanently burned into the page content,
+following the same "flatten before finalizing" approach used for form
+fields — but unlike form fields, the text stays **selectable**, not a
+picture of text: the font is embedded as a subset so it renders identically
+everywhere it's viewed. Any *foreign* free-text
+annotation already present in the PDF from another application (e.g. a
+comment added in Acrobat) is burned in too, but as a rasterized image
+instead, since the application does not know that annotation's original
+font.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\linewidth]{docs/screenshots/text-annotations.png}
+\caption{Text mode active: the formatting toolbar (font, size, character spacing, color) and one placed text annotation, selected and ready to edit.}
+\label{fig:text-annotations}
 \end{figure}
 
 ---
@@ -614,11 +752,23 @@ separate `settings.ini` holds settings that are not profile-specific
 - **Update Channel:** *Stable* (recommended) or *Develop* (pre-releases).
   Switching to Develop shows a confirmation warning first.
 
-**Language page:**
+**General page:**
 
-- Choose the UI language (German, English, French, Spanish, Italian,
-  Dutch, Polish, or Portuguese). Takes effect immediately, no restart
-  needed.
+- **Language:** choose the UI language (German, English, French, Spanish,
+  Italian, Dutch, Polish, or Portuguese). Takes effect immediately, no
+  restart needed.
+- **Automatically convert Sign_ placeholder fields into signature fields on
+  open:** enabled by default; controls the LibreOffice-workaround detection
+  described in `\autoref{sec-sign-placeholders}`{=latex}. Turn it off if you
+  never work with such documents, or prefer to decide by hand every time
+  instead of being asked on open.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\linewidth]{docs/screenshots/settings-general.png}
+\caption{Settings dialog, General page.}
+\label{fig:settings-general}
+\end{figure}
 
 \begin{figure}[H]
 \centering
