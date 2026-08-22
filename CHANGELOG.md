@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+---
+
+## [1.0.4] – 2026-08-22
+
 ### Added
 - **Cut / Copy / Paste for signature fields and text annotations**, plus
   metric arrow-key movement (5 mm plain, 2.5 mm with Ctrl, 1 mm with Shift).
