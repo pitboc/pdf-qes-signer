@@ -46,12 +46,37 @@ signed PDF as the new working document.  This means:
   previous signatures are preserved in the output chain.  A document may
   therefore accumulate multiple independent signatures, each in its own
   incremental revision.
+
+### Field-list ↔ canvas selection sync
+
+`_on_field_selection_changed(row)` is the single hub that keeps three things
+in sync for a given field-list row: the canvas highlight
+(`ContinuousView.set_selected_field`), the scroll position
+(`_scroll_to_field`), and the Cut/Copy/Delete target (`_active_object`).  Every
+code path that changes "what's selected" — a list click, a canvas click
+(`_on_field_clicked_in_view`), or the initial selection after opening a
+document (`_fit_and_jump_after_open`) — must call it explicitly with the
+resolved row/field, rather than relying on `QListWidget.setCurrentRow()`
+alone: Qt does **not** emit `currentRowChanged` when the target row is
+already the current one, so a `setCurrentRow(row)` that happens to match the
+existing selection silently does nothing.  This has already caused three
+separate bugs (re-clicking an already-selected field in the canvas, the
+Ctrl+C target not following such a click, and the initial field staying
+unhighlighted after opening a document) — watch for the same pattern before
+adding a new "select field X" call site.
+
+`ContinuousView.open()` additionally resets its own `_selected_field` to
+`None` whenever a new document is loaded (see `continuous_view.py`), so the
+canvas highlight can only be (re-)applied *after* `_render_current_page()`
+has run for that document — this is why `_fit_and_jump_after_open()` sets it
+via `QTimer.singleShot(0, ...)` rather than inline in `_open_pdf()`.
 """
 
 from __future__ import annotations
 
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -81,7 +106,8 @@ from .signer import (
     _pyhanko_available, _pkcs11_available,
 )
 from .pdf_view import (PDFViewWidget, SignatureFieldDef, TextAnnotDef,
-                       TextAnnotOverlay, FormFieldDef, SUPPORTED_FORM_TYPES)
+                       TextAnnotOverlay, FormFieldDef, SUPPORTED_FORM_TYPES,
+                       MM_TO_PT)
 from .dialogs import (Pkcs11ConfigDialog, ProfileManagerDialog,
                        ProfileSelectDialog, _pfx_load_cert_info,
                        DocMDPDialog)
@@ -94,6 +120,113 @@ from .continuous_view import ContinuousView, _adjust_hscroll
 # PDF signature field support) to mark plain text fields that should become
 # real signature fields. See PDFSignerApp._scan_and_convert_sign_placeholders.
 SIGN_PLACEHOLDER_PREFIX = "Sign_"
+
+# Offset (PDF points, right/down) applied when a pasted object would
+# otherwise land exactly on top of an object already occupying that same
+# corner-relative slot on the target page — checked generally (whatever is
+# already on the target page), not just for repeated pastes from the same
+# source.  See "Paste placement: corner-relative, occupancy-cascaded" in
+# docs/cut-paste-fields.md for why occupancy is checked generally rather than
+# only against repeats of the same source.
+PASTE_CASCADE_MM: float = 5.0
+PASTE_CASCADE_PT: float = PASTE_CASCADE_MM * MM_TO_PT
+# "Already occupies this slot" tolerance: comparing exact anchor positions
+# (not full rect overlap) is what actually matches the intended behaviour —
+# a genuine "any pixel of overlap" test would need many cascade steps to
+# clear two same-sized, page-filling stamps (a step is much smaller than a
+# typical stamp), producing a far larger jump than intended. A small
+# tolerance (well under one cascade step) absorbs float drift while still
+# distinguishing "same slot" from "one step away".
+PASTE_SLOT_TOLERANCE_PT: float = PASTE_CASCADE_PT * 0.25
+
+
+@dataclass
+class _ClipboardEntry:
+    """Single-slot in-memory clipboard payload for Cut/Copy/Paste.
+
+    Deliberately *not* a raw copy of ``SignatureFieldDef``/``TextAnnotDef``:
+    those carry absolute page coordinates and a page index that are
+    meaningless on a differently-sized target page or in another document.
+    Position is stored **corner-relative** instead: the physical distance
+    (``dx``/``dy`` in PDF points) to the nearest page corner at copy time,
+    re-anchored to the same corner of the target page on paste.  Size is in
+    PDF points (a physical unit), so a stamp keeps its real-world size on any
+    page.  See "Clipboard data model" / "Paste placement" in
+    docs/cut-paste-fields.md.
+    """
+    kind:       str            # "sig_field" | "text_annot"
+    width:      float          # PDF points (0 for text annots – text reflows)
+    height:     float
+    corner:     str            # nearest page corner at copy time: tl/tr/bl/br
+    dx:         float          # distance from that corner, x (PDF points)
+    dy:         float          # distance from that corner, y (PDF points)
+    name_hint:  str  = ""      # sig_field only: seed for unique-name generation
+    # text_annot only – everything needed to recreate it standalone:
+    text:         str   = ""
+    font_size:    float = 10.0
+    font_name:    str   = "helv"
+    color:        tuple = (0.0, 0.0, 0.0)
+    char_spacing: float = 0.0
+
+
+def _same_slot(ax: float, ay: float, bx: float, by: float) -> bool:
+    """Whether point *a* and point *b* are the same paste slot within tolerance."""
+    return (abs(ax - bx) < PASTE_SLOT_TOLERANCE_PT
+            and abs(ay - by) < PASTE_SLOT_TOLERANCE_PT)
+
+
+def _corner_dist_from_rect(x1: float, y1: float, x2: float, y2: float,
+                            page_w: float, page_h: float) -> tuple[str, float, float]:
+    """Nearest page corner to a rect's centre, and the rect's own matching-side
+    corner's distance to it (dx, dy in PDF points)."""
+    cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+    corner = ("t" if cy > page_h / 2.0 else "b") + ("r" if cx > page_w / 2.0 else "l")
+    if corner == "bl":
+        return corner, x1, y1
+    if corner == "br":
+        return corner, page_w - x2, y1
+    if corner == "tl":
+        return corner, x1, page_h - y2
+    return corner, page_w - x2, page_h - y2  # tr
+
+
+def _rect_from_corner(corner: str, dx: float, dy: float, width: float, height: float,
+                      page_w: float, page_h: float) -> tuple[float, float, float, float]:
+    """Inverse of ``_corner_dist_from_rect`` for a target page of *page_w* x *page_h*."""
+    if corner == "bl":
+        x1, y1 = dx, dy
+    elif corner == "br":
+        x1, y1 = page_w - dx - width, dy
+    elif corner == "tl":
+        x1, y1 = dx, page_h - dy - height
+    else:  # tr
+        x1, y1 = page_w - dx - width, page_h - dy - height
+    return x1, y1, x1 + width, y1 + height
+
+
+def _corner_dist_from_point(x: float, y: float,
+                            page_w: float, page_h: float) -> tuple[str, float, float]:
+    """Nearest page corner to point (x, y), and the distance to it (dx, dy)."""
+    corner = ("t" if y > page_h / 2.0 else "b") + ("r" if x > page_w / 2.0 else "l")
+    if corner == "bl":
+        return corner, x, y
+    if corner == "br":
+        return corner, page_w - x, y
+    if corner == "tl":
+        return corner, x, page_h - y
+    return corner, page_w - x, page_h - y  # tr
+
+
+def _point_from_corner(corner: str, dx: float, dy: float,
+                       page_w: float, page_h: float) -> tuple[float, float]:
+    """Inverse of ``_corner_dist_from_point`` for a target page of *page_w* x *page_h*."""
+    if corner == "bl":
+        return dx, dy
+    if corner == "br":
+        return page_w - dx, dy
+    if corner == "tl":
+        return dx, page_h - dy
+    return page_w - dx, page_h - dy  # tr
 
 
 # Display name → fitz short name for all 12 Base-14 text-annotation font variants
@@ -368,6 +501,11 @@ class PDFSignerApp(QMainWindow):
         self._form_fields_editable: bool               = False
         # Aktuell fokussierte Text-Overlay-Box (für Toolbar-Kopplung)
         self._focused_overlay: Optional[TextAnnotOverlay] = None
+        # Cut/Copy/Paste (docs/cut-paste-fields.md):
+        # _active_object ist das aktuell für Copy/Cut/Delete relevante Objekt
+        # (freies sig_field oder text_annot); _clipboard das Ein-Slot-Clipboard.
+        self._active_object: Optional[SignatureFieldDef | TextAnnotDef] = None
+        self._clipboard: Optional[_ClipboardEntry] = None
         # Ungespeicherte Änderungen: True wenn sig_fields oder text_annots verändert wurden
         self.__has_unsaved_changes: bool = False
         # Schließen ausstehend (nach async Save abschließen)
@@ -437,6 +575,31 @@ class PDFSignerApp(QMainWindow):
         self._act_quit.setShortcut(QKeySequence.StandardKey.Quit)
         self._act_quit.triggered.connect(self.close)
         self._menu_file.addAction(self._act_quit)
+
+        # Edit menu: Cut/Copy/Paste/Delete for free sig_fields and text_annots.
+        # Installed on the main window (not a child widget) so the shortcuts
+        # fire regardless of which widget currently has Qt focus.
+        self._menu_edit = self.menuBar().addMenu("")
+        self._act_cut = QAction(self)
+        self._act_cut.setShortcut(QKeySequence.StandardKey.Cut)
+        self._act_cut.setEnabled(False)
+        self._act_cut.triggered.connect(self._cut_active_object)
+        self._menu_edit.addAction(self._act_cut)
+        self._act_copy = QAction(self)
+        self._act_copy.setShortcut(QKeySequence.StandardKey.Copy)
+        self._act_copy.setEnabled(False)
+        self._act_copy.triggered.connect(self._copy_active_object)
+        self._menu_edit.addAction(self._act_copy)
+        self._act_paste = QAction(self)
+        self._act_paste.setShortcut(QKeySequence.StandardKey.Paste)
+        self._act_paste.setEnabled(False)
+        self._act_paste.triggered.connect(self._paste_clipboard)
+        self._menu_edit.addAction(self._act_paste)
+        self._menu_edit.addSeparator()
+        self._act_edit_delete = QAction(self)
+        self._act_edit_delete.setEnabled(False)
+        self._act_edit_delete.triggered.connect(self._delete_active_object)
+        self._menu_edit.addAction(self._act_edit_delete)
 
         self._menu_settings  = self.menuBar().addMenu("")
         self._act_settings = QAction(self)
@@ -632,6 +795,9 @@ class PDFSignerApp(QMainWindow):
         self._cv.form_field_changed.connect(self._apply_form_field_edit)
         self._cv.form_field_dirty.connect(
             lambda: setattr(self, '_has_unsaved_changes', True))
+        self._cv.field_copy_requested.connect(self._copy_sig_field)
+        self._cv.field_cut_requested.connect(self._cut_sig_field)
+        self._cv.paste_requested.connect(self._paste_clipboard)
         self._cv.set_overlay_setup_cb(self._setup_text_overlay)
         # Standard: Einzelseitenansicht (wie bisheriger Default)
         self._cv._single_page_mode = True
@@ -751,6 +917,11 @@ class PDFSignerApp(QMainWindow):
         self._act_save_fields.setText(t("menu_file_save_fields"))
         self._act_save_as.setText(t("menu_file_save_as"))
         self._act_quit.setText(t("menu_file_quit"))
+        self._menu_edit.setTitle(t("menu_edit"))
+        self._act_cut.setText(t("menu_edit_cut"))
+        self._act_copy.setText(t("menu_edit_copy"))
+        self._act_paste.setText(t("menu_edit_paste"))
+        self._act_edit_delete.setText(t("menu_edit_delete"))
         self._menu_settings.setTitle(t("menu_settings"))
         self._act_settings.setText(t("menu_settings_open"))
         self._act_profile.setText(t("menu_profile"))
@@ -983,6 +1154,12 @@ class PDFSignerApp(QMainWindow):
 
         self._cv.set_selected_field(fdef_preview)
 
+        # Only a free (sig_field) selection is clipboard-eligible; a locked or
+        # signed field's row still highlights the field but does not become
+        # the active Copy/Cut/Delete target (see "Overview" in docs/cut-paste-fields.md).
+        self._active_object = fdef_preview if (1 <= row <= n_sig) else None
+        self._update_clipboard_actions()
+
         if selected_for_scroll is not None:
             self._scroll_to_field(selected_for_scroll)
 
@@ -1020,6 +1197,8 @@ class PDFSignerApp(QMainWindow):
         ov.focused.connect(self._on_text_overlay_focused)
         ov.tab_requested.connect(self._on_text_tab)
         ov.content_changed.connect(lambda: setattr(self, '_has_unsaved_changes', True))
+        ov.copy_requested.connect(lambda o: self._copy_text_annot(o.annot))
+        ov.cut_requested.connect(lambda o: self._cut_text_annot(o))
 
     def _active_text_overlays(self) -> list:
         """Return all live TextAnnotOverlay instances."""
@@ -1114,6 +1293,8 @@ class PDFSignerApp(QMainWindow):
         except RuntimeError:
             self._focused_overlay = None
             return
+        self._active_object = ann
+        self._update_clipboard_actions()
         # Block signals to avoid triggering _on_text_prop_changed while updating
         for w in (self._tb2_font, self._tb2_font_size, self._tb2_char_spacing):
             w.blockSignals(True)
@@ -1230,24 +1411,34 @@ class PDFSignerApp(QMainWindow):
     def _on_field_clicked_in_view(self, fdef: SignatureFieldDef) -> None:
         """Synchronize list selection when a field is clicked in the PDF view."""
         # Wenn der Benutzer im Canvas auf ein Feld klickt, wird die entsprechende
-        # Zeile in der rechten Feldliste ausgewählt (bidirektionale Synchronisation)
+        # Zeile in der rechten Feldliste ausgewählt (bidirektionale Synchronisation).
+        # setCurrentRow() feuert currentRowChanged NICHT, wenn die Zeile bereits
+        # aktuell ist (Qt-Verhalten) – daher _on_field_selection_changed immer
+        # explizit nachrufen, analog zum itemClicked-Handler oben.
         n_sig    = len(self.sig_fields)
         n_locked = len(self.locked_fields)
+        row: Optional[int] = None
         # Suche in sig_fields (Zeilen 1…N)
         for i, f in enumerate(self.sig_fields):
             if f is fdef:
-                self._field_list.setCurrentRow(i + 1)
-                return
+                row = i + 1
+                break
         # Suche in locked_fields (Zeilen N+1…N+K)
-        for i, f in enumerate(self.locked_fields):
-            if f is fdef:
-                self._field_list.setCurrentRow(n_sig + 1 + i)
-                return
+        if row is None:
+            for i, f in enumerate(self.locked_fields):
+                if f is fdef:
+                    row = n_sig + 1 + i
+                    break
         # Suche in signed_fields (Zeilen N+K+1…Ende)
-        for i, f in enumerate(self.signed_fields):
-            if f is fdef:
-                self._field_list.setCurrentRow(n_sig + n_locked + 1 + i)
-                return
+        if row is None:
+            for i, f in enumerate(self.signed_fields):
+                if f is fdef:
+                    row = n_sig + n_locked + 1 + i
+                    break
+        if row is None:
+            return
+        self._field_list.setCurrentRow(row)
+        self._on_field_selection_changed(row)
 
     def _on_field_added(self, fdef: SignatureFieldDef) -> None:
         # docMDP P=1: Felder hinzufügen verboten → rückgängig machen
@@ -1279,6 +1470,260 @@ class PDFSignerApp(QMainWindow):
     def _on_field_moved(self, fdef: SignatureFieldDef) -> None:
         self._has_unsaved_changes = True
 
+    # ── Clipboard: Cut / Copy / Paste (docs/cut-paste-fields.md) ───────────
+
+    def _update_clipboard_actions(self) -> None:
+        """Enable/disable the Edit-menu actions based on current state."""
+        can_act = self._active_object is not None
+        self._act_cut.setEnabled(can_act)
+        self._act_copy.setEnabled(can_act)
+        self._act_edit_delete.setEnabled(can_act)
+        has_clip = self._clipboard is not None and self.pdf_doc is not None
+        self._act_paste.setEnabled(has_clip)
+        self._cv.clipboard_available = has_clip
+
+    def _make_clipboard_entry_from_field(self, fdef: SignatureFieldDef) -> _ClipboardEntry:
+        page = self.pdf_doc[fdef.page]
+        page_w, page_h = page.mediabox.width, page.mediabox.height
+        corner, dx, dy = _corner_dist_from_rect(fdef.x1, fdef.y1, fdef.x2, fdef.y2,
+                                                page_w, page_h)
+        return _ClipboardEntry(
+            kind="sig_field",
+            width=fdef.x2 - fdef.x1, height=fdef.y2 - fdef.y1,
+            corner=corner, dx=dx, dy=dy,
+            name_hint=fdef.name,
+        )
+
+    def _make_clipboard_entry_from_text(self, ann: TextAnnotDef) -> _ClipboardEntry:
+        page = self.pdf_doc[ann.page]
+        page_w, page_h = page.mediabox.width, page.mediabox.height
+        corner, dx, dy = _corner_dist_from_point(ann.x, ann.y, page_w, page_h)
+        return _ClipboardEntry(
+            kind="text_annot",
+            width=0.0, height=0.0,
+            corner=corner, dx=dx, dy=dy,
+            text=ann.text, font_size=ann.font_size, font_name=ann.font_name,
+            color=ann.color, char_spacing=ann.char_spacing,
+        )
+
+    def _copy_sig_field(self, fdef: SignatureFieldDef) -> None:
+        """Copy *fdef* to the clipboard (canvas context menu / Ctrl+C target)."""
+        if fdef not in self.sig_fields:
+            return
+        self._active_object = fdef
+        self._clipboard = self._make_clipboard_entry_from_field(fdef)
+        self._update_clipboard_actions()
+        self._set_status(t("status_copied"))
+
+    def _cut_sig_field(self, fdef: SignatureFieldDef) -> None:
+        """Cut *fdef*: copy to clipboard, then remove via the normal delete path."""
+        if fdef not in self.sig_fields:
+            return
+        self._clipboard = self._make_clipboard_entry_from_field(fdef)
+        self.sig_fields.remove(fdef)
+        if self._active_object is fdef:
+            self._active_object = None
+        self._has_unsaved_changes = True
+        self._update_field_list()
+        self._render_current_page()
+        self._update_clipboard_actions()
+        self._set_status(t("status_cut"))
+
+    def _copy_text_annot(self, ann: TextAnnotDef) -> None:
+        """Copy *ann* to the clipboard (overlay context menu / Ctrl+C target)."""
+        if ann not in self.text_annots:
+            return
+        self._active_object = ann
+        self._clipboard = self._make_clipboard_entry_from_text(ann)
+        self._update_clipboard_actions()
+        self._set_status(t("status_copied"))
+
+    def _cut_text_annot(self, ov: TextAnnotOverlay) -> None:
+        """Cut *ov*'s annotation: copy to clipboard, then delete the overlay."""
+        ann = ov.annot
+        if ann not in self.text_annots:
+            return
+        self._clipboard = self._make_clipboard_entry_from_text(ann)
+        if self._active_object is ann:
+            self._active_object = None
+        self._delete_overlay_silent(ov)   # removes from text_annots, marks dirty
+        self._update_clipboard_actions()
+        self._set_status(t("status_cut"))
+
+    def _copy_active_object(self) -> None:
+        """Ctrl+C: copy whichever object is currently the active selection."""
+        obj = self._active_object
+        if isinstance(obj, SignatureFieldDef):
+            self._copy_sig_field(obj)
+        elif isinstance(obj, TextAnnotDef):
+            self._copy_text_annot(obj)
+
+    def _cut_active_object(self) -> None:
+        """Ctrl+X: cut whichever object is currently the active selection."""
+        obj = self._active_object
+        if isinstance(obj, SignatureFieldDef):
+            self._cut_sig_field(obj)
+        elif isinstance(obj, TextAnnotDef):
+            ov = next((o for o in self._active_text_overlays() if o.annot is obj), None)
+            if ov is not None:
+                self._cut_text_annot(ov)
+
+    def _delete_active_object(self) -> None:
+        """Edit-menu Delete: remove the active selection without touching the clipboard."""
+        obj = self._active_object
+        if isinstance(obj, SignatureFieldDef):
+            if obj not in self.sig_fields:
+                return
+            if QMessageBox.question(
+                self, t("dlg_delete_title"),
+                t("dlg_delete_sel_msg", name=obj.name),
+            ) != QMessageBox.StandardButton.Yes:
+                return
+            self.sig_fields.remove(obj)
+            self._active_object = None
+            self._has_unsaved_changes = True
+            self._update_field_list()
+            self._render_current_page()
+        elif isinstance(obj, TextAnnotDef):
+            ov = next((o for o in self._active_text_overlays() if o.annot is obj), None)
+            if ov is None:
+                return
+            if QMessageBox.question(
+                self, t("dlg_delete_title"),
+                t("dlg_text_annot_delete_msg"),
+            ) != QMessageBox.StandardButton.Yes:
+                return
+            self._active_object = None
+            self._delete_overlay_silent(ov)
+        self._update_clipboard_actions()
+
+    def _unique_sig_field_name(self, hint: str, page: int) -> str:
+        """Return *hint* if free, else the same default-name generator used
+        for hand-drawn fields (see ``PDFViewWidget.mouseReleaseEvent``)."""
+        existing = ({f.name for f in self.sig_fields}
+                    | {f.name for f in self.locked_fields}
+                    | {f.name for f in self.signed_fields})
+        if hint and hint not in existing:
+            return hint
+        n = sum(1 for f in self.sig_fields if f.page == page) + 1
+        while True:
+            candidate = t("dlg_field_name_default", page=page + 1, count=n)
+            if candidate not in existing:
+                return candidate
+            n += 1
+
+    def _next_free_slot_rect(self, x1: float, y1: float, x2: float, y2: float,
+                             w: float, h: float, page_w: float, page_h: float,
+                             others: list[SignatureFieldDef]) -> tuple[float, float, float, float]:
+        """Cascade a paste candidate rect right+down while its slot (bottom-left
+        corner) is already occupied by a field in *others*, clamping into the
+        page bounds each step.
+
+        Checked generally against whatever is already on the target page —
+        not tied to "repeated paste from the same source" — so e.g. pasting
+        onto a different page twice in a row also cascades instead of
+        stacking the two fields exactly on top of each other. Compares the
+        anchor position rather than testing for any rect overlap: two
+        same-sized stamps only a step apart still overlap heavily (a step is
+        much smaller than a typical stamp), so a genuine "no overlap at all"
+        test would need many steps to clear and produce a far bigger jump
+        than the requested 5 mm.
+        """
+        guard = 0
+        while guard < 200 and any(_same_slot(x1, y1, o.x1, o.y1) for o in others):
+            x1 += PASTE_CASCADE_PT
+            x2 += PASTE_CASCADE_PT
+            y1 -= PASTE_CASCADE_PT
+            y2 -= PASTE_CASCADE_PT
+            x1 = max(0.0, min(x1, page_w - w))
+            y1 = max(0.0, min(y1, page_h - h))
+            x2, y2 = x1 + w, y1 + h
+            guard += 1
+        return x1, y1, x2, y2
+
+    def _paste_clipboard(self) -> None:
+        """Ctrl+V / canvas context menu: paste the clipboard onto the current page."""
+        entry = self._clipboard
+        if entry is None or not self.pdf_doc:
+            return
+        if entry.kind == "sig_field":
+            self._paste_sig_field(entry)
+        else:
+            self._paste_text_annot(entry)
+
+    def _paste_sig_field(self, entry: _ClipboardEntry) -> None:
+        target_page = self.current_page
+        page = self.pdf_doc[target_page]
+        page_w, page_h = page.mediabox.width, page.mediabox.height
+        x1, y1, x2, y2 = _rect_from_corner(entry.corner, entry.dx, entry.dy,
+                                           entry.width, entry.height, page_w, page_h)
+
+        # Clamp fully inside the target MediaBox (target page may be smaller
+        # than the source page the field was copied from).
+        w, h = min(x2 - x1, page_w), min(y2 - y1, page_h)
+        x1 = max(0.0, min(x1, page_w - w))
+        y1 = max(0.0, min(y1, page_h - h))
+        x2, y2 = x1 + w, y1 + h
+
+        others = [f for lst in (self.sig_fields, self.locked_fields, self.signed_fields)
+                  for f in lst if f.page == target_page]
+        x1, y1, x2, y2 = self._next_free_slot_rect(x1, y1, x2, y2, w, h, page_w, page_h, others)
+
+        name = self._unique_sig_field_name(entry.name_hint, target_page)
+        fdef = SignatureFieldDef(target_page, x1, y1, x2, y2, name,
+                                 rotation=page.rotation)
+        self.sig_fields.append(fdef)
+        self._on_field_added(fdef)   # reuses docMDP-P1 guard, list sync, selection
+        if fdef in self.sig_fields:  # not rejected by the docMDP guard
+            self._render_current_page()
+            self._scroll_to_field(fdef)
+            self._active_object = fdef
+            self._update_clipboard_actions()
+
+    def _paste_text_annot(self, entry: _ClipboardEntry) -> None:
+        target_page = self.current_page
+        page = self.pdf_doc[target_page]
+        page_w, page_h = page.mediabox.width, page.mediabox.height
+        x, y = _point_from_corner(entry.corner, entry.dx, entry.dy, page_w, page_h)
+        x = max(0.0, min(x, page_w))
+        y = max(0.0, min(y, page_h))
+
+        # No stored width/height for text (it reflows), so the occupied-slot
+        # check compares the baseline point directly, same as for sig_fields.
+        others = [a for a in self.text_annots if a.page == target_page]
+        guard = 0
+        while guard < 200 and any(_same_slot(x, y, o.x, o.y) for o in others):
+            x = max(0.0, min(x + PASTE_CASCADE_PT, page_w))
+            y = max(0.0, min(y - PASTE_CASCADE_PT, page_h))
+            guard += 1
+
+        ann = TextAnnotDef(
+            page=target_page, x=x, y=y,
+            text=entry.text, font_size=entry.font_size, font_name=entry.font_name,
+            color=entry.color, char_spacing=entry.char_spacing,
+        )
+        self.text_annots.append(ann)
+        self._has_unsaved_changes = True
+        # Vorher fokussiertes Overlay deselektieren, damit stets nur ein
+        # Textfeld aktiv ist (siehe _on_text_overlay_focused).
+        old = self._focused_overlay
+        if old is not None:
+            try:
+                old.set_selected(False)
+                if not old.annot.text.strip():
+                    self._delete_overlay_silent(old)
+            except RuntimeError:
+                pass
+        ov = self._cv.add_text_overlay(ann)
+        if ov is not None:
+            ov.set_selected(True)
+            self._focused_overlay = ov
+        else:
+            self._focused_overlay = None
+        self._active_object = ann
+        self._update_clipboard_actions()
+        self._set_status(t("status_pasted"))
+
     # ── PDF navigation ────────────────────────────────────────────────────
 
     def open_pdf(self) -> None:
@@ -1306,6 +1751,9 @@ class PDFSignerApp(QMainWindow):
             path = str(Path(path).resolve())
             # Textmodus beenden bevor alte Overlays ungültig werden
             self._focused_overlay = None
+            # Alte Objekt-Referenzen sind mit dem neuen Dokument ungültig;
+            # das Clipboard selbst bleibt erhalten (dokumentübergreifendes Einfügen, §7)
+            self._active_object = None
             if self._tb_text_mode.isChecked():
                 self._tb_text_mode.setChecked(False)
                 self._toggle_text_mode(False)
@@ -1335,6 +1783,13 @@ class PDFSignerApp(QMainWindow):
                 self._field_list.setCurrentRow(n_sig + n_locked)  # letztes locked_field
             else:
                 self._field_list.setCurrentRow(0)              # unsichtbar / keine Felder
+            # Highlight/Copy-Ziel für die Zeile wird nicht hier gesetzt: self._cv
+            # zeigt an dieser Stelle noch das alte Dokument (oder gar keins) an,
+            # ContinuousView.open() unten in _render_current_page() setzt
+            # _selected_field ohnehin auf None zurück. Der eigentliche Sync
+            # erfolgt verzögert in _fit_and_jump_after_open(), nachdem die
+            # neuen Seiten-Slots existieren.
+            self._update_clipboard_actions()   # Paste availability depends on self.pdf_doc
             # Umgewandelte Sign_*-Felder sind noch nicht ins PDF eingebettet
             # (wie frisch gezeichnete Felder) → als ungespeicherte Änderung markieren.
             self._has_unsaved_changes = bool(converted_fields)
@@ -1464,6 +1919,15 @@ class PDFSignerApp(QMainWindow):
         vp_w     = self._cv.viewport().width()
         new_zoom = max(0.10, min(10.0, vp_w / page_w))
         self._set_zoom(new_zoom)
+
+        # Feld im Canvas hervorheben (ContinuousView.open() hat _selected_field
+        # oben in _render_current_page() zurückgesetzt; erst hier existieren
+        # die Seiten-Slots des neuen Dokuments, in denen gehighlightet werden kann).
+        self._cv.set_selected_field(target)
+        # Nur ein freies sig_field ist Copy/Cut/Delete-Ziel, siehe
+        # _on_field_selection_changed.
+        self._active_object = target if target in self.sig_fields else None
+        self._update_clipboard_actions()
 
         # Zum Zielfeld scrollen oder Dokumentanfang anzeigen
         if target is not None:
@@ -2564,6 +3028,13 @@ class PDFSignerApp(QMainWindow):
             self._btn_delete.setEnabled(1 <= row <= n_sig)
         else:
             self._btn_delete.setEnabled(False)
+        # Cut/Paste/Delete modify the document; Copy stays available (read-only)
+        if enabled:
+            self._update_clipboard_actions()
+        else:
+            self._act_cut.setEnabled(False)
+            self._act_paste.setEnabled(False)
+            self._act_edit_delete.setEnabled(False)
 
     def _on_validation_revision_selected(self, revision_bytes: bytes) -> None:
         """Show the PDF as it looked at the selected revision."""
@@ -2628,6 +3099,13 @@ class PDFSignerApp(QMainWindow):
         else:
             self._btn_delete.setEnabled(False)
         self._cv.drawing_enabled = enabled
+        # Cut/Paste/Delete modify the document; Copy stays available (read-only)
+        if enabled:
+            self._update_clipboard_actions()
+        else:
+            self._act_cut.setEnabled(False)
+            self._act_paste.setEnabled(False)
+            self._act_edit_delete.setEnabled(False)
 
     def _update_main_warning(self) -> None:
         """Warnbanner im Hauptfenster ein- oder ausblenden; docMDP-Sperre anwenden.

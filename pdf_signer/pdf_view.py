@@ -48,6 +48,22 @@ of the main window, which renders appearance thumbnails at 96 screen DPI.
 - `Ctrl`  + wheel   : emits `zoom_requested(int, QPointF)` – zoom in/out
                       centred on the cursor position in widget coordinates.
 
+## Selection, arrow-key move, and clipboard hooks
+
+Free signature fields (``_selected_field``) and text annotations can be moved
+with the arrow keys: 5 mm plain, 2.5 mm with Ctrl, 1 mm with Shift (see
+``_nudge_step_pt``).  The canvas
+has ``ClickFocus`` so a click routes subsequent key events to
+``keyPressEvent``; a ``TextAnnotOverlay`` distinguishes *selected* (overlay
+widget focused via its drag handle – arrow keys move the box) from *editing*
+(child ``QTextEdit`` focused – arrow keys move the caret); ``Escape`` drops
+from editing back to selected.  Right-click opens a Cut/Copy/Delete context
+menu on free fields and overlays, and a Paste menu on empty canvas; the
+actual clipboard lives in ``PDFSignerApp`` (see
+``docs/cut-paste-fields.md``), the canvas only emits
+``field_copy_requested`` / ``field_cut_requested`` / ``paste_requested`` and
+mirrors the "clipboard holds something" state in ``clipboard_available``.
+
 ## Visual differentiation of field types
 
 Fields are painted with different colours to reflect their edit state:
@@ -75,8 +91,8 @@ from PyQt6.QtGui import (
     QTextBlockFormat, QTextCharFormat, QTextCursor,
 )
 from PyQt6.QtWidgets import (
-    QComboBox, QFrame, QInputDialog, QLineEdit, QMessageBox, QPlainTextEdit,
-    QSizePolicy, QTextEdit, QWidget,
+    QComboBox, QFrame, QInputDialog, QLineEdit, QMenu, QMessageBox,
+    QPlainTextEdit, QSizePolicy, QTextEdit, QWidget,
 )
 
 from .appearance import SigAppearance
@@ -85,6 +101,33 @@ from .i18n import t
 
 # Pixels per PDF point for the off-canvas preview panel (96 screen DPI / 72 pt DPI)
 DPI_SCALE: float = 96.0 / 72.0
+
+# PDF points per millimetre (1 inch = 25.4 mm = 72 pt)
+MM_TO_PT: float = 72.0 / 25.4
+
+# Arrow-key nudge step for signature fields and text annotations, metric so it
+# lines up with real-world stamp placement: 5 mm plain, 2.5 mm with Ctrl
+# (medium), 1 mm with Shift (fine).  See "Arrow-key move (nudge)" in
+# docs/cut-paste-fields.md.
+NUDGE_STEP_MM:       float = 5.0
+NUDGE_STEP_CTRL_MM:  float = 2.5
+NUDGE_STEP_SHIFT_MM: float = 1.0
+NUDGE_STEP_PT:       float = NUDGE_STEP_MM * MM_TO_PT
+NUDGE_STEP_CTRL_PT:  float = NUDGE_STEP_CTRL_MM * MM_TO_PT
+NUDGE_STEP_SHIFT_PT: float = NUDGE_STEP_SHIFT_MM * MM_TO_PT
+
+
+def _nudge_step_pt(modifiers: Qt.KeyboardModifier) -> float:
+    """Pick the arrow-key nudge step (PDF points) for the held modifiers.
+
+    Shift (finest, 1 mm) takes priority over Ctrl (2.5 mm) if both are held;
+    no modifier is the coarsest, default step (5 mm).
+    """
+    if modifiers & Qt.KeyboardModifier.ShiftModifier:
+        return NUDGE_STEP_SHIFT_PT
+    if modifiers & Qt.KeyboardModifier.ControlModifier:
+        return NUDGE_STEP_CTRL_PT
+    return NUDGE_STEP_PT
 
 # fitz widget type constants for form fields we support interactively
 SUPPORTED_FORM_TYPES: frozenset[int] = frozenset({
@@ -192,6 +235,8 @@ class TextAnnotOverlay(QWidget):
     from PyQt6.QtCore import pyqtSignal
     content_changed  = pyqtSignal()
     delete_requested = pyqtSignal(object)   # passes self
+    copy_requested   = pyqtSignal(object)   # passes self (context menu "Copy")
+    cut_requested    = pyqtSignal(object)   # passes self (context menu "Cut")
     focused          = pyqtSignal(object)   # passes self when edit gains focus
     tab_requested    = pyqtSignal(object, int)  # (self, direction): +1 forward, -1 backward
 
@@ -228,6 +273,9 @@ class TextAnnotOverlay(QWidget):
 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAutoFillBackground(False)
+        # ClickFocus so the overlay widget itself can hold keyboard focus in
+        # the "selected, not editing" state (arrow-key move; see keyPressEvent)
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
 
         self._edit = QTextEdit(self)
         self._edit.setFrameShape(QFrame.Shape.NoFrame)
@@ -417,7 +465,28 @@ class TextAnnotOverlay(QWidget):
                 if k in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
                     self.tab_requested.emit(self, -1 if k == Qt.Key.Key_Backtab else 1)
                     return True  # consume – don't insert a tab character
+                if k == Qt.Key.Key_Escape:
+                    # Editing → "selected, not editing": the overlay widget
+                    # takes focus so arrow keys move the box instead of the
+                    # caret.  A second Escape propagates from keyPressEvent
+                    # up to the view (exits text mode).
+                    self.setFocus()
+                    return True
         return False  # do not consume the event
+
+    def keyPressEvent(self, ev) -> None:
+        """Arrow keys move the overlay while it is selected but not editing."""
+        k = ev.key()
+        if k in (Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Up, Qt.Key.Key_Down):
+            step  = _nudge_step_pt(ev.modifiers())
+            dx_pt = step if k == Qt.Key.Key_Right else -step if k == Qt.Key.Key_Left else 0.0
+            dy_pt = step if k == Qt.Key.Key_Down  else -step if k == Qt.Key.Key_Up   else 0.0
+            par = self.parent()
+            if isinstance(par, PDFViewWidget):
+                par.nudge_text_annot(self, dx_pt, dy_pt)
+            ev.accept()
+            return
+        super().keyPressEvent(ev)
 
     def paintEvent(self, _) -> None:
         p = QPainter(self)
@@ -438,15 +507,33 @@ class TextAnnotOverlay(QWidget):
     def mousePressEvent(self, ev) -> None:
         if ev.button() == Qt.MouseButton.LeftButton:
             if self._in_handle(ev.position()):
+                # Handle click: select for moving (drag or arrow keys) without
+                # entering edit mode – focus stays on the overlay widget, not
+                # the child QTextEdit, so arrow keys move the box, not the caret.
                 self._dragging = True
                 self._drag_off = ev.position().toPoint()
                 self.setCursor(Qt.CursorShape.SizeAllCursor)
-                self._edit.setFocus()   # select this overlay when dragging
+                self.setFocus()
+                self.set_selected(True)
+                self.focused.emit(self)   # sync toolbar / active object
             else:
                 self._edit.setFocus()
                 super().mousePressEvent(ev)
         elif ev.button() == Qt.MouseButton.RightButton:
-            self.delete_requested.emit(self)
+            self.set_selected(True)
+            self.focused.emit(self)   # sync toolbar / active object before the menu acts
+            menu     = QMenu(self)
+            act_cut  = menu.addAction(t("menu_edit_cut"))
+            act_copy = menu.addAction(t("menu_edit_copy"))
+            menu.addSeparator()
+            act_del  = menu.addAction(t("menu_edit_delete"))
+            chosen = menu.exec(ev.globalPosition().toPoint())
+            if chosen is act_cut:
+                self.cut_requested.emit(self)
+            elif chosen is act_copy:
+                self.copy_requested.emit(self)
+            elif chosen is act_del:
+                self.delete_requested.emit(self)
 
     def mouseMoveEvent(self, ev) -> None:
         if self._dragging:
@@ -523,6 +610,10 @@ class PDFViewWidget(QWidget):
     text_annot_placed   = pyqtSignal(int, float, float)  # page, x_pdf, y_pdf
     text_annot_deleted  = pyqtSignal(object)             # TextAnnotDef
     exit_text_mode      = pyqtSignal()                   # ESC or right-click while in text mode
+    # Clipboard operations from the canvas context menu (handled by the app)
+    field_copy_requested = pyqtSignal(object)            # SignatureFieldDef
+    field_cut_requested  = pyqtSignal(object)            # SignatureFieldDef
+    paste_requested      = pyqtSignal()                  # right-click on empty canvas
     # Emitted when the user edits a form field value (field_name, new_value)
     form_field_changed  = pyqtSignal(str, str)
     # Emitted when text in an overlay changes (marks document dirty without committing)
@@ -535,6 +626,12 @@ class PDFViewWidget(QWidget):
         self.setCursor(Qt.CursorShape.CrossCursor)
         self.setMouseTracking(True)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        # ClickFocus: a click on the canvas gives it keyboard focus so that
+        # arrow keys can move the selected free field (see keyPressEvent).
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        # Mirrors "app clipboard holds an entry" – enables the Paste item in
+        # the canvas context menu; kept current by ContinuousView/the app.
+        self.clipboard_available: bool = False
 
         self._pixmap:       Optional[QPixmap] = None
         self._page_w = self._page_h = 1.0
@@ -943,6 +1040,30 @@ class PDFViewWidget(QWidget):
         p = fitz.Point(cx / sx, cy / sy) * self._derot_mat
         return p.x, self._mediabox_h - p.y
 
+    def _visual_delta_to_pdf(self, dx_pt: float, dy_pt: float) -> tuple[float, float]:
+        """Convert a *visual* displacement (screen right/down, in PDF points)
+        into a delta in the unrotated PDF frame.
+
+        Uses the same differential trick as the mouse-drag path so that arrow
+        keys move objects in the on-screen direction even on rotated pages
+        (rotation preserves length, so 1 pt stays 1 pt).
+        """
+        sx = self._img_w / self._page_w
+        sy = self._img_h / self._page_h
+        ox, oy = self._w_to_pdf(0.0, 0.0)
+        nx, ny = self._w_to_pdf(dx_pt * sx, dy_pt * sy)
+        return nx - ox, ny - oy
+
+    def nudge_text_annot(self, ov: TextAnnotOverlay,
+                         dx_pt: float, dy_pt: float) -> None:
+        """Move *ov*'s annotation by a visual (right/down) delta in PDF points."""
+        ann = ov.annot
+        dpx, dpy = self._visual_delta_to_pdf(dx_pt, dy_pt)
+        ann.x = max(0.0, min(ann.x + dpx, self._mediabox_w))
+        ann.y = max(0.0, min(ann.y + dpy, self._mediabox_h))
+        self._position_overlay(ov, update_style=False)
+        ov.content_changed.emit()   # marks the document dirty
+
     # ── Painting ──────────────────────────────────────────────────────────
 
     def paintEvent(self, _) -> None:
@@ -1275,8 +1396,10 @@ class PDFViewWidget(QWidget):
             event.ignore()  # propagate to parent QScrollArea → vertical scroll
 
     def _right_click(self, pos: QPointF) -> None:
-        """Delete a free signature field, or inform the user about locked ones."""
+        """Context menu: Cut/Copy/Delete on a free field, Paste on empty canvas,
+        info dialog on locked fields."""
         cx, cy = pos.x(), pos.y()
+        global_pos = self.mapToGlobal(pos.toPoint())
         # Check locked fields first (they are visually on top of free fields)
         for fdef in reversed(self._locked_fields):
             if fdef.page != self._current_page:
@@ -1294,17 +1417,59 @@ class PDFViewWidget(QWidget):
             tl = self._pdf_to_w(fdef.x1, fdef.y2)
             br = self._pdf_to_w(fdef.x2, fdef.y1)
             if QRectF(tl, br).normalized().contains(cx, cy):
-                if QMessageBox.question(
-                    self, t("dlg_delete_title"),
-                    t("dlg_delete_msg", name=fdef.name),
-                ) == QMessageBox.StandardButton.Yes:
-                    self._sig_fields.remove(fdef)
-                    self.update()
-                    self.field_deleted.emit(fdef)
+                self.field_clicked.emit(fdef)   # select before acting on it
+                menu     = QMenu(self)
+                act_cut  = menu.addAction(t("menu_edit_cut"))
+                act_copy = menu.addAction(t("menu_edit_copy"))
+                menu.addSeparator()
+                act_del  = menu.addAction(t("menu_edit_delete"))
+                if not self.drawing_enabled:
+                    act_cut.setEnabled(False)
+                    act_del.setEnabled(False)
+                chosen = menu.exec(global_pos)
+                if chosen is act_cut:
+                    self.field_cut_requested.emit(fdef)
+                elif chosen is act_copy:
+                    self.field_copy_requested.emit(fdef)
+                elif chosen is act_del:
+                    if QMessageBox.question(
+                        self, t("dlg_delete_title"),
+                        t("dlg_delete_msg", name=fdef.name),
+                    ) == QMessageBox.StandardButton.Yes:
+                        self._sig_fields.remove(fdef)
+                        self.update()
+                        self.field_deleted.emit(fdef)
                 return
+        # Empty canvas (or signed/form field): offer Paste
+        menu      = QMenu(self)
+        act_paste = menu.addAction(t("menu_edit_paste"))
+        act_paste.setEnabled(self.clipboard_available and self.drawing_enabled)
+        if menu.exec(global_pos) is act_paste:
+            self.paste_requested.emit()
 
     def keyPressEvent(self, ev) -> None:
         if self.text_mode and ev.key() == Qt.Key.Key_Escape:
             self.exit_text_mode.emit()
-        else:
-            super().keyPressEvent(ev)
+            return
+        k = ev.key()
+        if k in (Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Up, Qt.Key.Key_Down):
+            fdef = self._selected_field
+            if (fdef is not None and fdef in self._sig_fields
+                    and fdef.page == self._current_page
+                    and self.drawing_enabled):
+                step  = _nudge_step_pt(ev.modifiers())
+                dx_pt = step if k == Qt.Key.Key_Right else -step if k == Qt.Key.Key_Left else 0.0
+                dy_pt = step if k == Qt.Key.Key_Down  else -step if k == Qt.Key.Key_Up   else 0.0
+                dpx, dpy = self._visual_delta_to_pdf(dx_pt, dy_pt)
+                # Clamp so the field stays fully inside the MediaBox
+                dpx = max(-fdef.x1, min(dpx, self._mediabox_w - fdef.x2))
+                dpy = max(-fdef.y1, min(dpy, self._mediabox_h - fdef.y2))
+                fdef.x1 += dpx
+                fdef.x2 += dpx
+                fdef.y1 += dpy
+                fdef.y2 += dpy
+                self.update()
+                self.field_moved.emit(fdef)
+                ev.accept()
+                return
+        super().keyPressEvent(ev)

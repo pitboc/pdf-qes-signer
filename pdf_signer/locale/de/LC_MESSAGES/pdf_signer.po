@@ -1919,3 +1919,28 @@ msgstr "Signaturfelder erkannt"
 msgid "dlg_convert_sign_msg"
 msgstr "Dieses Dokument enthält {count} Textfeld(er) mit dem Namenspräfix „Sign_\", vermutlich Platzhalter aus LibreOffice.\n\nSollen diese jetzt in Signaturfelder umgewandelt werden?"
 
+
+# Cut / Copy / Paste (Edit menu + context menus)
+msgid "menu_edit"
+msgstr "Bearbeiten"
+
+msgid "menu_edit_cut"
+msgstr "Ausschneiden"
+
+msgid "menu_edit_copy"
+msgstr "Kopieren"
+
+msgid "menu_edit_paste"
+msgstr "Einfügen"
+
+msgid "menu_edit_delete"
+msgstr "Löschen"
+
+msgid "status_copied"
+msgstr "In Zwischenablage kopiert."
+
+msgid "status_cut"
+msgstr "Ausgeschnitten – in Zwischenablage."
+
+msgid "status_pasted"
+msgstr "Eingefügt."

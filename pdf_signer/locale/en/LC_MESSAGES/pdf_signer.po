@@ -1915,3 +1915,28 @@ msgstr "Signature fields detected"
 msgid "dlg_convert_sign_msg"
 msgstr "This document contains {count} text field(s) whose name starts with \"Sign_\", likely placeholders from LibreOffice.\n\nConvert them into signature fields now?"
 
+
+# Cut / Copy / Paste (Edit menu + context menus)
+msgid "menu_edit"
+msgstr "Edit"
+
+msgid "menu_edit_cut"
+msgstr "Cut"
+
+msgid "menu_edit_copy"
+msgstr "Copy"
+
+msgid "menu_edit_paste"
+msgstr "Paste"
+
+msgid "menu_edit_delete"
+msgstr "Delete"
+
+msgid "status_copied"
+msgstr "Copied to clipboard."
+
+msgid "status_cut"
+msgstr "Cut – copied to clipboard."
+
+msgid "status_pasted"
+msgstr "Pasted."

@@ -1834,3 +1834,28 @@ msgstr "Campi firma rilevati"
 msgid "dlg_convert_sign_msg"
 msgstr "Questo documento contiene {count} campo/i di testo il cui nome inizia con \"Sign_\", probabilmente segnaposto di LibreOffice.\n\nConvertirli ora in campi firma?"
 
+
+# Cut / Copy / Paste (Edit menu + context menus)
+msgid "menu_edit"
+msgstr "Modifica"
+
+msgid "menu_edit_cut"
+msgstr "Taglia"
+
+msgid "menu_edit_copy"
+msgstr "Copia"
+
+msgid "menu_edit_paste"
+msgstr "Incolla"
+
+msgid "menu_edit_delete"
+msgstr "Elimina"
+
+msgid "status_copied"
+msgstr "Copiato negli appunti."
+
+msgid "status_cut"
+msgstr "Tagliato – copiato negli appunti."
+
+msgid "status_pasted"
+msgstr "Incollato."

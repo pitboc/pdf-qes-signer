@@ -274,8 +274,9 @@ For a hardware token (smartcard or USB token), switch **Method** to
 
 The main window is split into three areas:
 
-- **Menu bar:** *File* (Open, Save, Save As, Quit), *Settings* (Settings…,
-  Manage Profiles…), *Help* (About, License).
+- **Menu bar:** *File* (Open, Save, Save As, Quit), *Edit* (Cut, Copy,
+  Paste, Delete — `\autoref{sec-cut-paste}`{=latex}), *Settings*
+  (Settings…, Manage Profiles…), *Help* (About, License).
 - **Toolbar:** Open file, Save fields, page navigation (previous/next page
   and an editable page-number field), a toggle between single-page and
   continuous scroll view, zoom controls (zoom out, an editable zoom
@@ -284,8 +285,10 @@ The main window is split into three areas:
   `T`), and — on the right — **Sign** (`S`) and **Check signatures** (`C`).
 - **PDF canvas** (left, largest area): displays the current page(s). Left-click
   and drag to draw a new signature field; click an existing field to select
-  it; right-click to delete it. Existing PDF form fields (text fields,
-  checkboxes, etc.) can also be filled in directly here — see
+  it, then move it with the mouse or the arrow keys, or right-click it for
+  Cut/Copy/Delete (`\autoref{sec-cut-paste}`{=latex}). Right-click empty
+  canvas to paste. Existing PDF form fields (text fields, checkboxes, etc.)
+  can also be filled in directly here — see
   `\autoref{sec-form-fields}`{=latex}.
 - **Right-hand panel:**
   - **Field list:** row 0 is always "Invisible signature" (sign without a
@@ -479,9 +482,11 @@ and start typing immediately; the current toolbar settings apply to it.
 Press `Tab` / `Shift+Tab` to jump between text boxes in the order they were
 placed, same as for form-field text boxes
 (`\autoref{sec-form-fields}`{=latex}). Drag the small red handle in a box's
-top-left corner to reposition it. Right-click a box to delete it
-immediately (no confirmation, unlike deleting a signature field). A box you
-leave completely empty is discarded automatically once you click elsewhere.
+top-left corner to reposition it, or click the handle once and use the
+arrow keys — see `\autoref{sec-cut-paste}`{=latex}, which also covers
+Cut/Copy/Paste for text boxes. Right-click a box for a Cut/Copy/Delete menu.
+A box you leave completely empty is discarded automatically once you click
+elsewhere.
 
 Press `Escape`, or click the toolbar toggle again, to leave text mode —
 boxes with content stay on the page, they just lose the editing cursor
@@ -506,6 +511,66 @@ font.
 \caption{Text mode active: the formatting toolbar (font, size, character spacing, color) and one placed text annotation, selected and ready to edit.}
 \label{fig:text-annotations}
 \end{figure}
+
+---
+
+# Moving, Cutting, Copying, and Pasting Fields {#sec-cut-paste}
+
+Your own free signature fields and text annotations — the ones you drew or
+typed yourself, not fields that came pre-existing or already-signed in the
+PDF — can be repositioned, cut, copied, and pasted, on the same page, on a
+different page, or even in a different PDF you open afterward in the same
+session.
+
+> This applies only to your own **free** signature fields and text
+> annotations. **Locked** fields (unsigned fields that already existed in a
+> previously-signed PDF), **signed** fields, and PDF **form fields**
+> (`\autoref{sec-form-fields}`{=latex}) cannot be moved, cut, or copied —
+> their position and content are fixed by an existing signature, or belong
+> to the PDF's own form, not to you.
+
+## Selecting and moving
+
+Click a free field or text box to select it (for a text box, click the
+small red handle in its top-left corner — clicking the body instead starts
+*editing* the text, where the arrow keys move the text cursor rather than
+the box). Once selected:
+
+- **Drag with the mouse**, or
+- **Arrow keys** nudge it by 5 mm; hold **Ctrl** for 2.5 mm (medium) or
+  **Shift** for 1 mm (fine) steps.
+
+## Cut, copy, paste, delete
+
+With a field or text box selected, use either the **Edit** menu, the
+keyboard shortcuts, or right-click the object itself:
+
+| Action | Shortcut |
+|---|---|
+| Cut | `Ctrl+X` |
+| Copy | `Ctrl+C` |
+| Paste | `Ctrl+V` |
+| Delete | (Edit menu / right-click only) |
+
+Right-clicking empty canvas offers **Paste** instead, if something is on the
+clipboard. These shortcuts work no matter which part of the window
+currently has keyboard focus — you don't need to click the canvas first.
+
+Paste always places the object relative to the **page**, not the mouse
+cursor: it re-anchors to whichever page corner it was closest to when
+copied, so a stamp copied "near the bottom-right corner" lands near the
+bottom-right corner of the target page too, even if that page is a
+different size or orientation than the one it was copied from. Pasting onto
+the exact same spot it already occupies (e.g. pasting twice in a row, or
+onto a page that already has something in that corner) offsets each repeat
+by 5 mm so the copies don't stack invisibly on top of each other.
+
+Copying a signature field also copies its **size**, but not its name — a
+pasted field is renamed automatically if the name is already taken. The
+clipboard holds a single item at a time (a second Copy/Cut replaces
+whatever was copied before) and survives switching to a different open PDF,
+so you can copy a field in one document and paste it into another opened
+afterward.
 
 ---
 

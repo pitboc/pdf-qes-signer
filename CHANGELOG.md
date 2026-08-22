@@ -8,6 +8,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Cut / Copy / Paste for signature fields and text annotations**, plus
+  metric arrow-key movement (5 mm plain, 2.5 mm with Ctrl, 1 mm with Shift).
+  New Edit menu (Ctrl+X/C/V) and right-click context menus on the canvas and
+  on text overlays. Paste is page-position-relative (anchored to the nearest
+  page corner, not the mouse or scroll position), so it survives differently
+  sized target pages and works across documents opened later in the same
+  session. Repeated pastes cascade by 5 mm right/down instead of stacking
+  exactly on top of each other — checked generally against whatever already
+  occupies that page (not just repeats from the same source), so pasting
+  onto a different page more than once, or onto a page that already has a
+  field there, cascades correctly too. Locked and already-signed fields
+  remain excluded, same as before (their position is frozen by an existing
+  signature).
 - **Convert LibreOffice-style placeholder fields into signature fields on
   open.** LibreOffice cannot create real PDF signature fields, so some
   workflows add plain text form fields named with a `Sign_` prefix as
@@ -56,6 +69,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   drawing), and normal field-list refreshes only repaint the existing
   pixmap. The affected page is now explicitly re-rendered right after such
   an edit is committed.
+- **Field-list selection could fall out of sync with the canvas highlight**:
+  clicking a field on the canvas that was already the selected list row did
+  nothing visibly, and could leave Ctrl+C pointing at a previously active
+  text annotation instead of the field just clicked; the initially selected
+  field also stayed unhighlighted in the canvas right after opening a
+  document until clicked once. All three came from the same underlying
+  cause — Qt's `QListWidget.setCurrentRow()` silently does nothing when the
+  target row is already current — and are fixed by always re-syncing the
+  canvas highlight and Cut/Copy/Delete target explicitly instead of relying
+  on that signal.
 
 ---
 

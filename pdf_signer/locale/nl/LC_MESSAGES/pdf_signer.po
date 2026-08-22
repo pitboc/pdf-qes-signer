@@ -1835,3 +1835,28 @@ msgstr "Handtekeningvelden gevonden"
 msgid "dlg_convert_sign_msg"
 msgstr "Dit document bevat {count} tekstveld(en) waarvan de naam begint met \"Sign_\", waarschijnlijk tijdelijke aanduidingen uit LibreOffice.\n\nWilt u deze nu omzetten in handtekeningvelden?"
 
+
+# Cut / Copy / Paste (Edit menu + context menus)
+msgid "menu_edit"
+msgstr "Bewerken"
+
+msgid "menu_edit_cut"
+msgstr "Knippen"
+
+msgid "menu_edit_copy"
+msgstr "Kopiëren"
+
+msgid "menu_edit_paste"
+msgstr "Plakken"
+
+msgid "menu_edit_delete"
+msgstr "Verwijderen"
+
+msgid "status_copied"
+msgstr "Gekopieerd naar klembord."
+
+msgid "status_cut"
+msgstr "Geknipt – naar klembord gekopieerd."
+
+msgid "status_pasted"
+msgstr "Geplakt."

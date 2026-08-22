@@ -1834,3 +1834,28 @@ msgstr "Campos de firma detectados"
 msgid "dlg_convert_sign_msg"
 msgstr "Este documento contiene {count} campo(s) de texto cuyo nombre comienza con «Sign_», probablemente marcadores de posición de LibreOffice.\n\n¿Convertirlos ahora en campos de firma?"
 
+
+# Cut / Copy / Paste (Edit menu + context menus)
+msgid "menu_edit"
+msgstr "Editar"
+
+msgid "menu_edit_cut"
+msgstr "Cortar"
+
+msgid "menu_edit_copy"
+msgstr "Copiar"
+
+msgid "menu_edit_paste"
+msgstr "Pegar"
+
+msgid "menu_edit_delete"
+msgstr "Eliminar"
+
+msgid "status_copied"
+msgstr "Copiado al portapapeles."
+
+msgid "status_cut"
+msgstr "Cortado – copiado al portapapeles."
+
+msgid "status_pasted"
+msgstr "Pegado."

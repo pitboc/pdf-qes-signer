@@ -209,6 +209,9 @@ class ContinuousView(QScrollArea):
     exit_text_mode     = pyqtSignal()                    # relay: ESC / right-click
     form_field_changed = pyqtSignal(str, str)            # relay: field_name, new_value
     form_field_dirty   = pyqtSignal()                    # relay: unsaved change flag
+    field_copy_requested = pyqtSignal(object)            # relay: SignatureFieldDef
+    field_cut_requested  = pyqtSignal(object)            # relay: SignatureFieldDef
+    paste_requested      = pyqtSignal()                  # relay: canvas paste menu
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -230,6 +233,7 @@ class ContinuousView(QScrollArea):
         self._pan_vbar_start: int = 0
         self._drawing_enabled: bool = True       # propagated to all PDFViewWidget slots
         self._text_mode:       bool = False      # propagated to all PDFViewWidget slots
+        self._clipboard_available: bool = False  # propagated to all PDFViewWidget slots
         self._text_annots:     list[TextAnnotDef] = []
         self._overlay_setup_cb = None  # callable(TextAnnotOverlay) – wires signals
 
@@ -395,6 +399,17 @@ class ContinuousView(QScrollArea):
         for slot in self._slots:
             if isinstance(slot, PDFViewWidget):
                 slot.drawing_enabled = value
+
+    @property
+    def clipboard_available(self) -> bool:
+        return self._clipboard_available
+
+    @clipboard_available.setter
+    def clipboard_available(self, value: bool) -> None:
+        self._clipboard_available = value
+        for slot in self._slots:
+            if isinstance(slot, PDFViewWidget):
+                slot.clipboard_available = value
 
     @property
     def text_mode(self) -> bool:
@@ -657,6 +672,7 @@ class ContinuousView(QScrollArea):
         pv = PDFViewWidget(self._appearance)
         pv._zoom = self._zoom          # apply current zoom before rendering
         pv.drawing_enabled = self._drawing_enabled
+        pv.clipboard_available = self._clipboard_available
         pv.set_page(
             self._doc[idx],
             self._sig_fields, idx,
@@ -681,6 +697,9 @@ class ContinuousView(QScrollArea):
         pv.exit_text_mode.connect(self.exit_text_mode)
         pv.form_field_changed.connect(self.form_field_changed)
         pv.form_field_dirty.connect(self.form_field_dirty)
+        pv.field_copy_requested.connect(self.field_copy_requested)
+        pv.field_cut_requested.connect(self.field_cut_requested)
+        pv.paste_requested.connect(self.paste_requested)
         pv.text_mode = self._text_mode
         pv.setParent(self._container)
         pv.move(x, y)

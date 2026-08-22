@@ -1914,3 +1914,28 @@ msgstr "Wykryto pola podpisu"
 msgid "dlg_convert_sign_msg"
 msgstr "Ten dokument zawiera {count} pole(pól) tekstowe(ych), których nazwa zaczyna się od „Sign_\", prawdopodobnie zastępcze pola z LibreOffice.\n\nCzy przekonwertować je teraz na pola podpisu?"
 
+
+# Cut / Copy / Paste (Edit menu + context menus)
+msgid "menu_edit"
+msgstr "Edycja"
+
+msgid "menu_edit_cut"
+msgstr "Wytnij"
+
+msgid "menu_edit_copy"
+msgstr "Kopiuj"
+
+msgid "menu_edit_paste"
+msgstr "Wklej"
+
+msgid "menu_edit_delete"
+msgstr "Usuń"
+
+msgid "status_copied"
+msgstr "Skopiowano do schowka."
+
+msgid "status_cut"
+msgstr "Wycięto – skopiowano do schowka."
+
+msgid "status_pasted"
+msgstr "Wklejono."

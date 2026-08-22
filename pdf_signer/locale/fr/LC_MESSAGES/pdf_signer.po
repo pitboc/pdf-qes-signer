@@ -1838,3 +1838,28 @@ msgstr "Champs de signature détectés"
 msgid "dlg_convert_sign_msg"
 msgstr "Ce document contient {count} champ(s) de texte dont le nom commence par « Sign_ », probablement des espaces réservés provenant de LibreOffice.\n\nLes convertir maintenant en champs de signature ?"
 
+
+# Cut / Copy / Paste (Edit menu + context menus)
+msgid "menu_edit"
+msgstr "Édition"
+
+msgid "menu_edit_cut"
+msgstr "Couper"
+
+msgid "menu_edit_copy"
+msgstr "Copier"
+
+msgid "menu_edit_paste"
+msgstr "Coller"
+
+msgid "menu_edit_delete"
+msgstr "Supprimer"
+
+msgid "status_copied"
+msgstr "Copié dans le presse-papiers."
+
+msgid "status_cut"
+msgstr "Coupé – copié dans le presse-papiers."
+
+msgid "status_pasted"
+msgstr "Collé."
